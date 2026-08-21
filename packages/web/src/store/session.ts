@@ -99,10 +99,14 @@ export const useStore = create<Store>()(
 
     connect: () =>
       connectEvents({
-        onStatus: (status) =>
+        onStatus: (status) => {
           set((state) => {
             state.connection = status
-          }),
+          })
+          // A reconnect can mean the server restarted, which takes every runner
+          // with it. The socket alone cannot say, so re-read the live set.
+          if (status === 'open') void reconcileSessions(set)
+        },
         onEvent: (event) => handleEvent(set, get, event),
       }),
 
@@ -313,8 +317,29 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
   if (sawResult) void loadContextUsage(set, get, event.sessionId)
 }
 
-async function loadContextUsage(set: Setter, get: () => Store, sessionId: string): Promise<void> {
-  try {
+/**
+ * Reconciles local session state against the server's runner table. Anything
+ * the server no longer runs is marked closed rather than deleted, so the
+ * transcript stays readable and the sidebar can reopen it.
+ */
+async function reconcileSessions(set: Setter): Promise<void> {
+  const { projects } = await call('history.projects', {})
+  const live = new Set(projects.flatMap((project) => project.sessions.filter((s) => s.live).map((s) => s.sessionId)))
+  set((state) => {
+    state.projects = projects
+    if (!state.defaultCwd && projects[0]) state.defaultCwd = projects[0].cwd
+    for (const session of Object.values(state.sessions)) {
+      // A session mid-creation has no runner yet; leave it alone.
+      if (session.init === null && session.commands.length === 0) continue
+      if (!live.has(session.sessionId)) {
+        session.closed = true
+        session.status = 'idle'
+      }
+    }
+  })
+}
+
+async function loadContextUsage(set: Setter, get: () => Store, sessionId: string): Promise<void> {  try {
     const { usage } = await call('session.contextUsage', { sessionId })
     if (!get().sessions[sessionId]) return
     set((state) => {

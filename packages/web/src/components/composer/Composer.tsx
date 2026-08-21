@@ -194,7 +194,10 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
             className={styles.textarea}
             value={text}
             rows={1}
-            placeholder="输入消息，/ 唤出命令，@ 引用文件"
+            disabled={session.closed}
+            placeholder={
+              session.closed ? '会话已结束 — 从侧栏重新打开即可继续' : '输入消息，/ 唤出命令，@ 引用文件'
+            }
             onChange={(event) => updateText(event.target.value, event.target.selectionStart)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
