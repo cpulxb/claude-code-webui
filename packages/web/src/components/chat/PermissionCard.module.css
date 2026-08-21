@@ -1,0 +1,67 @@
+.card {
+  padding: var(--ccw-space-3) var(--ccw-space-4);
+  margin: var(--ccw-space-3) 0 var(--ccw-space-4);
+  background: var(--ccw-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--ccw-accent) 35%, transparent);
+  border-radius: var(--ccw-radius-md);
+}
+
+.title {
+  font-weight: 600;
+}
+
+.description {
+  margin-top: var(--ccw-space-1);
+  font-size: var(--ccw-text-base);
+  color: var(--ccw-text-secondary);
+}
+
+.detail {
+  padding: var(--ccw-space-2) var(--ccw-space-3);
+  margin-top: var(--ccw-space-2);
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--ccw-bg-base);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ccw-space-2);
+  margin-top: var(--ccw-space-3);
+}
+
+.button {
+  padding: 5px 14px;
+  font-size: var(--ccw-text-base);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-strong);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.button:hover {
+  background: var(--ccw-bg-hover);
+}
+
+.primary {
+  color: #fff;
+  background: var(--ccw-accent);
+  border-color: var(--ccw-accent);
+}
+
+.primary:hover {
+  background: color-mix(in srgb, var(--ccw-accent) 88%, black);
+}
+
+.danger {
+  color: var(--ccw-danger);
+}
+
+.reason {
+  margin-top: var(--ccw-space-2);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+}

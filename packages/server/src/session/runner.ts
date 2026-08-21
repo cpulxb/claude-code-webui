@@ -38,9 +38,10 @@ export class SessionRunner {
   constructor(config: SessionConfig, emit: EmitEvent) {
     this.config = config
     this.#emit = emit
-    // A caller-supplied UUID keeps the browser, the server, and the on-disk
-    // transcript on one id. When resuming, the CLI reuses the resumed id.
-    this.sessionId = config.resume ?? randomUUID()
+    // The id is fixed before the CLI starts so the browser can register the
+    // session first and never miss the `init` event. Resuming reuses the
+    // existing transcript's id.
+    this.sessionId = config.resume ?? config.sessionId ?? randomUUID()
 
     this.#query = query({
       prompt: this.#input,

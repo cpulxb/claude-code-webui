@@ -1,0 +1,82 @@
+.frame {
+  position: relative; /* anchors the drag handles that straddle column borders */
+  display: grid;
+  grid-template-rows: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ccw-bg-base);
+  transition: grid-template-columns var(--ccw-duration-slow) var(--ccw-ease);
+}
+
+/* Dragging writes widths at pointer cadence; easing them would detach the
+   column from the handle. */
+.frame[data-dragging] {
+  transition: none;
+  user-select: none;
+  cursor: col-resize;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame {
+    transition: none;
+  }
+}
+
+.sidebarCol {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--ccw-bg-sidebar);
+  border-right: 1px solid var(--ccw-border-l1);
+}
+
+.centerCol {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.detailsCol {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--ccw-bg-sidebar);
+  border-left: 1px solid var(--ccw-border-l1);
+}
+
+/* Subtrees stay mounted at zero width, so their border must not paint a seam. */
+.frame[data-sidebar-collapsed] .sidebarCol,
+.frame[data-details-collapsed] .detailsCol {
+  border: none;
+}
+
+.handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 5;
+  width: 9px;
+  margin-left: -4px;
+  cursor: col-resize;
+}
+
+.handle::after {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 3px;
+  height: 34px;
+  content: '';
+  background: transparent;
+  border-radius: var(--ccw-radius-pill);
+  transform: translateY(-50%);
+  transition: background var(--ccw-duration-fast) var(--ccw-ease);
+}
+
+.handle:hover::after,
+.frame[data-dragging] .handle::after {
+  background: var(--ccw-border-strong);
+}
+
+.hidden {
+  display: none;
+}

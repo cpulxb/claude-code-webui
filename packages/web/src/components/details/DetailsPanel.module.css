@@ -1,0 +1,129 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  padding: var(--ccw-space-3);
+  font-size: var(--ccw-text-base);
+  font-weight: 600;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.iconButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: var(--ccw-text-muted);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.iconButton:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 var(--ccw-space-3) var(--ccw-space-4);
+  overflow-y: auto;
+}
+
+.section {
+  margin-bottom: var(--ccw-space-4);
+}
+
+.sectionTitle {
+  margin-bottom: var(--ccw-space-2);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.field {
+  display: flex;
+  gap: var(--ccw-space-3);
+  padding: 3px 0;
+  font-size: var(--ccw-text-base);
+}
+
+.label {
+  flex: none;
+  width: 68px;
+  color: var(--ccw-text-muted);
+}
+
+.value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-sm);
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.tag {
+  padding: 1px 7px;
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-secondary);
+  background: var(--ccw-bg-sunken);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.mcpRow {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  padding: 3px 0;
+  font-size: var(--ccw-text-base);
+}
+
+.mcpDot {
+  width: 6px;
+  height: 6px;
+  background: var(--ccw-gray-400);
+  border-radius: 50%;
+}
+
+.mcpConnected {
+  background: var(--ccw-success);
+}
+
+.mcpFailed {
+  background: var(--ccw-danger);
+}
+
+.empty {
+  padding: var(--ccw-space-4) 0;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-faint);
+}
+
+.toggle {
+  padding: 0;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
+}
+
+.toggle:hover {
+  color: var(--ccw-text-primary);
+}

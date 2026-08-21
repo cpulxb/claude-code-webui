@@ -1,0 +1,117 @@
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ccw-space-2);
+  align-items: baseline;
+  margin-bottom: var(--ccw-space-2);
+}
+
+.name {
+  font-weight: 600;
+}
+
+.subtitle {
+  font-size: var(--ccw-text-base);
+  color: var(--ccw-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.elapsed {
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+}
+
+.body {
+  overflow: hidden;
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-sm);
+  line-height: 1.5;
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-md);
+}
+
+.line {
+  display: flex;
+  gap: var(--ccw-space-3);
+  padding: var(--ccw-space-2) var(--ccw-space-3);
+}
+
+.line + .line {
+  border-top: 1px solid var(--ccw-border-l2);
+}
+
+.gutter {
+  flex: none;
+  width: 26px;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.content {
+  min-width: 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.contentError {
+  color: var(--ccw-danger);
+}
+
+.clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 12;
+}
+
+.more {
+  display: block;
+  width: 100%;
+  padding: var(--ccw-space-1) var(--ccw-space-3);
+  font-family: var(--ccw-font-ui);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+  text-align: left;
+  background: var(--ccw-bg-raised);
+  border-top: 1px solid var(--ccw-border-l2);
+}
+
+.more:hover {
+  color: var(--ccw-text-primary);
+}
+
+.waiting {
+  padding: var(--ccw-space-2) var(--ccw-space-3);
+  font-family: var(--ccw-font-ui);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
+}
+
+/* --- diff ------------------------------------------------------------- */
+
+.diffLine {
+  padding: 0 var(--ccw-space-3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diffAdd {
+  color: var(--ccw-success);
+  background: color-mix(in srgb, var(--ccw-success) 10%, transparent);
+}
+
+.diffRemove {
+  color: var(--ccw-danger);
+  background: color-mix(in srgb, var(--ccw-danger) 9%, transparent);
+}
+
+.diffSection {
+  padding: var(--ccw-space-2) 0;
+}
+
+.diffSection + .diffSection {
+  border-top: 1px solid var(--ccw-border-l2);
+}

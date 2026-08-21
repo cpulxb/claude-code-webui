@@ -29,7 +29,14 @@ async function call<M extends RpcMethod>(method: M, params: RpcParams<M>): Promi
   return (await res.json()) as RpcResponse<M>
 }
 
-const created = await call('session.create', { cwd: process.cwd(), permissionMode: 'default' })
+// Overridable so the same script can reproduce a specific workspace's behaviour
+// — hooks and settings are resolved per-cwd, and the model comes from whatever
+// the active channel defaults to unless pinned here.
+const created = await call('session.create', {
+  cwd: process.env.CCW_SMOKE_CWD ?? process.cwd(),
+  permissionMode: 'default',
+  ...(process.env.CCW_SMOKE_MODEL ? { model: process.env.CCW_SMOKE_MODEL } : {}),
+})
 if (!created.ok) throw new Error(`session.create failed: ${created.error}`)
 const { sessionId } = created.result
 console.log(`[smoke] session ${sessionId}`)

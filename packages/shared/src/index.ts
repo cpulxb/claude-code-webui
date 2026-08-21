@@ -66,6 +66,13 @@ export type SessionConfig = {
   effort?: EffortLevel
   /** Existing Claude session UUID to resume; omit to start fresh. */
   resume?: string
+  /**
+   * UUID the caller wants the new session to use. The browser supplies one so
+   * it can register the session locally *before* the CLI starts emitting
+   * events — otherwise `init` can land before `session.create` returns and be
+   * dropped as belonging to an unknown session.
+   */
+  sessionId?: string
 }
 
 /** Session metadata for the sidebar, derived from the on-disk JSONL transcripts. */
@@ -91,6 +98,19 @@ export type FileSuggestion = {
   /** Path relative to the session cwd. */
   path: string
   isDirectory: boolean
+}
+
+/** One selectable directory in the workspace picker. */
+export type DirectoryEntry = { name: string; path: string }
+
+export type DirectoryListing = {
+  /** Absolute path that was listed. */
+  path: string
+  /** Parent directory, or null at the filesystem root. */
+  parent: string | null
+  entries: DirectoryEntry[]
+  /** The server user's home directory, used as the picker's starting point. */
+  home: string
 }
 
 /**
@@ -127,6 +147,11 @@ export type RpcMap = {
   'files.suggest': {
     params: { sessionId: string; query: string }
     result: { suggestions: FileSuggestion[] }
+  }
+  /** Directory listing for the workspace picker. Omit `path` to start at home. */
+  'files.browse': {
+    params: { path?: string; showHidden?: boolean }
+    result: DirectoryListing
   }
 }
 

@@ -1,0 +1,141 @@
+/*
+ * Design tokens. Layered the way deepseek-harness layers its own: raw palette
+ * first, semantic aliases on top, so components only ever name intent.
+ */
+
+:root {
+  color-scheme: light;
+
+  --ccw-gray-0: #ffffff;
+  --ccw-gray-25: #fbfbfa;
+  --ccw-gray-50: #f6f6f4;
+  --ccw-gray-100: #eeeeec;
+  --ccw-gray-200: #e3e3e0;
+  --ccw-gray-300: #cfcfca;
+  --ccw-gray-400: #a6a69f;
+  --ccw-gray-500: #7c7c74;
+  --ccw-gray-600: #5c5c55;
+  --ccw-gray-700: #3d3d38;
+  --ccw-gray-900: #1a1a17;
+
+  --ccw-accent: #c96442;
+  --ccw-accent-soft: #f6e9e3;
+  --ccw-danger: #b4342a;
+  --ccw-success: #2f7d4f;
+  --ccw-warning: #9a6b16;
+
+  --ccw-bg-base: var(--ccw-gray-0);
+  --ccw-bg-sidebar: var(--ccw-gray-25);
+  --ccw-bg-raised: var(--ccw-gray-50);
+  --ccw-bg-sunken: var(--ccw-gray-100);
+  --ccw-bg-hover: var(--ccw-gray-100);
+
+  --ccw-border-l1: var(--ccw-gray-200);
+  --ccw-border-l2: var(--ccw-gray-100);
+  --ccw-border-strong: var(--ccw-gray-300);
+
+  --ccw-text-primary: var(--ccw-gray-900);
+  --ccw-text-secondary: var(--ccw-gray-600);
+  --ccw-text-muted: var(--ccw-gray-500);
+  --ccw-text-faint: var(--ccw-gray-400);
+
+  --ccw-radius-sm: 6px;
+  --ccw-radius-md: 10px;
+  --ccw-radius-lg: 14px;
+  --ccw-radius-pill: 999px;
+
+  --ccw-space-1: 4px;
+  --ccw-space-2: 8px;
+  --ccw-space-3: 12px;
+  --ccw-space-4: 16px;
+  --ccw-space-5: 24px;
+  --ccw-space-6: 32px;
+
+  --ccw-font-ui:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --ccw-font-mono: 'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --ccw-text-xs: 11px;
+  --ccw-text-sm: 12px;
+  --ccw-text-base: 13px;
+  --ccw-text-md: 14px;
+
+  --ccw-shadow-popover: 0 8px 28px rgb(0 0 0 / 12%), 0 1px 3px rgb(0 0 0 / 8%);
+  --ccw-shadow-composer: 0 2px 12px rgb(0 0 0 / 6%);
+
+  --ccw-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --ccw-duration-fast: 120ms;
+  --ccw-duration-slow: 260ms;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --ccw-bg-base: #1a1a17;
+  --ccw-bg-sidebar: #151512;
+  --ccw-bg-raised: #232320;
+  --ccw-bg-sunken: #121210;
+  --ccw-bg-hover: #2b2b27;
+
+  --ccw-border-l1: #33332e;
+  --ccw-border-l2: #28282400;
+  --ccw-border-strong: #45453f;
+
+  --ccw-text-primary: #eeeeec;
+  --ccw-text-secondary: #b9b9b1;
+  --ccw-text-muted: #8a8a82;
+  --ccw-text-faint: #66665f;
+
+  --ccw-accent: #d97757;
+  --ccw-accent-soft: #3a251d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--ccw-font-ui);
+  font-size: var(--ccw-text-md);
+  line-height: 1.6;
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ccw-gray-300);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: var(--ccw-radius-pill);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ccw-gray-400);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}

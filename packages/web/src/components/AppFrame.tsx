@@ -1,0 +1,91 @@
+import { useCallback, useRef, useState, type ReactNode } from 'react'
+
+import styles from './AppFrame.module.css'
+
+const SIDEBAR_RANGE = [180, 480] as const
+const DETAILS_RANGE = [240, 640] as const
+
+type Column = 'sidebar' | 'details'
+
+/**
+ * The three-column shell: sessions | conversation | details.
+ *
+ * Widths live on `grid-template-columns` so collapsing can animate the track
+ * itself, and the handles are frame children (columns clip their overflow)
+ * positioned on the column borders.
+ */
+export function AppFrame(props: {
+  sidebar: ReactNode
+  main: ReactNode
+  details: ReactNode
+  sidebarCollapsed: boolean
+  detailsCollapsed: boolean
+}): JSX.Element {
+  const [sidebarWidth, setSidebarWidth] = useState(264)
+  const [detailsWidth, setDetailsWidth] = useState(340)
+  const [dragging, setDragging] = useState<Column | null>(null)
+  const frameRef = useRef<HTMLDivElement>(null)
+
+  const startDrag = useCallback(
+    (column: Column) => (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault()
+      setDragging(column)
+
+      const startX = event.clientX
+      const startWidth = column === 'sidebar' ? sidebarWidth : detailsWidth
+      const [min, max] = column === 'sidebar' ? SIDEBAR_RANGE : DETAILS_RANGE
+
+      const onMove = (moveEvent: PointerEvent): void => {
+        // The details column grows leftwards, so its delta is inverted.
+        const delta = column === 'sidebar' ? moveEvent.clientX - startX : startX - moveEvent.clientX
+        const next = Math.min(max, Math.max(min, startWidth + delta))
+        if (column === 'sidebar') setSidebarWidth(next)
+        else setDetailsWidth(next)
+      }
+      const onUp = (): void => {
+        setDragging(null)
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+      }
+
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp)
+    },
+    [sidebarWidth, detailsWidth],
+  )
+
+  const left = props.sidebarCollapsed ? 0 : sidebarWidth
+  const right = props.detailsCollapsed ? 0 : detailsWidth
+
+  return (
+    <div
+      ref={frameRef}
+      className={styles.frame}
+      style={{ gridTemplateColumns: `${left}px minmax(0, 1fr) ${right}px` }}
+      {...(dragging ? { 'data-dragging': '' } : {})}
+      {...(props.sidebarCollapsed ? { 'data-sidebar-collapsed': '' } : {})}
+      {...(props.detailsCollapsed ? { 'data-details-collapsed': '' } : {})}
+    >
+      <div className={styles.sidebarCol}>{props.sidebar}</div>
+      <div className={styles.centerCol}>{props.main}</div>
+      <div className={styles.detailsCol}>{props.details}</div>
+
+      <div
+        className={props.sidebarCollapsed ? styles.hidden : styles.handle}
+        style={{ left: `${left}px` }}
+        onPointerDown={startDrag('sidebar')}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整会话列表宽度"
+      />
+      <div
+        className={props.detailsCollapsed ? styles.hidden : styles.handle}
+        style={{ right: `${right}px`, marginRight: '-4px', marginLeft: 0 }}
+        onPointerDown={startDrag('details')}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整详情面板宽度"
+      />
+    </div>
+  )
+}

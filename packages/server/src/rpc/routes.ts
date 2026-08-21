@@ -1,5 +1,6 @@
 import type { RpcMethod, RpcParams, RpcResult } from '@ccw/shared'
 
+import { browseDirectory } from '../files/browse.ts'
 import { suggestFiles } from '../files/suggest.ts'
 import { listProjects, readMessages } from '../history/sessions.ts'
 import type { SessionManager } from '../session/manager.ts'
@@ -70,5 +71,7 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
     'files.suggest': async ({ sessionId, query }) => ({
       suggestions: await suggestFiles(manager.require(sessionId).config.cwd, query),
     }),
+
+    'files.browse': async ({ path, showHidden }) => browseDirectory(path, showHidden ?? false),
   }
 }
