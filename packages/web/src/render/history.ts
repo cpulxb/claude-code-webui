@@ -1,0 +1,82 @@
+import type { SDKMessage, SessionMessage } from '@ccw/shared'
+
+import { applyMessage, type Transcript } from './nodes.ts'
+
+/**
+ * Folds one on-disk transcript message into the transcript.
+ *
+ * Resuming a session does NOT replay it: the CLI hands the JSONL to the model
+ * and emits nothing, exactly as the terminal does — the TUI paints history by
+ * reading the same file. So the browser has to read it too.
+ *
+ * The live path cannot be reused as-is for two reasons:
+ *
+ *  - `applyMessage`'s `user` branch only picks out `tool_result` blocks, because
+ *    live user messages are echoed locally the moment they are sent. Replaying
+ *    through it would drop every prompt the user actually typed.
+ *  - `system` messages survive on disk as a bare envelope: `message` is null and
+ *    there is no `subtype` to dispatch on, even with `includeSystemMessages`.
+ *    Nothing can be rendered from them, so they are skipped.
+ */
+export function applyHistoryMessage(transcript: Transcript, entry: SessionMessage): void {
+  if (entry.type === 'system') return
+
+  if (entry.type === 'assistant') {
+    // Shapes match field for field here; only `message` is untyped on disk.
+    applyMessage(transcript, entry as unknown as SDKMessage)
+    return
+  }
+
+  const content = (entry.message as { content?: unknown } | null)?.content
+  if (typeof content === 'string') {
+    applyUserText(transcript, entry.uuid, content, 0)
+    return
+  }
+  if (!Array.isArray(content)) return
+
+  const blocks = content as { type: string; text?: string }[]
+  const text = blocks
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text ?? '')
+    .join('\n')
+  const images = blocks.filter((block) => block.type === 'image' || block.type === 'document').length
+  if (text || images) applyUserText(transcript, entry.uuid, text, images)
+
+  // Tool results ride in on user messages; the live renderer already knows how
+  // to attach them to their card.
+  if (blocks.some((block) => block.type === 'tool_result')) {
+    applyMessage(transcript, entry as unknown as SDKMessage)
+  }
+}
+
+/** `<local-command-stdout>…</local-command-stdout>` — a slash command's output. */
+const LOCAL_OUTPUT = /^<local-command-stdout>([\s\S]*)<\/local-command-stdout>$/
+/** The envelope the CLI writes for a slash command the user ran. */
+const COMMAND_NAME = /<command-name>([^<]*)<\/command-name>/
+const COMMAND_ARGS = /<command-args>([^<]*)<\/command-args>/
+
+function applyUserText(transcript: Transcript, uuid: string, raw: string, attachments: number): void {
+  const trimmed = raw.trim()
+
+  const output = LOCAL_OUTPUT.exec(trimmed)
+  if (output) {
+    transcript.nodes.push({ kind: 'localOutput', id: uuid, content: output[1] ?? '' })
+    return
+  }
+
+  // A slash command is stored as its XML envelope, which is noise on screen —
+  // the terminal shows the command line itself, so show that.
+  const name = COMMAND_NAME.exec(trimmed)
+  if (name) {
+    const args = COMMAND_ARGS.exec(trimmed)?.[1]?.trim()
+    transcript.nodes.push({
+      kind: 'user',
+      id: uuid,
+      text: `${name[1]}${args ? ` ${args}` : ''}`,
+      attachments: 0,
+    })
+    return
+  }
+
+  transcript.nodes.push({ kind: 'user', id: uuid, text: raw, attachments })
+}

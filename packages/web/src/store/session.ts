@@ -14,6 +14,7 @@ import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 
 import { call, connectEvents, type ConnectionStatus } from '../api/client.ts'
+import { applyHistoryMessage } from '../render/history.ts'
 import { applyMessage, emptyTranscript, type Transcript } from '../render/nodes.ts'
 
 /** Facts the CLI reports once per turn in its `init` message. */
@@ -33,6 +34,13 @@ export type SessionState = {
   cwd: string
   transcript: Transcript
   status: 'idle' | 'running'
+  /**
+   * Whether a CLI process is backing this session. Sessions opened from the
+   * sidebar start false: reading history costs nothing, but resuming spawns a
+   * process that writes to the same JSONL the terminal may have open. The
+   * runner is started on the first message instead.
+   */
+  attached: boolean
   closed: boolean
   error: string | null
   init: SessionInit | null
@@ -68,12 +76,13 @@ type Store = {
   respondToPermission: (requestId: string, decision: PermissionDecision) => Promise<void>
 }
 
-function newSession(sessionId: string, cwd: string): SessionState {
+function newSession(sessionId: string, cwd: string, attached: boolean): SessionState {
   return {
     sessionId,
     cwd,
     transcript: emptyTranscript(),
     status: 'idle',
+    attached,
     closed: false,
     error: null,
     init: null,
@@ -116,7 +125,7 @@ export const useStore = create<Store>()(
       // dropped, which would leave the command and model lists empty.
       const sessionId = crypto.randomUUID()
       set((state) => {
-        state.sessions[sessionId] = newSession(sessionId, cwd)
+        state.sessions[sessionId] = newSession(sessionId, cwd, true)
         state.activeId = sessionId
       })
       try {
@@ -132,8 +141,10 @@ export const useStore = create<Store>()(
       return sessionId
     },
 
-    // Resuming replays the transcript from disk by handing the CLI the same
-    // session id; the runner streams it back as ordinary events.
+    // Opening is read-only. Resuming would spawn a CLI process that appends to
+    // the very JSONL the terminal may have open, and two writers clobber each
+    // other — so the transcript is read off disk and the runner is deferred
+    // until the user actually says something.
     openSession: async (sessionId, cwd) => {
       if (get().sessions[sessionId]) {
         set((state) => {
@@ -143,19 +154,10 @@ export const useStore = create<Store>()(
       }
       const target = cwd ?? get().defaultCwd
       set((state) => {
-        state.sessions[sessionId] = newSession(sessionId, target)
+        state.sessions[sessionId] = newSession(sessionId, target, false)
         state.activeId = sessionId
       })
-      try {
-        await call('session.create', { cwd: target, resume: sessionId })
-      } catch (error) {
-        set((state) => {
-          delete state.sessions[sessionId]
-          if (state.activeId === sessionId) state.activeId = null
-        })
-        throw error
-      }
-      void loadSessionMeta(set, get, sessionId)
+      await loadHistory(set, get, sessionId, target)
     },
 
     setActive: (sessionId) =>
@@ -185,6 +187,7 @@ export const useStore = create<Store>()(
     send: async (text, attachments) => {
       const sessionId = get().activeId
       if (!sessionId) return
+      await attach(set, get, sessionId)
       set((state) => {
         const session = state.sessions[sessionId]
         if (!session) return
@@ -203,13 +206,14 @@ export const useStore = create<Store>()(
 
     interrupt: async () => {
       const sessionId = get().activeId
-      if (sessionId) await call('session.interrupt', { sessionId })
+      // Nothing to interrupt before a runner exists.
+      if (sessionId && get().sessions[sessionId]?.attached) await call('session.interrupt', { sessionId })
     },
 
     setPermissionMode: async (mode) => {
       const sessionId = get().activeId
       if (!sessionId) return
-      await call('session.setPermissionMode', { sessionId, mode })
+      if (get().sessions[sessionId]?.attached) await call('session.setPermissionMode', { sessionId, mode })
       set((state) => {
         const session = state.sessions[sessionId]
         if (session) session.permissionMode = mode
@@ -219,7 +223,7 @@ export const useStore = create<Store>()(
     setEffort: async (effort) => {
       const sessionId = get().activeId
       if (!sessionId) return
-      await call('session.setEffort', { sessionId, effort })
+      if (get().sessions[sessionId]?.attached) await call('session.setEffort', { sessionId, effort })
       set((state) => {
         const session = state.sessions[sessionId]
         if (session) session.effort = effort
@@ -229,7 +233,7 @@ export const useStore = create<Store>()(
     setModel: async (model) => {
       const sessionId = get().activeId
       if (!sessionId) return
-      await call('session.setModel', { sessionId, model })
+      if (get().sessions[sessionId]?.attached) await call('session.setModel', { sessionId, model })
       set((state) => {
         const session = state.sessions[sessionId]
         if (session) session.model = model
@@ -318,6 +322,32 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
 }
 
 /**
+ * Starts the CLI process behind a session opened read-only from the sidebar.
+ *
+ * Whatever mode, model, or effort was picked while detached is handed to the
+ * runner at startup, since there was no process to forward those calls to.
+ */
+async function attach(set: Setter, get: () => Store, sessionId: string): Promise<void> {
+  const session = get().sessions[sessionId]
+  if (!session || session.attached) return
+  await call('session.create', {
+    cwd: session.cwd,
+    resume: sessionId,
+    permissionMode: session.permissionMode,
+    effort: session.effort,
+    ...(session.model ? { model: session.model } : {}),
+  })
+  set((state) => {
+    const target = state.sessions[sessionId]
+    if (target) {
+      target.attached = true
+      target.closed = false
+    }
+  })
+  await loadSessionMeta(set, get, sessionId)
+}
+
+/**
  * Reconciles local session state against the server's runner table. Anything
  * the server no longer runs is marked closed rather than deleted, so the
  * transcript stays readable and the sidebar can reopen it.
@@ -329,8 +359,9 @@ async function reconcileSessions(set: Setter): Promise<void> {
     state.projects = projects
     if (!state.defaultCwd && projects[0]) state.defaultCwd = projects[0].cwd
     for (const session of Object.values(state.sessions)) {
-      // A session mid-creation has no runner yet; leave it alone.
-      if (session.init === null && session.commands.length === 0) continue
+      // A detached session has no runner by design, and one mid-creation does
+      // not have one yet — neither is evidence the server dropped anything.
+      if (!session.attached) continue
       if (!live.has(session.sessionId)) {
         session.closed = true
         session.status = 'idle'
@@ -339,7 +370,33 @@ async function reconcileSessions(set: Setter): Promise<void> {
   })
 }
 
-async function loadContextUsage(set: Setter, get: () => Store, sessionId: string): Promise<void> {  try {
+/**
+ * Replays a session's on-disk transcript into the store.
+ *
+ * A failure here is worth surfacing: an empty pane is indistinguishable from a
+ * session that genuinely has no history, and silently showing one for the other
+ * is how the missing replay went unnoticed in the first place.
+ */
+async function loadHistory(set: Setter, get: () => Store, sessionId: string, cwd: string): Promise<void> {
+  try {
+    const { messages } = await call('history.messages', { sessionId, cwd })
+    if (!get().sessions[sessionId]) return
+    const transcript = emptyTranscript()
+    for (const entry of messages) applyHistoryMessage(transcript, entry)
+    set((state) => {
+      const session = state.sessions[sessionId]
+      if (session) session.transcript = transcript
+    })
+  } catch (error) {
+    set((state) => {
+      const session = state.sessions[sessionId]
+      if (session) session.error = `读取历史记录失败：${String(error)}`
+    })
+  }
+}
+
+async function loadContextUsage(set: Setter, get: () => Store, sessionId: string): Promise<void> {
+  try {
     const { usage } = await call('session.contextUsage', { sessionId })
     if (!get().sessions[sessionId]) return
     set((state) => {

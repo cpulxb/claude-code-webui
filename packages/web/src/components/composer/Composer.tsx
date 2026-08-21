@@ -196,7 +196,11 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
             rows={1}
             disabled={session.closed}
             placeholder={
-              session.closed ? '会话已结束 — 从侧栏重新打开即可继续' : '输入消息，/ 唤出命令，@ 引用文件'
+              session.closed
+                ? '会话已结束 — 从侧栏重新打开即可继续'
+                : session.attached
+                  ? '输入消息，/ 唤出命令，@ 引用文件'
+                  : '只读回放 — 发送消息后由 WebUI 接管这个会话'
             }
             onChange={(event) => updateText(event.target.value, event.target.selectionStart)}
             onKeyDown={onKeyDown}
