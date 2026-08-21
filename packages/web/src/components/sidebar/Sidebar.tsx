@@ -18,6 +18,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
   const defaultCwd = useStore((state) => state.defaultCwd)
   const createSession = useStore((state) => state.createSession)
   const openSession = useStore((state) => state.openSession)
+  const closeSession = useStore((state) => state.closeSession)
   const refreshProjects = useStore((state) => state.refreshProjects)
 
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
@@ -69,7 +70,8 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
             onToggle={() =>
               setCollapsedGroups((current) => ({ ...current, [project.cwd]: !(current[project.cwd] ?? false) }))
             }
-            onOpen={(sessionId) => void openSession(sessionId, project.cwd)}
+            onOpen={(sessionId) => void openSession(sessionId, project.cwd).then(() => refreshProjects())}
+            onClose={(sessionId) => void closeSession(sessionId)}
           />
         ))}
       </div>
@@ -92,6 +94,7 @@ function ProjectRow(props: {
   activeId: string | null
   onToggle: () => void
   onOpen: (sessionId: string) => void
+  onClose: (sessionId: string) => void
 }): JSX.Element {
   return (
     <>
@@ -103,17 +106,32 @@ function ProjectRow(props: {
       </button>
       {!props.collapsed &&
         props.project.sessions.map((session) => (
-          <button
+          <div
             key={session.sessionId}
             className={`${styles.item} ${session.sessionId === props.activeId ? styles.itemActive : ''}`}
-            onClick={() => props.onOpen(session.sessionId)}
-            type="button"
-            title={session.summary}
           >
-            {session.live && <span className={styles.liveDot} />}
-            <span className={styles.itemTitle}>{session.summary || '(无标题)'}</span>
-            <span className={styles.itemAge}>{age(session.lastModified)}</span>
-          </button>
+            <button
+              className={styles.itemOpen}
+              onClick={() => props.onOpen(session.sessionId)}
+              type="button"
+              title={session.summary}
+            >
+              {session.live && <span className={styles.liveDot} />}
+              <span className={styles.itemTitle}>{session.summary || '(无标题)'}</span>
+              <span className={styles.itemAge}>{age(session.lastModified)}</span>
+            </button>
+            {session.live && (
+              <button
+                className={styles.itemClose}
+                onClick={() => props.onClose(session.sessionId)}
+                type="button"
+                title="关闭会话（结束它的 CLI 进程）"
+                aria-label="关闭会话"
+              >
+                ×
+              </button>
+            )}
+          </div>
         ))}
     </>
   )

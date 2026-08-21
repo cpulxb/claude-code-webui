@@ -161,6 +161,9 @@ export const useStore = create<Store>()(
         delete state.sessions[sessionId]
         if (state.activeId === sessionId) state.activeId = Object.keys(state.sessions)[0] ?? null
       })
+      // The sidebar's live dots come from the runner table, so they only go
+      // stale if the list is not re-read here.
+      await get().refreshProjects()
     },
 
     refreshProjects: async () => {

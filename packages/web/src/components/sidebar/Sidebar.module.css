@@ -105,6 +105,7 @@
 }
 
 .item {
+  position: relative;
   display: flex;
   gap: var(--ccw-space-2);
   align-items: baseline;
@@ -113,6 +114,35 @@
   font-size: var(--ccw-text-base);
   color: var(--ccw-text-secondary);
   text-align: left;
+}
+
+.itemOpen {
+  display: flex;
+  flex: 1;
+  gap: var(--ccw-space-2);
+  align-items: baseline;
+  min-width: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+/* A live row owns a CLI subprocess, so closing it needs to stay one click
+   away — but not so present that it competes with the title. */
+.itemClose {
+  flex: none;
+  padding: 0 2px;
+  color: var(--ccw-text-faint);
+  font-size: var(--ccw-text-sm);
+  opacity: 0;
+}
+
+.item:hover .itemClose {
+  opacity: 1;
+}
+
+.itemClose:hover {
+  color: var(--ccw-text-primary);
 }
 
 .item:hover {
