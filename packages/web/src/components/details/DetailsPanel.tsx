@@ -1,3 +1,4 @@
+import type { ContextUsage } from '@ccw/shared'
 import { useState } from 'react'
 
 import type { SessionState } from '../../store/session.ts'
@@ -89,6 +90,8 @@ export function DetailsPanel({
               // `init` opens a turn, so a freshly created session has none yet.
               <div className={styles.empty}>发送首条消息后显示工具与 MCP 详情</div>
             )}
+
+            {session.contextUsage && <ContextSection usage={session.contextUsage} />}
           </>
         )}
       </div>
@@ -103,4 +106,64 @@ function Field({ label, value, mono }: { label: string; value: string; mono?: bo
       <span className={`${styles.value} ${mono ? styles.mono : ''}`}>{value}</span>
     </div>
   )
+}
+
+/**
+ * The CLI colours these rows with theme names rather than CSS values, so the
+ * mapping lives here. An unrecognised name is a new theme slot, not an error.
+ */
+const CONTEXT_COLORS: Record<string, string> = {
+  claude: 'var(--ccw-accent)',
+  permission: 'var(--ccw-accent)',
+  planMode: 'var(--ccw-accent)',
+  autoAccept: 'var(--ccw-success)',
+  success: 'var(--ccw-success)',
+  warning: 'var(--ccw-warning)',
+  error: 'var(--ccw-danger)',
+  text: 'var(--ccw-text-primary)',
+  secondaryText: 'var(--ccw-text-secondary)',
+  promptBorder: 'var(--ccw-border-l2)',
+}
+
+function contextColor(name: string): string {
+  return CONTEXT_COLORS[name] ?? 'var(--ccw-text-faint)'
+}
+
+/** The `/context` grid and category breakdown, in the terminal's own layout. */
+function ContextSection({ usage }: { usage: ContextUsage }): JSX.Element {
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>上下文</div>
+      <Field label="占用" value={`${usage.percentage}% · ${tokens(usage.totalTokens)} / ${tokens(usage.rawMaxTokens)}`} />
+
+      <div className={styles.grid}>
+        {usage.gridRows.map((row, y) => (
+          <div key={y} className={styles.gridRow}>
+            {row.map((cell, x) => (
+              <span
+                key={x}
+                className={styles.square}
+                style={{ background: contextColor(cell.color), opacity: cell.isFilled ? 1 : 0.2 }}
+                title={`${cell.categoryName} · ${tokens(cell.tokens)}`}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {usage.categories.map((category) => (
+        <div key={category.name} className={styles.catRow}>
+          <span className={styles.catDot} style={{ background: contextColor(category.color) }} />
+          <span className={styles.catName}>{category.name}</span>
+          <span className={styles.catTokens}>{tokens(category.tokens)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function tokens(count: number): string {
+  if (count < 1000) return String(count)
+  if (count < 1_000_000) return `${(count / 1000).toFixed(count < 10_000 ? 1 : 0)}k`
+  return `${(count / 1_000_000).toFixed(1)}M`
 }

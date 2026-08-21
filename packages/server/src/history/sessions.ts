@@ -5,11 +5,13 @@ import type { ProjectGroup, SessionMessage, SessionSummary } from '@ccw/shared'
  * Reads the same on-disk transcripts the terminal's `/resume` picker reads
  * (`~/.claude/projects/<encoded-cwd>/<uuid>.jsonl`), grouped by project.
  *
- * `includeProgrammatic: false` matches what IDE session pickers pass — it hides
- * headless/daemon sessions that were never a human conversation.
+ * `includeProgrammatic` stays true even though IDE pickers pass false: every
+ * session this WebUI starts goes through the SDK and is therefore programmatic,
+ * so filtering them out would hide the app's own conversations from its own
+ * sidebar.
  */
 export async function listProjects(liveIds: Set<string>): Promise<ProjectGroup[]> {
-  const sessions = await listSessions({ includeProgrammatic: false })
+  const sessions = await listSessions({ includeProgrammatic: true })
 
   const byCwd = new Map<string, SessionSummary[]>()
   for (const info of sessions) {

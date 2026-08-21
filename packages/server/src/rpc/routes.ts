@@ -54,6 +54,10 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
       models: await manager.require(sessionId).models(),
     }),
 
+    'session.contextUsage': async ({ sessionId }) => ({
+      usage: await manager.require(sessionId).contextUsage(),
+    }),
+
     'permission.respond': async ({ sessionId, requestId, decision }) => {
       // A stale click after the request was aborted is not an error.
       manager.require(sessionId).respondToPermission(requestId, decision)

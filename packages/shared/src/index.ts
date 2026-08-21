@@ -3,12 +3,16 @@ import type {
   ModelInfo,
   PermissionMode,
   PermissionUpdate,
+  SDKControlGetContextUsageResponse,
   SDKMessage,
   SessionMessage,
   SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk'
 
 export type { EffortLevel, ModelInfo, PermissionMode, PermissionUpdate, SDKMessage, SessionMessage, SlashCommand }
+
+/** The `/context` breakdown: per-category tokens plus the CLI's own grid rows. */
+export type ContextUsage = SDKControlGetContextUsageResponse
 
 export { fuzzyFilter, fuzzyScore } from './fuzzy.ts'
 
@@ -133,6 +137,7 @@ export type RpcMap = {
   'session.setEffort': { params: { sessionId: string; effort: EffortLevel }; result: Record<string, never> }
   'session.commands': { params: { sessionId: string }; result: { commands: SlashCommand[] } }
   'session.models': { params: { sessionId: string }; result: { models: ModelInfo[] } }
+  'session.contextUsage': { params: { sessionId: string }; result: { usage: ContextUsage } }
   'permission.respond': {
     params: { sessionId: string; requestId: string; decision: PermissionDecision }
     result: Record<string, never>

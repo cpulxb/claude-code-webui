@@ -1,5 +1,6 @@
 import type {
   Attachment,
+  ContextUsage,
   EffortLevel,
   ModelInfo,
   PermissionDecision,
@@ -41,6 +42,8 @@ export type SessionState = {
   effort: EffortLevel
   model: string | null
   pendingPermissions: PermissionRequest[]
+  /** `/context` breakdown, refreshed after each turn. Null until the first one. */
+  contextUsage: ContextUsage | null
 }
 
 type Store = {
@@ -80,6 +83,7 @@ function newSession(sessionId: string, cwd: string): SessionState {
     effort: 'high',
     model: null,
     pendingPermissions: [],
+    contextUsage: null,
   }
 }
 
@@ -247,6 +251,7 @@ type Setter = (updater: (state: Store) => void) => void
 
 function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
   let sawInit = false
+  let sawResult = false
 
   set((state) => {
     const session = state.sessions[event.sessionId]
@@ -276,7 +281,10 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
         if (message.type === 'system' && message.subtype === 'session_state_changed') {
           session.status = message.state === 'running' ? 'running' : 'idle'
         }
-        if (message.type === 'result') session.status = 'idle'
+        if (message.type === 'result') {
+          session.status = 'idle'
+          sawResult = true
+        }
         return
       }
       case 'permission_request':
@@ -300,6 +308,23 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
   // fetched at session creation. Re-fetching on the first one covers the case
   // where those control requests raced the CLI's startup and came back empty.
   if (sawInit) void loadSessionMeta(set, get, event.sessionId)
+  // Context only moves when a turn completes, so that is the cheapest moment
+  // to re-read it rather than polling.
+  if (sawResult) void loadContextUsage(set, get, event.sessionId)
+}
+
+async function loadContextUsage(set: Setter, get: () => Store, sessionId: string): Promise<void> {
+  try {
+    const { usage } = await call('session.contextUsage', { sessionId })
+    if (!get().sessions[sessionId]) return
+    set((state) => {
+      const session = state.sessions[sessionId]
+      if (session) session.contextUsage = usage
+    })
+  } catch {
+    // A session that closed mid-flight is the normal case here; the panel just
+    // keeps showing the last reading.
+  }
 }
 
 async function loadSessionMeta(set: Setter, get: () => Store, sessionId: string): Promise<void> {

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { query, type ModelInfo, type Query, type SDKUserMessage, type SlashCommand } from '@anthropic-ai/claude-agent-sdk'
 import type {
   Attachment,
+  ContextUsage,
   EffortLevel,
   PermissionDecision,
   PermissionMode,
@@ -148,6 +149,11 @@ export class SessionRunner {
 
   async models(): Promise<ModelInfo[]> {
     return this.#query.supportedModels()
+  }
+
+  /** The same breakdown the terminal's `/context` command renders. */
+  async contextUsage(): Promise<ContextUsage> {
+    return this.#query.getContextUsage()
   }
 
   respondToPermission(requestId: string, decision: PermissionDecision): boolean {

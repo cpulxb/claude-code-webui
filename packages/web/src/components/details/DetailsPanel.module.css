@@ -127,3 +127,54 @@
 .toggle:hover {
   color: var(--ccw-text-primary);
 }
+
+/* The `/context` square grid, sized to fill the panel at any width. */
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: var(--ccw-space-3) 0;
+}
+
+.gridRow {
+  display: flex;
+  gap: 2px;
+}
+
+.square {
+  flex: 1;
+  aspect-ratio: 1;
+  min-width: 0;
+  border-radius: 1px;
+}
+
+.catRow {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  padding: 2px 0;
+  font-size: var(--ccw-text-sm);
+}
+
+.catDot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+
+.catName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ccw-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catTokens {
+  flex: none;
+  color: var(--ccw-text-faint);
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+}
