@@ -1,17 +1,18 @@
 import { EFFORT_LEVELS, PERMISSION_MODES, type EffortLevel, type ModelInfo, type PermissionMode } from '@ccw/shared'
 
 import styles from './Composer.module.css'
+import { ModeIcon } from './ModeIcon.tsx'
 
-type ModeMeta = { icon: string; label: string; hint: string; danger?: boolean }
+type ModeMeta = { label: string; hint: string; danger?: boolean }
 
 /** Mirrors the terminal's Modes popover, including the order it lists them in. */
 export const MODE_META: Record<PermissionMode, ModeMeta> = {
-  default: { icon: '✋', label: '手动', hint: 'Claude 每次编辑前都会请求批准' },
-  acceptEdits: { icon: '✎', label: '自动编辑', hint: 'Claude 会直接编辑文件，其余操作仍需批准' },
-  plan: { icon: '▤', label: '规划', hint: 'Claude 只探索代码并给出方案，不做任何修改' },
-  auto: { icon: '⚡', label: '自动', hint: '通过安全检查的操作自动批准，有风险的仍会暂停询问' },
-  bypassPermissions: { icon: '⛓', label: '跳过权限', hint: '执行任何操作前都不再询问', danger: true },
-  dontAsk: { icon: '⊘', label: '不询问', hint: '从不弹窗；未预先授权的操作直接拒绝' },
+  default: { label: '手动', hint: 'Claude 每次编辑前都会请求批准' },
+  acceptEdits: { label: '自动编辑', hint: 'Claude 会直接编辑文件，其余操作仍需批准' },
+  plan: { label: '规划', hint: 'Claude 只探索代码并给出方案，不做任何修改' },
+  auto: { label: '自动', hint: '通过安全检查的操作自动批准，有风险的仍会暂停询问' },
+  bypassPermissions: { label: '跳过权限', hint: '执行任何操作前都不再询问', danger: true },
+  dontAsk: { label: '不询问', hint: '从不弹窗；未预先授权的操作直接拒绝' },
 }
 
 const EFFORT_LABEL: Record<EffortLevel, string> = {
@@ -58,7 +59,9 @@ export function ModesPopover(props: {
             role="menuitemradio"
             aria-checked={mode === props.mode}
           >
-            <span className={styles.modeIcon}>{meta.icon}</span>
+            <span className={`${styles.modeIcon} ${meta.danger ? styles.modeDanger : ''}`}>
+              <ModeIcon mode={mode} size={17} />
+            </span>
             <span className={styles.modeText}>
               <span className={`${styles.modeTitle} ${meta.danger ? styles.modeDanger : ''}`}>{meta.label}</span>
               <span className={styles.modeHint} style={{ display: 'block' }}>

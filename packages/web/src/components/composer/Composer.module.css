@@ -231,10 +231,11 @@
 }
 
 .modeIcon {
+  display: flex;
   flex: none;
+  justify-content: center;
   width: 18px;
   padding-top: 2px;
-  text-align: center;
 }
 
 .modeText {

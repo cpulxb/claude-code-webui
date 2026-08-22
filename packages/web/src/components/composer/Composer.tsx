@@ -6,6 +6,7 @@ import type { SessionState } from '../../store/session.ts'
 import { useStore } from '../../store/session.ts'
 import { fileToAttachment } from '../../utils/attachments.ts'
 import styles from './Composer.module.css'
+import { ModeIcon } from './ModeIcon.tsx'
 import { MODE_META, ModesPopover } from './ModesPopover.tsx'
 import { applyTrigger, detectTrigger, type Trigger } from './trigger.ts'
 import { TriggerMenu, type MenuItem } from './TriggerMenu.tsx'
@@ -241,7 +242,11 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
               aria-haspopup="menu"
               aria-expanded={modesOpen}
             >
-              <span>{mode.icon}</span>
+              <ModeIcon
+                mode={session.permissionMode}
+                size={14}
+                className={mode.danger ? styles.modeDanger : undefined}
+              />
               <span className={mode.danger ? styles.modeDanger : ''}>{mode.label}</span>
             </button>
 
