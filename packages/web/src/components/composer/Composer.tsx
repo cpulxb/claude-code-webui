@@ -115,6 +115,20 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
     setTrigger(null)
   }, [text, attachments, send])
 
+  // The `/` button. A slash is only a command at the very start of the input —
+  // see `detectTrigger` — so it goes there rather than at the caret.
+  const openCommands = useCallback(() => {
+    const element = textareaRef.current
+    if (!element) return
+    const next = text.startsWith('/') ? text : `/${text}`
+    setText(next)
+    setTrigger(detectTrigger(next, 1))
+    requestAnimationFrame(() => {
+      element.focus()
+      element.setSelectionRange(1, 1)
+    })
+  }, [text])
+
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     if (trigger && items.length > 0) {
       if (event.key === 'ArrowDown') {
@@ -167,7 +181,15 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
             <TriggerMenu
               items={items}
               activeIndex={activeIndex}
-              emptyText={trigger.kind === '/' ? '没有匹配的命令' : '没有匹配的文件'}
+              emptyText={
+                // Both menus are answered by the runner, which a read-only
+                // session has none of — that is not the same as "no matches".
+                !session.attached
+                  ? '只读回放中 — 发送消息接管后可用'
+                  : trigger.kind === '/'
+                    ? '没有匹配的命令'
+                    : '没有匹配的文件'
+              }
               onSelect={choose}
               onHover={setActiveIndex}
             />
@@ -234,6 +256,12 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
             >
               +
             </button>
+            <button className={styles.iconButton} onClick={openCommands} type="button" title="斜杠命令">
+              /
+            </button>
+
+            <span className={styles.spacer} />
+
             <button
               className={styles.modeButton}
               ref={modeButtonRef}
@@ -249,8 +277,6 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
               />
               <span className={mode.danger ? styles.modeDanger : ''}>{mode.label}</span>
             </button>
-
-            <span className={styles.spacer} />
 
             {running ? (
               <button

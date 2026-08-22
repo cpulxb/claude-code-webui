@@ -159,8 +159,9 @@
   overflow-y: auto;
 }
 
+/* Anchored to the mode button, which sits at the right end of the toolbar. */
 .modesPopover {
-  right: auto;
+  right: 0;
   left: auto;
   width: 340px;
 }
