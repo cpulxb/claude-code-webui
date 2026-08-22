@@ -7,8 +7,10 @@ import type {
   EffortLevel,
   PermissionDecision,
   PermissionMode,
+  PermissionRequest,
   ServerEvent,
   SessionConfig,
+  SessionStatus,
 } from '@ccw/shared'
 
 import { resolveClaudeExecutable } from '../config.ts'
@@ -35,6 +37,7 @@ export class SessionRunner {
   readonly #emit: EmitEvent
   readonly #query: Query
   #done = false
+  #status: SessionStatus = 'idle'
 
   constructor(config: SessionConfig, emit: EmitEvent) {
     this.config = config
@@ -64,24 +67,21 @@ export class SessionRunner {
         thinking: { type: 'adaptive', display: 'summarized' },
         ...(resolveClaudeExecutable() ? { pathToClaudeCodeExecutable: resolveClaudeExecutable()! } : {}),
         canUseTool: async (toolName, input, options) => {
-          this.#emit({
-            type: 'permission_request',
-            sessionId: this.sessionId,
-            request: {
-              requestId: options.requestId,
-              toolUseId: options.toolUseID,
-              toolName,
-              input,
-              title: options.title,
-              displayName: options.displayName,
-              description: options.description,
-              suggestions: options.suggestions,
-              blockedPath: options.blockedPath,
-              decisionReason: options.decisionReason,
-              agentId: options.agentID,
-            },
-          })
-          return this.#permissions.await(options.requestId, options.signal, options.suggestions)
+          const request: PermissionRequest = {
+            requestId: options.requestId,
+            toolUseId: options.toolUseID,
+            toolName,
+            input,
+            title: options.title,
+            displayName: options.displayName,
+            description: options.description,
+            suggestions: options.suggestions,
+            blockedPath: options.blockedPath,
+            decisionReason: options.decisionReason,
+            agentId: options.agentID,
+          }
+          this.#emit({ type: 'permission_request', sessionId: this.sessionId, request })
+          return this.#permissions.await(request, options.signal)
         },
         stderr: (data) => {
           process.stderr.write(`[cli ${this.sessionId.slice(0, 8)}] ${data}`)
@@ -97,6 +97,16 @@ export class SessionRunner {
   async #pump(): Promise<void> {
     try {
       for await (const message of this.#query) {
+        // Tracked here as well as in the browser: a page that reloads mid-turn
+        // has no way to tell a working session from a finished one otherwise.
+        //
+        // `send` opening the turn is what actually drives this — CLI 2.1.237
+        // never emits `session_state_changed`, so the branch below is only a
+        // more precise signal if a later version starts sending it.
+        if (message.type === 'system' && message.subtype === 'session_state_changed') {
+          this.#status = message.state === 'running' ? 'running' : 'idle'
+        }
+        if (message.type === 'result') this.#status = 'idle'
         this.#emit({ type: 'sdk', sessionId: this.sessionId, message })
       }
     } catch (error) {
@@ -107,6 +117,7 @@ export class SessionRunner {
       })
     } finally {
       this.#done = true
+      this.#status = 'idle'
       for (const requestId of this.#permissions.drain()) {
         this.#emit({ type: 'permission_resolved', sessionId: this.sessionId, requestId })
       }
@@ -118,7 +129,18 @@ export class SessionRunner {
     return this.#done
   }
 
+  /** Whether a turn is in flight right now, as the CLI last reported it. */
+  get status(): SessionStatus {
+    return this.#status
+  }
+
+  /** Permission prompts still open, for a browser that reconnected. */
+  get pendingPermissions(): PermissionRequest[] {
+    return this.#permissions.list()
+  }
+
   send(text: string, attachments?: Attachment[]): void {
+    this.#status = 'running'
     this.#input.push({
       type: 'user',
       message: { role: 'user', content: buildContent(text, attachments) },
@@ -129,6 +151,7 @@ export class SessionRunner {
 
   async interrupt(): Promise<void> {
     await this.#query.interrupt()
+    this.#status = 'idle'
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {

@@ -10,6 +10,7 @@ import { useActiveSession, useStore } from './store/session.ts'
 
 export function App(): JSX.Element {
   const connect = useStore((state) => state.connect)
+  const restoreActive = useStore((state) => state.restoreActive)
   const session = useActiveSession()
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -17,6 +18,7 @@ export function App(): JSX.Element {
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
 
   useEffect(() => connect(), [connect])
+  useEffect(() => void restoreActive(), [restoreActive])
 
   useEffect(() => {
     document.documentElement.dataset['theme'] = theme

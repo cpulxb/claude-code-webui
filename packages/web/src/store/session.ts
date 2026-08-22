@@ -8,6 +8,7 @@ import type {
   PermissionRequest,
   ProjectGroup,
   ServerEvent,
+  SessionStatus,
   SlashCommand,
 } from '@ccw/shared'
 import { PERMISSION_MODES } from '@ccw/shared'
@@ -34,7 +35,7 @@ export type SessionState = {
   sessionId: string
   cwd: string
   transcript: Transcript
-  status: 'idle' | 'running'
+  status: SessionStatus
   /**
    * Whether a CLI process is backing this session. Sessions opened from the
    * sidebar start false: reading history costs nothing, but resuming spawns a
@@ -63,6 +64,7 @@ type Store = {
   defaultCwd: string
 
   connect: () => () => void
+  restoreActive: () => Promise<void>
   createSession: (cwd: string) => Promise<string>
   openSession: (sessionId: string, cwd?: string) => Promise<void>
   setActive: (sessionId: string | null) => void
@@ -135,6 +137,25 @@ export const useStore = create<Store>()(
         onEvent: (event) => handleEvent(set, get, event),
       }),
 
+    /**
+     * Reopens whatever session the tab was on before a reload.
+     *
+     * Only the id and cwd are persisted; everything else — transcript, whether
+     * a runner is still up, what it is doing — is re-read from the server,
+     * which is the authority on all three.
+     */
+    restoreActive: async () => {
+      if (get().activeId) return
+      const remembered = readRememberedSession()
+      if (!remembered) return
+      try {
+        await get().openSession(remembered.sessionId, remembered.cwd)
+      } catch {
+        // The session was deleted, or its project directory moved.
+        localStorage.removeItem(ACTIVE_KEY)
+      }
+    },
+
     createSession: async (cwd) => {
       // Register locally BEFORE the request: the CLI can emit `init` before
       // the HTTP response lands, and an event for an unknown session is
@@ -160,10 +181,11 @@ export const useStore = create<Store>()(
       return sessionId
     },
 
-    // Opening is read-only. Resuming would spawn a CLI process that appends to
-    // the very JSONL the terminal may have open, and two writers clobber each
-    // other — so the transcript is read off disk and the runner is deferred
-    // until the user actually says something.
+    // Opening is read-only *unless the server is already running this session*.
+    // Resuming one it is not would spawn a CLI process that appends to the very
+    // JSONL the terminal may have open, and two writers clobber each other — so
+    // the transcript is read off disk and the runner is deferred until the user
+    // actually says something.
     openSession: async (sessionId, cwd) => {
       if (get().sessions[sessionId]) {
         set((state) => {
@@ -176,7 +198,10 @@ export const useStore = create<Store>()(
         state.sessions[sessionId] = newSession(sessionId, target, false)
         state.activeId = sessionId
       })
+      // Ordered, not raced: adopting can start delivering live events, and the
+      // history replay overwrites the whole transcript when it lands.
       await loadHistory(set, get, sessionId, target)
+      await adoptRunner(set, get, sessionId)
     },
 
     setActive: (sessionId) =>
@@ -276,6 +301,63 @@ export const useStore = create<Store>()(
 )
 
 type Setter = (updater: (state: Store) => void) => void
+
+/**
+ * The session the tab had open, so a reload lands back on it.
+ *
+ * Subscribed rather than written from each action: `activeId` moves in four
+ * places, and only one of them is `setActive`.
+ */
+const ACTIVE_KEY = 'ccw.activeSession'
+
+useStore.subscribe((state) => {
+  const session = state.activeId ? state.sessions[state.activeId] : null
+  if (session) {
+    localStorage.setItem(ACTIVE_KEY, JSON.stringify({ sessionId: session.sessionId, cwd: session.cwd }))
+  } else if (state.activeId === null) {
+    localStorage.removeItem(ACTIVE_KEY)
+  }
+})
+
+function readRememberedSession(): { sessionId: string; cwd: string } | null {
+  const raw = localStorage.getItem(ACTIVE_KEY)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as { sessionId?: unknown; cwd?: unknown }
+    if (typeof parsed.sessionId !== 'string' || typeof parsed.cwd !== 'string') return null
+    return { sessionId: parsed.sessionId, cwd: parsed.cwd }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Re-adopts a session whose CLI process outlived the page.
+ *
+ * The runner table survives a reload; the store does not. Without this the
+ * composer would offer a read-only replay of a session that is still working,
+ * the stop button would be inert, and the next message would `session.create`
+ * a *second* process appending to the same transcript.
+ */
+async function adoptRunner(set: Setter, get: () => Store, sessionId: string): Promise<void> {
+  let state
+  try {
+    state = await call('session.state', { sessionId })
+  } catch {
+    // Treat an unreachable server as "not live"; the reconnect path re-checks.
+    return
+  }
+  if (!state.live || !get().sessions[sessionId]) return
+  set((draft) => {
+    const session = draft.sessions[sessionId]
+    if (!session) return
+    session.attached = true
+    session.status = state.status
+    // Prompts raised while the page was gone are still parked on the CLI side.
+    session.pendingPermissions = state.pendingPermissions
+  })
+  await loadSessionMeta(set, get, sessionId)
+}
 
 function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
   let sawInit = false

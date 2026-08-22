@@ -29,6 +29,9 @@ export const PERMISSION_MODES = [
 /** Effort levels from cheapest to deepest — the slider's five stops. */
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const satisfies readonly EffortLevel[]
 
+/** Whether a turn is in flight. Mirrors the CLI's `session_state_changed`. */
+export type SessionStatus = 'idle' | 'running'
+
 /**
  * A tool call waiting on the user. Mirrors the fields the SDK's `canUseTool`
  * callback receives; `title`/`displayName`/`description` are rendered as-is
@@ -129,6 +132,19 @@ export type RpcMap = {
     result: Record<string, never>
   }
   'session.interrupt': { params: { sessionId: string }; result: Record<string, never> }
+  /**
+   * What the server knows about a session that the browser cannot.
+   *
+   * A reload wipes the page but not the CLI process behind it, so `live` is the
+   * only trustworthy answer to "is this session already running?" — guessing
+   * `false` would present a live session as a read-only replay and let the next
+   * message spawn a second process writing the same transcript. `status` and
+   * `pendingPermissions` restore what the dropped downlink took with it.
+   */
+  'session.state': {
+    params: { sessionId: string }
+    result: { live: boolean; status: SessionStatus; pendingPermissions: PermissionRequest[] }
+  }
   'session.setPermissionMode': {
     params: { sessionId: string; mode: PermissionMode }
     result: Record<string, never>

@@ -31,6 +31,14 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
       return {}
     },
 
+    // Unknown ids are the normal case here, not a client bug: the browser asks
+    // about every session it opens, and most have no runner behind them.
+    'session.state': async ({ sessionId }) => {
+      if (!manager.has(sessionId)) return { live: false, status: 'idle', pendingPermissions: [] }
+      const runner = manager.require(sessionId)
+      return { live: true, status: runner.status, pendingPermissions: runner.pendingPermissions }
+    },
+
     'session.setPermissionMode': async ({ sessionId, mode }) => {
       await manager.require(sessionId).setPermissionMode(mode)
       return {}
