@@ -54,6 +54,12 @@ export type SessionState = {
   pendingPermissions: PermissionRequest[]
   /** `/context` breakdown, refreshed after each turn. Null until the first one. */
   contextUsage: ContextUsage | null
+  /**
+   * Mid-turn context total, read off each streamed assistant message's API
+   * usage. Null while idle — between turns the authoritative snapshot above
+   * is the fresher reading.
+   */
+  liveTokens: number | null
 }
 
 type Store = {
@@ -96,6 +102,7 @@ function newSession(sessionId: string, cwd: string, attached: boolean): SessionS
     model: null,
     pendingPermissions: [],
     contextUsage: null,
+    liveTokens: null,
   }
 }
 
@@ -178,6 +185,9 @@ export const useStore = create<Store>()(
         throw error
       }
       void loadSessionMeta(set, get, sessionId)
+      // The boot cost (system prompt, tools, memory files) is context already
+      // spent — read it now so the ring shows during the first turn, not after.
+      void loadContextUsage(set, get, sessionId)
       return sessionId
     },
 
@@ -375,6 +385,19 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
         const message = event.message
         applyMessage(session.transcript, message)
 
+        // Every in-turn API round-trip streams an assistant message whose
+        // usage *is* the current context size — realtime data the ring can
+        // track without polling. Subagent messages are skipped: they burn
+        // their own context window, not this session's.
+        if (message.type === 'assistant' && message.parent_tool_use_id === null) {
+          const usage = message.message.usage
+          session.liveTokens =
+            usage.input_tokens +
+            (usage.cache_read_input_tokens ?? 0) +
+            (usage.cache_creation_input_tokens ?? 0) +
+            usage.output_tokens
+        }
+
         if (message.type === 'system' && message.subtype === 'init') {
           sawInit = session.init === null
           session.init = {
@@ -409,10 +432,13 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
       case 'session_error':
         session.error = event.error
         session.status = 'idle'
+        // No `result` follows an errored turn, so nothing else clears this.
+        session.liveTokens = null
         return
       case 'session_closed':
         session.closed = true
         session.status = 'idle'
+        session.liveTokens = null
         return
     }
   })
@@ -450,6 +476,9 @@ async function attach(set: Setter, get: () => Store, sessionId: string): Promise
     }
   })
   await loadSessionMeta(set, get, sessionId)
+  // A session opened read-only has never had a reading — fetch one so the
+  // meter has a denominator during the turn that is about to start.
+  void loadContextUsage(set, get, sessionId)
 }
 
 /**
@@ -510,7 +539,10 @@ async function loadContextUsage(set: Setter, get: () => Store, sessionId: string
     if (!get().sessions[sessionId]) return
     set((state) => {
       const session = state.sessions[sessionId]
-      if (session) session.contextUsage = usage
+      if (!session) return
+      session.contextUsage = usage
+      // The authoritative reading supersedes the mid-turn estimate.
+      session.liveTokens = null
     })
   } catch {
     // A session that closed mid-flight is the normal case here; the panel just

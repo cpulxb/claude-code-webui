@@ -280,7 +280,7 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
               <span className={mode.danger ? styles.modeDanger : ''}>{mode.label}</span>
             </button>
 
-            <ContextMeter usage={session.contextUsage} />
+            <ContextMeter usage={session.contextUsage} liveTokens={session.liveTokens} />
 
             {running ? (
               <button

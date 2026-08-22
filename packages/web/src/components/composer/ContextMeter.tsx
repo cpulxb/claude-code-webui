@@ -12,10 +12,18 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS
  *
  * Unlike dsh, no heuristic composition is needed: the CLI's `getContextUsage`
  * already returns the authoritative `/context` categories, so the panel shows
- * exactly what the terminal command shows. Renders nothing until the first
- * turn completes and a reading exists.
+ * exactly what the terminal command shows. Mid-turn the ring tracks
+ * `liveTokens` — the running total streamed with each assistant message —
+ * and snaps back to the authoritative reading when the turn's snapshot lands.
+ * The category rows always show the snapshot: the stream carries no breakdown.
  */
-export function ContextMeter({ usage }: { usage: ContextUsage | null }): JSX.Element | null {
+export function ContextMeter({
+  usage,
+  liveTokens,
+}: {
+  usage: ContextUsage | null
+  liveTokens: number | null
+}): JSX.Element | null {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLSpanElement>(null)
 
@@ -39,7 +47,11 @@ export function ContextMeter({ usage }: { usage: ContextUsage | null }): JSX.Ele
   }, [open])
 
   if (!usage) return null
-  const percent = Math.min(100, Math.max(0, usage.percentage))
+  // The live figure is an estimate off raw API usage; the snapshot's own
+  // percentage is kept verbatim so the idle reading matches `/context` exactly.
+  const total = liveTokens ?? usage.totalTokens
+  const rawPercent = liveTokens != null ? Math.round((liveTokens / usage.rawMaxTokens) * 100) : usage.percentage
+  const percent = Math.min(100, Math.max(0, rawPercent))
   const label = `上下文已用 ${percent}%`
 
   // "Free space" is the remainder, not an occupant — the ring and the bar
@@ -77,7 +89,7 @@ export function ContextMeter({ usage }: { usage: ContextUsage | null }): JSX.Ele
             <span className={styles.headline}>上下文已用</span>
             <span className={styles.percent}>{percent}%</span>
             <span className={styles.figures}>
-              ~{tokens(usage.totalTokens)} / {tokens(usage.rawMaxTokens)}
+              ~{tokens(total)} / {tokens(usage.rawMaxTokens)}
             </span>
           </div>
 
