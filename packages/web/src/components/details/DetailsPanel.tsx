@@ -2,6 +2,7 @@ import type { ContextUsage } from '@ccw/shared'
 import { useState } from 'react'
 
 import type { SessionState } from '../../store/session.ts'
+import { PanelRightIcon } from '../Icons.tsx'
 import styles from './DetailsPanel.module.css'
 
 /** Session facts drawn from the CLI's own `init` message. */
@@ -26,7 +27,7 @@ export function DetailsPanel({
         会话详情
         <span className={styles.spacer} />
         <button className={styles.iconButton} onClick={onCollapse} type="button" title="收起面板">
-          ⊟
+          <PanelRightIcon />
         </button>
       </div>
 

@@ -5,6 +5,7 @@ import { AppFrame } from './components/AppFrame.tsx'
 import { ChatView } from './components/chat/ChatView.tsx'
 import { Composer } from './components/composer/Composer.tsx'
 import { DetailsPanel } from './components/details/DetailsPanel.tsx'
+import { MoonIcon, PanelLeftIcon, PanelRightIcon, SunIcon } from './components/Icons.tsx'
 import { Sidebar } from './components/sidebar/Sidebar.tsx'
 import { useActiveSession, useStore } from './store/session.ts'
 
@@ -35,7 +36,7 @@ export function App(): JSX.Element {
           <div className={styles.header}>
             {sidebarCollapsed && (
               <button className={styles.iconButton} onClick={() => setSidebarCollapsed(false)} type="button" title="展开侧栏">
-                ⊞
+                <PanelLeftIcon />
               </button>
             )}
             <span className={styles.title}>{session ? shortCwd(session.cwd) : 'Claude Code'}</span>
@@ -48,7 +49,7 @@ export function App(): JSX.Element {
               type="button"
               title="切换主题"
             >
-              {theme === 'light' ? '☾' : '☀'}
+              {theme === 'light' ? <MoonIcon /> : <SunIcon />}
             </button>
             <button
               className={styles.iconButton}
@@ -56,7 +57,7 @@ export function App(): JSX.Element {
               type="button"
               title="会话详情"
             >
-              ⊞
+              <PanelRightIcon />
             </button>
           </div>
 

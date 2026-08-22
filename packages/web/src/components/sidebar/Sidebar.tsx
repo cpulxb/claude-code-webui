@@ -2,6 +2,7 @@ import type { ProjectGroup } from '@ccw/shared'
 import { useEffect, useState } from 'react'
 
 import { useStore } from '../../store/session.ts'
+import { PanelLeftIcon } from '../Icons.tsx'
 import { DirectoryPicker } from './DirectoryPicker.tsx'
 import styles from './Sidebar.module.css'
 
@@ -43,7 +44,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
         </span>
         <span className={styles.spacer} />
         <button className={styles.iconButton} onClick={onCollapse} type="button" title="收起侧栏">
-          ⊟
+          <PanelLeftIcon />
         </button>
       </div>
 
