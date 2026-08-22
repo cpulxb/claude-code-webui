@@ -11,7 +11,16 @@ import styles from './ExplorerTree.module.css'
  * per expanded node, never a recursive walk — with a bounded preview overlay
  * behind `files.read`.
  */
-export function ExplorerTree({ cwd, turnStatus }: { cwd: string; turnStatus: SessionStatus }): JSX.Element {
+export function ExplorerTree({
+  cwd,
+  turnStatus,
+  fsVersion,
+}: {
+  cwd: string
+  turnStatus: SessionStatus
+  /** Bumped by the store after a rewind — the tree changed without a turn. */
+  fsVersion: number
+}): JSX.Element {
   const [children, setChildren] = useState<Record<string, TreeEntry[]>>({})
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
@@ -36,7 +45,7 @@ export function ExplorerTree({ cwd, turnStatus }: { cwd: string; turnStatus: Ses
     if (turnStatus !== 'idle') return
     void loadDir(cwd)
     for (const dir of openRef.current) void loadDir(dir)
-  }, [turnStatus, cwd, loadDir])
+  }, [turnStatus, fsVersion, cwd, loadDir])
 
   const toggleDir = (path: string): void => {
     setOpen((prev) => {

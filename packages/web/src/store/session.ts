@@ -7,6 +7,7 @@ import type {
   PermissionMode,
   PermissionRequest,
   ProjectGroup,
+  RewindFilesResult,
   ServerEvent,
   SessionStatus,
   SlashCommand,
@@ -16,7 +17,7 @@ import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 
 import { call, connectEvents, type ConnectionStatus } from '../api/client.ts'
-import { applyHistoryMessage } from '../render/history.ts'
+import { applyHistoryMessage, listUserPromptUuids } from '../render/history.ts'
 import { applyMessage, emptyTranscript, type Transcript } from '../render/nodes.ts'
 
 /** Facts the CLI reports once per turn in its `init` message. */
@@ -60,6 +61,11 @@ export type SessionState = {
    * is the fresher reading.
    */
   liveTokens: number | null
+  /**
+   * Bumped after a file rewind so cwd-watching panels (SCM, Explorer) know
+   * the tree changed without a turn ending.
+   */
+  fsVersion: number
 }
 
 type Store = {
@@ -83,6 +89,8 @@ type Store = {
   setEffort: (effort: EffortLevel) => Promise<void>
   setModel: (model: string) => Promise<void>
   respondToPermission: (requestId: string, decision: PermissionDecision) => Promise<void>
+  /** dryRun previews; a real run bumps `fsVersion` and posts a notice node. */
+  rewindFiles: (nodeId: string, dryRun: boolean) => Promise<RewindFilesResult>
 }
 
 function newSession(sessionId: string, cwd: string, attached: boolean): SessionState {
@@ -103,6 +111,7 @@ function newSession(sessionId: string, cwd: string, attached: boolean): SessionS
     pendingPermissions: [],
     contextUsage: null,
     liveTokens: null,
+    fsVersion: 0,
   }
 }
 
@@ -307,6 +316,30 @@ export const useStore = create<Store>()(
       })
       await call('permission.respond', { sessionId, requestId, decision })
     },
+
+    rewindFiles: async (nodeId, dryRun) => {
+      const sessionId = get().activeId
+      if (!sessionId) throw new Error('没有活跃会话')
+      // The checkpoint store lives in the CLI process, so a session opened
+      // read-only gets its runner started here — same as sending would.
+      await attach(set, get, sessionId)
+      const userMessageId = nodeId.startsWith('local-') ? await resolveUserUuid(get, sessionId, nodeId) : nodeId
+      const { rewind } = await call('session.rewindFiles', { sessionId, userMessageId, dryRun })
+      if (!dryRun && rewind.canRewind) {
+        set((state) => {
+          const session = state.sessions[sessionId]
+          if (!session) return
+          session.fsVersion += 1
+          session.transcript.nodes.push({
+            kind: 'notice',
+            id: `rewind-${Date.now()}-${session.transcript.nodes.length}`,
+            level: 'info',
+            text: `已回退 ${rewind.filesChanged?.length ?? 0} 个文件（+${rewind.insertions ?? 0} −${rewind.deletions ?? 0}）`,
+          })
+        })
+      }
+      return rewind
+    },
   })),
 )
 
@@ -339,6 +372,26 @@ function readRememberedSession(): { sessionId: string; cwd: string } | null {
   } catch {
     return null
   }
+}
+
+/**
+ * Recovers the transcript uuid behind a locally-echoed user node.
+ *
+ * Live sends get a synthetic `local-` id because the CLI does not replay user
+ * messages; the JSONL has the real uuid. Locally-echoed nodes are always the
+ * newest user bubbles, so aligning that tail against the end of the on-disk
+ * prompt list recovers each one's uuid.
+ */
+async function resolveUserUuid(get: () => Store, sessionId: string, nodeId: string): Promise<string> {
+  const session = get().sessions[sessionId]
+  if (!session) throw new Error('会话不存在')
+  const { messages } = await call('history.messages', { sessionId, cwd: session.cwd })
+  const prompts = listUserPromptUuids(messages)
+  const echoed = session.transcript.nodes.filter((node) => node.kind === 'user' && node.id.startsWith('local-'))
+  const position = echoed.findIndex((node) => node.id === nodeId)
+  const uuid = position === -1 ? undefined : prompts[prompts.length - echoed.length + position]
+  if (!uuid) throw new Error('无法在 transcript 中定位这条消息')
+  return uuid
 }
 
 /**

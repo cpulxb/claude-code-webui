@@ -29,6 +29,7 @@
 /* --- user turn ------------------------------------------------------- */
 
 .userTurn {
+  position: relative;
   padding: var(--ccw-space-3) var(--ccw-space-4);
   margin: var(--ccw-space-5) 0 var(--ccw-space-4);
   white-space: pre-wrap;
@@ -39,6 +40,72 @@
 
 .userTurn:first-child {
   margin-top: 0;
+}
+
+.rewindButton {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--ccw-text-muted);
+  visibility: hidden;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.userTurn:hover .rewindButton {
+  visibility: visible;
+}
+
+.rewindButton:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+/* Sits tight under the bubble it belongs to, ahead of the reply below. */
+.rewindCard {
+  display: flex;
+  gap: var(--ccw-space-3);
+  align-items: center;
+  padding: var(--ccw-space-2) var(--ccw-space-3);
+  margin: -10px 0 var(--ccw-space-4);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-secondary);
+  background: var(--ccw-bg-raised);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.rewindError {
+  color: var(--ccw-danger);
+}
+
+.rewindConfirm {
+  padding: 1px 10px;
+  font-size: var(--ccw-text-sm);
+  color: #fff;
+  background: var(--ccw-danger);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.rewindConfirm:hover {
+  opacity: 0.85;
+}
+
+.rewindCancel {
+  padding: 1px 10px;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.rewindCancel:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
 }
 
 .attachmentNote {

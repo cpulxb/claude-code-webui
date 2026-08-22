@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto'
 
-import { query, type ModelInfo, type Query, type SDKUserMessage, type SlashCommand } from '@anthropic-ai/claude-agent-sdk'
+import {
+  query,
+  type ModelInfo,
+  type Query,
+  type RewindFilesResult,
+  type SDKUserMessage,
+  type SlashCommand,
+} from '@anthropic-ai/claude-agent-sdk'
 import type {
   Attachment,
   ContextUsage,
@@ -177,6 +184,11 @@ export class SessionRunner {
   /** The same breakdown the terminal's `/context` command renders. */
   async contextUsage(): Promise<ContextUsage> {
     return this.#query.getContextUsage()
+  }
+
+  /** Checkpoint rewind of tracked files to their state at a user message. */
+  async rewindFiles(userMessageId: string, dryRun: boolean): Promise<RewindFilesResult> {
+    return this.#query.rewindFiles(userMessageId, { dryRun })
   }
 
   respondToPermission(requestId: string, decision: PermissionDecision): boolean {

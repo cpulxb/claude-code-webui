@@ -68,6 +68,10 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
       usage: await manager.require(sessionId).contextUsage(),
     }),
 
+    'session.rewindFiles': async ({ sessionId, userMessageId, dryRun }) => ({
+      rewind: await manager.require(sessionId).rewindFiles(userMessageId, dryRun ?? false),
+    }),
+
     'permission.respond': async ({ sessionId, requestId, decision }) => {
       // A stale click after the request was aborted is not an error.
       manager.require(sessionId).respondToPermission(requestId, decision)

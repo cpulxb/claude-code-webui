@@ -1,7 +1,9 @@
+import type { RewindFilesResult } from '@ccw/shared'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import type { AssistantBlock, ChatNode, StreamingBlock } from '../../render/nodes.ts'
-import type { SessionState } from '../../store/session.ts'
+import { useStore, type SessionState } from '../../store/session.ts'
+import { HistoryIcon } from '../Icons.tsx'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 import styles from './ChatView.module.css'
 import { PermissionCard } from './PermissionCard.tsx'
@@ -10,11 +12,42 @@ import { ToolCard } from './ToolCard.tsx'
 /** Pixels from the bottom within which we keep following new output. */
 const FOLLOW_THRESHOLD = 120
 
+/** One in-flight rewind interaction, anchored to a single user bubble. */
+type RewindState = { nodeId: string; busy: boolean; preview: RewindFilesResult | null; error: string | null }
+
 export function ChatView({ session }: { session: SessionState }): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
+  const rewindFiles = useStore((state) => state.rewindFiles)
+  const [rewind, setRewind] = useState<RewindState | null>(null)
 
   const { nodes, streaming } = session.transcript
+
+  const startRewind = async (nodeId: string): Promise<void> => {
+    setRewind({ nodeId, busy: true, preview: null, error: null })
+    try {
+      const preview = await rewindFiles(nodeId, true)
+      setRewind({
+        nodeId,
+        busy: false,
+        preview,
+        error: preview.canRewind ? null : (preview.error ?? '无法回退到这条消息'),
+      })
+    } catch (cause) {
+      setRewind({ nodeId, busy: false, preview: null, error: cause instanceof Error ? cause.message : String(cause) })
+    }
+  }
+
+  const confirmRewind = async (nodeId: string): Promise<void> => {
+    setRewind((current) => (current ? { ...current, busy: true } : current))
+    try {
+      const result = await rewindFiles(nodeId, false)
+      if (result.canRewind) setRewind(null)
+      else setRewind({ nodeId, busy: false, preview: null, error: result.error ?? '回退失败' })
+    } catch (cause) {
+      setRewind({ nodeId, busy: false, preview: null, error: cause instanceof Error ? cause.message : String(cause) })
+    }
+  }
 
   // Only auto-scroll while the reader is already at the bottom; yanking the
   // viewport away from someone reading scrollback is the classic chat bug.
@@ -44,9 +77,20 @@ export function ChatView({ session }: { session: SessionState }): JSX.Element {
         </div>
       ) : (
         <div className={styles.stream}>
-          {nodes.map((node) => (
-            <NodeView key={node.id} node={node} />
-          ))}
+          {nodes.map((node) =>
+            node.kind === 'user' ? (
+              <UserTurn
+                key={node.id}
+                node={node}
+                rewind={rewind?.nodeId === node.id ? rewind : null}
+                onRewind={() => void startRewind(node.id)}
+                onConfirm={() => void confirmRewind(node.id)}
+                onCancel={() => setRewind(null)}
+              />
+            ) : (
+              <NodeView key={node.id} node={node} />
+            ),
+          )}
           {streaming && <StreamingRow block={streaming} />}
           {session.pendingPermissions.map((request) => (
             <PermissionCard key={request.requestId} request={request} />
@@ -58,16 +102,64 @@ export function ChatView({ session }: { session: SessionState }): JSX.Element {
   )
 }
 
-function NodeView({ node }: { node: ChatNode }): JSX.Element | null {
-  switch (node.kind) {
-    case 'user':
-      return (
-        <div className={styles.userTurn}>
-          {node.text}
-          {node.attachments > 0 && <div className={styles.attachmentNote}>附件 × {node.attachments}</div>}
-        </div>
-      )
+function UserTurn({
+  node,
+  rewind,
+  onRewind,
+  onConfirm,
+  onCancel,
+}: {
+  node: Extract<ChatNode, { kind: 'user' }>
+  rewind: RewindState | null
+  onRewind: () => void
+  onConfirm: () => void
+  onCancel: () => void
+}): JSX.Element {
+  return (
+    <>
+      <div className={styles.userTurn}>
+        {node.text}
+        {node.attachments > 0 && <div className={styles.attachmentNote}>附件 × {node.attachments}</div>}
+        <button
+          className={styles.rewindButton}
+          onClick={onRewind}
+          type="button"
+          title="把文件回退到这条消息之前的状态"
+        >
+          <HistoryIcon size={13} />
+        </button>
+      </div>
 
+      {rewind && (
+        <div className={styles.rewindCard}>
+          {rewind.busy ? (
+            <span>{rewind.preview ? '回退中…' : '检查回退范围…'}</span>
+          ) : rewind.error ? (
+            <span className={styles.rewindError}>{rewind.error}</span>
+          ) : rewind.preview ? (
+            <span>
+              将回退 {rewind.preview.filesChanged?.length ?? 0} 个文件（+{rewind.preview.insertions ?? 0} −
+              {rewind.preview.deletions ?? 0}）
+            </span>
+          ) : null}
+          {!rewind.busy && !rewind.error && rewind.preview && (
+            <button className={styles.rewindConfirm} onClick={onConfirm} type="button">
+              确认回退
+            </button>
+          )}
+          {!rewind.busy && (
+            <button className={styles.rewindCancel} onClick={onCancel} type="button">
+              取消
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+function NodeView({ node }: { node: Exclude<ChatNode, { kind: 'user' }> }): JSX.Element | null {
+  switch (node.kind) {
     case 'assistant':
       return (
         <div className={styles.row}>

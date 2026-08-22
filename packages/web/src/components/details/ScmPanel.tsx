@@ -21,7 +21,16 @@ const STATUS_LETTER: Record<ScmFile['status'], string> = {
  * a two-click discard. Reads through the `scm.*` RPCs, so it works for
  * sessions opened read-only too — no runner required.
  */
-export function ScmSection({ cwd, turnStatus }: { cwd: string; turnStatus: SessionStatus }): JSX.Element {
+export function ScmSection({
+  cwd,
+  turnStatus,
+  fsVersion,
+}: {
+  cwd: string
+  turnStatus: SessionStatus
+  /** Bumped by the store after a rewind — the tree changed without a turn. */
+  fsVersion: number
+}): JSX.Element {
   const [status, setStatus] = useState<ScmStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openPath, setOpenPath] = useState<string | null>(null)
@@ -46,7 +55,7 @@ export function ScmSection({ cwd, turnStatus }: { cwd: string; turnStatus: Sessi
   // pass (status is already `idle`) doubles as the initial read.
   useEffect(() => {
     if (turnStatus === 'idle') void refresh()
-  }, [turnStatus, refresh])
+  }, [turnStatus, fsVersion, refresh])
 
   const baseline = async (): Promise<void> => {
     setBaselining(true)

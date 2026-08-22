@@ -80,3 +80,38 @@ function applyUserText(transcript: Transcript, uuid: string, raw: string, attach
 
   transcript.nodes.push({ kind: 'user', id: uuid, text: raw, attachments })
 }
+
+/**
+ * The uuids of entries that render as user bubbles, in transcript order.
+ *
+ * The rewind flow aligns these against the on-screen user nodes to recover a
+ * real uuid for a locally-echoed message, so this must agree with
+ * `applyHistoryMessage` on exactly which entries become user nodes.
+ */
+export function listUserPromptUuids(messages: SessionMessage[]): string[] {
+  const uuids: string[] = []
+  for (const entry of messages) {
+    if (entry.type !== 'user') continue
+    const content = (entry.message as { content?: unknown } | null)?.content
+
+    let text = ''
+    let media = 0
+    if (typeof content === 'string') {
+      text = content
+    } else if (Array.isArray(content)) {
+      const blocks = content as { type: string; text?: string }[]
+      text = blocks
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text ?? '')
+        .join('\n')
+      media = blocks.filter((block) => block.type === 'image' || block.type === 'document').length
+      if (!text && media === 0) continue
+    } else {
+      continue
+    }
+
+    if (LOCAL_OUTPUT.test(text.trim())) continue
+    uuids.push(entry.uuid)
+  }
+  return uuids
+}

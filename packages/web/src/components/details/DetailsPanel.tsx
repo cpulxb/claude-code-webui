@@ -51,6 +51,7 @@ export function DetailsPanel({
             key={init?.cwd ?? session.cwd}
             cwd={init?.cwd ?? session.cwd}
             turnStatus={session.status}
+            fsVersion={session.fsVersion}
           />
         ) : (
           <>
@@ -66,7 +67,12 @@ export function DetailsPanel({
             </div>
 
             {/* Keyed by cwd: switching workspaces drops open diffs and pending confirms. */}
-            <ScmSection key={init?.cwd ?? session.cwd} cwd={init?.cwd ?? session.cwd} turnStatus={session.status} />
+            <ScmSection
+              key={init?.cwd ?? session.cwd}
+              cwd={init?.cwd ?? session.cwd}
+              turnStatus={session.status}
+              fsVersion={session.fsVersion}
+            />
 
             <div className={styles.section}>
               <div className={styles.sectionTitle}>能力</div>
