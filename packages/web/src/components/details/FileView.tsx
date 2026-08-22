@@ -3,13 +3,14 @@ import { useCallback, useEffect, useState, type KeyboardEvent } from 'react'
 
 import { call } from '../../api/client.ts'
 import { RefreshIcon } from '../Icons.tsx'
+import { CodeEditor } from './CodeEditor.tsx'
 import panelStyles from './DetailsPanel.module.css'
 import styles from './FileView.module.css'
 
 /**
- * One editor tab in the details panel. Renders the bounded `files.read`
- * preview; double-clicking an untruncated text file swaps the view for a
- * textarea whose save writes the whole file back through `files.write`.
+ * One editor tab in the details panel. Text renders through CodeMirror with
+ * syntax highlighting; double-clicking an untruncated file unlocks the same
+ * instance for editing, and save writes the whole file back via `files.write`.
  */
 export function FileView({ path, onSaved }: { path: string; onSaved: () => void }): JSX.Element {
   const [data, setData] = useState<FilePreview | null>(null)
@@ -41,8 +42,11 @@ export function FileView({ path, onSaved }: { path: string; onSaved: () => void 
     setSaving(true)
     try {
       await call('files.write', { path, content: draft })
-      setDraft(null)
+      // Re-read before unlocking: the editor re-locks against `data.content`,
+      // and doing this first makes that exactly the text just written — no
+      // rollback flash between the two renders.
       await load()
+      setDraft(null)
       onSaved()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -51,7 +55,7 @@ export function FileView({ path, onSaved }: { path: string; onSaved: () => void 
     }
   }
 
-  const onEditorKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+  const onEditorKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if ((event.ctrlKey || event.metaKey) && event.key === 's') {
       event.preventDefault()
       void save()
@@ -89,35 +93,28 @@ export function FileView({ path, onSaved }: { path: string; onSaved: () => void 
         <div className={styles.placeholder}>二进制文件，无法预览</div>
       ) : data.kind === 'image' ? (
         <img className={styles.image} src={`data:${data.mediaType};base64,${data.data}`} alt={path} />
-      ) : draft === null ? (
-        <pre
-          className={styles.viewText}
-          onDoubleClick={() => {
-            if (editable) setDraft(data.content)
-          }}
-          title={editable ? '双击编辑' : undefined}
-        >
-          {data.content}
-        </pre>
       ) : (
         <>
-          <textarea
-            className={styles.editor}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={onEditorKeyDown}
-            spellCheck={false}
-            autoFocus
-          />
-          <div className={styles.editBar}>
-            <button className={styles.save} onClick={() => void save()} disabled={saving} type="button">
-              {saving ? '保存中…' : '保存'}
-            </button>
-            <button className={styles.cancel} onClick={() => setDraft(null)} disabled={saving} type="button">
-              取消
-            </button>
-            <span className={styles.hint}>Ctrl+S 保存 · Esc 取消</span>
+          <div
+            onDoubleClick={() => {
+              if (editable && draft === null) setDraft(data.content)
+            }}
+            onKeyDown={draft !== null ? onEditorKeyDown : undefined}
+            title={editable && draft === null ? '双击编辑' : undefined}
+          >
+            <CodeEditor path={path} value={data.content} readOnly={draft === null} onChange={setDraft} />
           </div>
+          {draft !== null && (
+            <div className={styles.editBar}>
+              <button className={styles.save} onClick={() => void save()} disabled={saving} type="button">
+                {saving ? '保存中…' : '保存'}
+              </button>
+              <button className={styles.cancel} onClick={() => setDraft(null)} disabled={saving} type="button">
+                取消
+              </button>
+              <span className={styles.hint}>Ctrl+S 保存 · Esc 取消</span>
+            </div>
+          )}
         </>
       )}
 

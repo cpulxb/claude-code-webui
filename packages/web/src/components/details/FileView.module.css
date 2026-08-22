@@ -38,44 +38,10 @@
   color: var(--ccw-text-faint);
 }
 
-.viewText {
-  min-height: 120px;
-  margin: 0;
-  padding: var(--ccw-space-3);
-  overflow-x: auto;
-  font-family: var(--ccw-font-mono);
-  font-size: var(--ccw-text-sm);
-  line-height: 1.55;
-  white-space: pre;
-  cursor: text;
-  background: var(--ccw-bg-sunken);
-  border-radius: var(--ccw-radius-sm);
-}
-
 .image {
   display: block;
   max-width: 100%;
   border-radius: var(--ccw-radius-sm);
-}
-
-.editor {
-  width: 100%;
-  height: 60vh;
-  padding: var(--ccw-space-3);
-  font-family: var(--ccw-font-mono);
-  font-size: var(--ccw-text-sm);
-  line-height: 1.55;
-  color: var(--ccw-text-primary);
-  white-space: pre;
-  resize: vertical;
-  background: var(--ccw-bg-sunken);
-  border: 1px solid var(--ccw-border-l2);
-  border-radius: var(--ccw-radius-sm);
-}
-
-.editor:focus {
-  border-color: var(--ccw-accent);
-  outline: none;
 }
 
 .editBar {

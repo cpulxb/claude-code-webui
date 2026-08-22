@@ -1,0 +1,112 @@
+/* Light palette mirrors the chat's hljs theme so code reads the same in both. */
+.host {
+  --hl-keyword: #a626a4;
+  --hl-string: #2f7d4f;
+  --hl-number: #b76b01;
+  --hl-definition: #3f6ec6;
+  --hl-type: #c18401;
+
+  overflow: hidden;
+  background: var(--ccw-bg-sunken);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-sm);
+}
+
+:global([data-theme='dark']) .host {
+  --hl-keyword: #c678dd;
+  --hl-string: #98c379;
+  --hl-number: #d19a66;
+  --hl-definition: #61afef;
+  --hl-type: #e5c07b;
+}
+
+.hostEditing {
+  border-color: var(--ccw-accent);
+}
+
+/* --- CodeMirror chrome, mapped onto the design tokens ------------------- */
+
+.host :global(.cm-editor) {
+  background: transparent;
+}
+
+.host :global(.cm-editor.cm-focused) {
+  outline: none;
+}
+
+.host :global(.cm-scroller) {
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-sm);
+  line-height: 1.55;
+}
+
+.host :global(.cm-content) {
+  caret-color: var(--ccw-text-primary);
+}
+
+.host :global(.cm-gutters) {
+  color: var(--ccw-text-faint);
+  background: transparent;
+  border-right: 1px solid var(--ccw-border-l1);
+}
+
+.host :global(.cm-activeLine) {
+  background: var(--ccw-bg-hover);
+}
+
+.host :global(.cm-activeLineGutter) {
+  color: var(--ccw-text-secondary);
+  background: var(--ccw-bg-hover);
+}
+
+.host :global(.cm-matchingBracket) {
+  background: var(--ccw-bg-active);
+}
+
+/* --- token colours (classHighlighter output) ---------------------------- */
+
+.host :global(.tok-comment),
+.host :global(.tok-meta) {
+  font-style: italic;
+  color: var(--ccw-text-faint);
+}
+
+.host :global(.tok-keyword) {
+  color: var(--hl-keyword);
+}
+
+.host :global(.tok-string),
+.host :global(.tok-inserted) {
+  color: var(--hl-string);
+}
+
+.host :global(.tok-number),
+.host :global(.tok-bool),
+.host :global(.tok-atom) {
+  color: var(--hl-number);
+}
+
+.host :global(.tok-definition),
+.host :global(.tok-macroName) {
+  color: var(--hl-definition);
+}
+
+.host :global(.tok-typeName),
+.host :global(.tok-className),
+.host :global(.tok-propertyName) {
+  color: var(--hl-type);
+}
+
+.host :global(.tok-deleted),
+.host :global(.tok-invalid) {
+  color: var(--ccw-danger);
+}
+
+.host :global(.tok-link) {
+  color: var(--ccw-accent);
+  text-decoration: underline;
+}
+
+.host :global(.tok-heading) {
+  font-weight: 600;
+}
