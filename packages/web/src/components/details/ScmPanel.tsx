@@ -16,9 +16,10 @@ const STATUS_LETTER: Record<ScmFile['status'], string> = {
 }
 
 /**
- * 源代码管理 section of the details panel: changed files against HEAD, a
- * per-file unified diff, and a two-click discard. Reads through the `scm.*`
- * RPCs, so it works for sessions opened read-only too — no runner required.
+ * 源代码管理 section of the details panel: changed files against HEAD (real
+ * repos) or the shadow baseline (anything else), a per-file unified diff, and
+ * a two-click discard. Reads through the `scm.*` RPCs, so it works for
+ * sessions opened read-only too — no runner required.
  */
 export function ScmSection({ cwd, turnStatus }: { cwd: string; turnStatus: SessionStatus }): JSX.Element {
   const [status, setStatus] = useState<ScmStatus | null>(null)
@@ -26,6 +27,8 @@ export function ScmSection({ cwd, turnStatus }: { cwd: string; turnStatus: Sessi
   const [openPath, setOpenPath] = useState<string | null>(null)
   const [diff, setDiff] = useState<{ path: string; text: string; binary: boolean } | null>(null)
   const [confirmPath, setConfirmPath] = useState<string | null>(null)
+  /** A baseline commit of a big directory takes seconds — debounce the button. */
+  const [baselining, setBaselining] = useState(false)
   // Guards a slow diff response from landing on a row opened later.
   const openRef = useRef<string | null>(null)
 
@@ -44,6 +47,18 @@ export function ScmSection({ cwd, turnStatus }: { cwd: string; turnStatus: Sessi
   useEffect(() => {
     if (turnStatus === 'idle') void refresh()
   }, [turnStatus, refresh])
+
+  const baseline = async (): Promise<void> => {
+    setBaselining(true)
+    try {
+      await call('scm.shadowBaseline', { cwd })
+      await refresh()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBaselining(false)
+    }
+  }
 
   const toggleDiff = async (path: string): Promise<void> => {
     if (openRef.current === path) {
@@ -81,6 +96,18 @@ export function ScmSection({ cwd, turnStatus }: { cwd: string; turnStatus: Sessi
       <div className={styles.titleRow}>
         <span className={styles.title}>源代码管理</span>
         {status?.kind === 'git' && status.branch && <span className={styles.branch}>{status.branch}</span>}
+        {status?.kind === 'shadow' && <span className={styles.branch}>影子基线</span>}
+        {status?.kind === 'shadow' && (
+          <button
+            className={panelStyles.toggle}
+            onClick={() => void baseline()}
+            disabled={baselining}
+            type="button"
+            title="把当前状态提交为新基线，面板从此对比新基线"
+          >
+            {baselining ? '提交中…' : '重置基线'}
+          </button>
+        )}
         <span className={panelStyles.spacer} />
         <button className={panelStyles.iconButton} onClick={() => void refresh()} type="button" title="刷新">
           <RefreshIcon size={14} />
@@ -92,7 +119,14 @@ export function ScmSection({ cwd, turnStatus }: { cwd: string; turnStatus: Sessi
       {!status ? (
         <div className={panelStyles.empty}>读取中…</div>
       ) : status.kind === 'none' ? (
-        <div className={panelStyles.empty}>当前目录不是 git 仓库</div>
+        <>
+          <div className={panelStyles.empty}>
+            当前目录不是 git 仓库。启用影子跟踪后，以启用时刻为基线查看、放弃之后的所有改动（含 Bash 写盘）。
+          </div>
+          <button className={styles.enableShadow} onClick={() => void baseline()} disabled={baselining} type="button">
+            {baselining ? '建立基线中…' : '启用影子跟踪'}
+          </button>
+        </>
       ) : status.files.length === 0 ? (
         <div className={panelStyles.empty}>工作区没有改动</div>
       ) : (
@@ -119,7 +153,13 @@ export function ScmSection({ cwd, turnStatus }: { cwd: string; turnStatus: Sessi
                 className={confirmPath === file.path ? styles.discardConfirm : styles.discard}
                 onClick={() => (confirmPath === file.path ? void discard(file.path) : setConfirmPath(file.path))}
                 type="button"
-                title={file.status === 'untracked' ? '删除此文件' : '放弃改动，恢复到 HEAD'}
+                title={
+                  file.status === 'untracked'
+                    ? '删除此文件'
+                    : status.kind === 'shadow'
+                      ? '放弃改动，恢复到基线'
+                      : '放弃改动，恢复到 HEAD'
+                }
               >
                 {confirmPath === file.path ? '确认放弃?' : <UndoIcon size={13} />}
               </button>

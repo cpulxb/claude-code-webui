@@ -28,6 +28,24 @@
   overflow-wrap: anywhere;
 }
 
+.enableShadow {
+  padding: 3px 12px;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-secondary);
+  background: var(--ccw-bg-sunken);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.enableShadow:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.enableShadow:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 /* Bleeds past the section edge so the hover pill reads as a full-width row. */
 .fileRow {
   display: flex;

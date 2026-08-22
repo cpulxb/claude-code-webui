@@ -142,11 +142,15 @@ export type ScmFile = {
  * What the source-control panel shows for a directory.
  *
  * `git` means a real repository: changes are measured against `HEAD` (or the
- * empty tree while the branch is unborn). `none` means the directory is not a
- * repository — the shadow-git fallback is a later phase, so for now the panel
- * says so instead of inventing a baseline.
+ * empty tree while the branch is unborn). `shadow` means a non-repo tracked by
+ * an external shadow git dir: changes are measured against its baseline
+ * commit. `none` means nothing tracks the directory yet — the panel offers to
+ * start shadow tracking.
  */
-export type ScmStatus = { kind: 'git'; branch: string | null; files: ScmFile[] } | { kind: 'none' }
+export type ScmStatus =
+  | { kind: 'git'; branch: string | null; files: ScmFile[] }
+  | { kind: 'shadow'; files: ScmFile[] }
+  | { kind: 'none' }
 
 /**
  * Every RPC the server answers over `POST /api/rpc`, keyed by method name.
@@ -224,6 +228,11 @@ export type RpcMap = {
   'scm.diff': { params: { cwd: string; path: string }; result: { diff: string; binary: boolean } }
   /** Destructive: restores the file to HEAD, or deletes it when untracked. */
   'scm.discard': { params: { cwd: string; path: string }; result: Record<string, never> }
+  /**
+   * Creates the shadow repo for a non-git directory on first call, then
+   * (re)commits the current state as the new diff baseline.
+   */
+  'scm.shadowBaseline': { params: { cwd: string }; result: Record<string, never> }
 }
 
 export type RpcMethod = keyof RpcMap

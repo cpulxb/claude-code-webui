@@ -4,7 +4,7 @@ import { browseDirectory } from '../files/browse.ts'
 import { listEntries, readFilePreview } from '../files/explorer.ts'
 import { suggestFiles } from '../files/suggest.ts'
 import { listProjects, readMessages, readPermissionMode } from '../history/sessions.ts'
-import { scmDiff, scmDiscard, scmStatus } from '../scm/git.ts'
+import { scmDiff, scmDiscard, scmStatus, shadowBaseline } from '../scm/git.ts'
 import type { SessionManager } from '../session/manager.ts'
 
 export type RpcHandlers = {
@@ -102,6 +102,11 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
 
     'scm.discard': async ({ cwd, path }) => {
       await scmDiscard(cwd, path)
+      return {}
+    },
+
+    'scm.shadowBaseline': async ({ cwd }) => {
+      await shadowBaseline(cwd)
       return {}
     },
   }
