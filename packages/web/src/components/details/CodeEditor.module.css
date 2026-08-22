@@ -1,10 +1,13 @@
-/* Light palette mirrors the chat's hljs theme so code reads the same in both. */
+/* Light palette follows dsh's editor (red strings, grey-slabbed template
+   strings); everything else still mirrors the chat's hljs theme. */
 .host {
   --hl-keyword: #a626a4;
-  --hl-string: #2f7d4f;
+  --hl-string: #c41a16;
+  --hl-inserted: #2f7d4f;
   --hl-number: #b76b01;
   --hl-definition: #3f6ec6;
   --hl-type: #c18401;
+  --hl-string2-bg: #ececec;
 
   overflow: hidden;
   background: var(--ccw-bg-sunken);
@@ -15,13 +18,11 @@
 :global([data-theme='dark']) .host {
   --hl-keyword: #c678dd;
   --hl-string: #98c379;
+  --hl-inserted: #98c379;
   --hl-number: #d19a66;
   --hl-definition: #61afef;
   --hl-type: #e5c07b;
-}
-
-.hostEditing {
-  border-color: var(--ccw-accent);
+  --hl-string2-bg: #2c313a;
 }
 
 /* --- CodeMirror chrome, mapped onto the design tokens ------------------- */
@@ -75,9 +76,18 @@
   color: var(--hl-keyword);
 }
 
-.host :global(.tok-string),
-.host :global(.tok-inserted) {
+.host :global(.tok-string) {
   color: var(--hl-string);
+}
+
+.host :global(.tok-inserted) {
+  color: var(--hl-inserted);
+}
+
+/* Template strings and escapes — dsh marks them with a grey slab. */
+.host :global(.tok-string2) {
+  color: var(--ccw-text-primary);
+  background: var(--hl-string2-bg);
 }
 
 .host :global(.tok-number),

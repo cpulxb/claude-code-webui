@@ -5,24 +5,56 @@
   margin-bottom: var(--ccw-space-2);
 }
 
-.path {
+/* dsh-style path field: looks like an input, reads like a breadcrumb. */
+.pathBox {
   flex: 1;
   min-width: 0;
+  padding: 3px 10px;
   overflow: hidden;
   font-family: var(--ccw-font-mono);
   font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-faint);
+  color: var(--ccw-text-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
   /* Long paths matter at their tail, not their head. */
   direction: rtl;
   text-align: left;
+  background: var(--ccw-bg-sunken);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-sm);
 }
 
-.size {
+/* dsh's unsaved marker — a warm dot, deliberately not a themed token. */
+.dirtyDot {
   flex: none;
+  width: 8px;
+  height: 8px;
+  background: #e8a33d;
+  border-radius: 50%;
+}
+
+.modeSwitch {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.modeButton,
+.modeButtonActive {
+  padding: 2px 8px;
   font-size: var(--ccw-text-xs);
   color: var(--ccw-text-muted);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.modeButton:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.modeButtonActive {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-active);
 }
 
 .error {
@@ -44,44 +76,9 @@
   border-radius: var(--ccw-radius-sm);
 }
 
-.editBar {
-  display: flex;
-  gap: var(--ccw-space-2);
-  align-items: center;
-  margin-top: var(--ccw-space-2);
-}
-
-.save {
-  padding: 1px 10px;
+.mdPreview {
+  padding: var(--ccw-space-2) var(--ccw-space-1);
   font-size: var(--ccw-text-sm);
-  color: #fff;
-  background: var(--ccw-accent);
-  border-radius: var(--ccw-radius-pill);
-}
-
-.save:hover {
-  opacity: 0.85;
-}
-
-.save:disabled {
-  opacity: 0.6;
-}
-
-.cancel {
-  padding: 1px 10px;
-  font-size: var(--ccw-text-sm);
-  color: var(--ccw-text-muted);
-  border-radius: var(--ccw-radius-pill);
-}
-
-.cancel:hover {
-  color: var(--ccw-text-primary);
-  background: var(--ccw-bg-hover);
-}
-
-.hint {
-  font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-faint);
 }
 
 .note {

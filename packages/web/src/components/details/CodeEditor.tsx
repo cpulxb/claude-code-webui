@@ -1,7 +1,7 @@
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { bracketMatching, LanguageDescription, syntaxHighlighting } from '@codemirror/language'
 import { languages } from '@codemirror/language-data'
-import { Compartment, EditorState } from '@codemirror/state'
+import { Annotation, Compartment, EditorState } from '@codemirror/state'
 import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
 import { classHighlighter } from '@lezer/highlight'
 import { useEffect, useRef } from 'react'
@@ -9,25 +9,36 @@ import { useEffect, useRef } from 'react'
 import styles from './CodeEditor.module.css'
 
 /**
- * CodeMirror 6 wrapper behind the FileView: one instance serves both the
- * read-only render and the editing state, toggled through a compartment so
- * the DOM (and scroll position) survives the switch.
+ * The CodeMirror 6 instance behind a FileView tab. Editable files open live,
+ * dsh-style — there is no view/edit toggle, only a dirty flag upstream.
  *
  * The language ships as a lazy chunk per grammar via `@codemirror/language-data`
  * — the whole registry costs one filename match up front, and only the matched
  * grammar is ever downloaded. Highlighting uses `classHighlighter`, so colours
  * live in CSS where the `[data-theme]` switch already works.
  */
+
+/**
+ * Marks programmatic dispatches (the value-sync below). The update listener
+ * must not report those as edits: a discard-rollback re-flagged as typing
+ * would mark the file dirty again the instant it was cleaned.
+ */
+const External = Annotation.define<boolean>()
+
 export function CodeEditor({
   path,
   value,
   readOnly,
+  dirty,
   onChange,
 }: {
   path: string
-  /** Authoritative content while read-only; the starting doc when editing begins. */
+  /** Authoritative content while clean; the starting doc on mount. */
   value: string
+  /** Hard lock for files that must never be written back (truncated previews). */
   readOnly: boolean
+  /** Unsaved edits exist — external `value` changes must not clobber the doc. */
+  dirty: boolean
   onChange: (text: string) => void
 }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -52,10 +63,9 @@ export function CodeEditor({
           compartments.editing.of(editingConfig(readOnly)),
           compartments.language.of([]),
           EditorView.updateListener.of((update) => {
-            // The read-only sync below also flags docChanged; user edits can
-            // only happen while editable, and reporting a programmatic
-            // rollback as an edit would re-open the editing state it just left.
-            if (update.docChanged && !update.state.readOnly) onChangeRef.current(update.state.doc.toString())
+            if (update.docChanged && !update.transactions.some((tr) => tr.annotation(External))) {
+              onChangeRef.current(update.state.doc.toString())
+            }
           }),
         ],
       }),
@@ -82,24 +92,26 @@ export function CodeEditor({
     const view = viewRef.current
     if (!view) return
     view.dispatch({ effects: compartments.editing.reconfigure(editingConfig(readOnly)) })
-    if (!readOnly) view.focus()
   }, [readOnly, compartments])
 
-  // While read-only the prop is authoritative: a refresh re-read or a
-  // cancelled edit lands here and rolls the doc back. Never fires mid-edit,
-  // so it cannot clobber what the user is typing.
+  // While clean the prop is authoritative: a refresh re-read, a save
+  // round-trip or an Esc discard all land here. Never fires with unsaved
+  // edits, so it cannot clobber what the user is typing.
   useEffect(() => {
     const view = viewRef.current
-    if (!view || !readOnly) return
+    if (!view || dirty) return
     if (view.state.doc.toString() !== value) {
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } })
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: value },
+        annotations: External.of(true),
+      })
     }
-  }, [value, readOnly])
+  }, [value, dirty])
 
-  return <div className={readOnly ? styles.host : `${styles.host} ${styles.hostEditing}`} ref={containerRef} />
+  return <div className={styles.host} ref={containerRef} />
 }
 
-/** Everything that differs between rendering a file and editing it. */
+/** Everything that differs between a locked preview and a live editor. */
 function editingConfig(readOnly: boolean) {
   return readOnly
     ? [EditorState.readOnly.of(true), EditorView.editable.of(false)]

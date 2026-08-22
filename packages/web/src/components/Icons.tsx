@@ -106,6 +106,14 @@ export function HashIcon(props: { size?: number }): JSX.Element {
   )
 }
 
+export function CheckIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M20 6 9 17l-5-5" />
+    </Icon>
+  )
+}
+
 export function XIcon(props: { size?: number }): JSX.Element {
   return (
     <Icon size={props.size}>
