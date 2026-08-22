@@ -28,6 +28,8 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const modesRef = useRef<HTMLDivElement>(null)
+  const modeButtonRef = useRef<HTMLButtonElement>(null)
 
   const running = session.status === 'running'
 
@@ -61,6 +63,19 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
     }, FILE_SUGGEST_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [trigger?.kind, trigger?.query, session.sessionId])
+
+  // Clicking anywhere outside dismisses the modes popover. The trigger button
+  // is excluded so its own onClick still toggles instead of being reopened.
+  useEffect(() => {
+    if (!modesOpen) return
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target as Node
+      if (modesRef.current?.contains(target) || modeButtonRef.current?.contains(target)) return
+      setModesOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [modesOpen])
 
   useLayoutEffect(() => {
     const element = textareaRef.current
@@ -162,6 +177,7 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
               effort={session.effort}
               model={session.model}
               models={session.models}
+              rootRef={modesRef}
               onMode={(next) => {
                 void setPermissionMode(next)
                 setModesOpen(false)
@@ -219,6 +235,7 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
             </button>
             <button
               className={styles.modeButton}
+              ref={modeButtonRef}
               onClick={() => setModesOpen(!modesOpen)}
               type="button"
               aria-haspopup="menu"

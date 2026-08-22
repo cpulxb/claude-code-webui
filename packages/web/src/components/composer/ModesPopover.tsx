@@ -31,6 +31,7 @@ export function ModesPopover(props: {
   effort: EffortLevel
   model: string | null
   models: ModelInfo[]
+  rootRef?: React.Ref<HTMLDivElement>
   onMode: (mode: PermissionMode) => void
   onEffort: (effort: EffortLevel) => void
   onModel: (model: string) => void
@@ -44,7 +45,7 @@ export function ModesPopover(props: {
     selected?.supportedEffortLevels ?? (selected && selected.supportsEffort === false ? [] : EFFORT_LEVELS)
 
   return (
-    <div className={`${styles.popover} ${styles.modesPopover}`} role="menu">
+    <div ref={props.rootRef} className={`${styles.popover} ${styles.modesPopover}`} role="menu">
       <div className={styles.sectionTitle}>模式</div>
       {PERMISSION_MODES.map((mode) => {
         const meta = MODE_META[mode]
