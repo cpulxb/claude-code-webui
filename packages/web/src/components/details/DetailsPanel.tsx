@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { SessionState } from '../../store/session.ts'
 import { PanelRightIcon } from '../Icons.tsx'
 import styles from './DetailsPanel.module.css'
+import { ExplorerTree } from './ExplorerTree.tsx'
 import { ScmSection } from './ScmPanel.tsx'
 
 /** Session facts drawn from the CLI's own `init` message. */
@@ -15,6 +16,7 @@ export function DetailsPanel({
   onCollapse: () => void
 }): JSX.Element {
   const [showTools, setShowTools] = useState(false)
+  const [tab, setTab] = useState<'info' | 'files'>('info')
   const init = session?.init
   // `session.model` holds whatever was selected, which is often an alias like
   // `sonnet`; the model list is what maps it back to a real wire id.
@@ -25,7 +27,16 @@ export function DetailsPanel({
   return (
     <div className={styles.root}>
       <div className={styles.head}>
-        会话详情
+        <button className={tab === 'info' ? styles.tabActive : styles.tab} onClick={() => setTab('info')} type="button">
+          详情
+        </button>
+        <button
+          className={tab === 'files' ? styles.tabActive : styles.tab}
+          onClick={() => setTab('files')}
+          type="button"
+        >
+          文件
+        </button>
         <span className={styles.spacer} />
         <button className={styles.iconButton} onClick={onCollapse} type="button" title="收起面板">
           <PanelRightIcon />
@@ -35,6 +46,12 @@ export function DetailsPanel({
       <div className={styles.body}>
         {!session ? (
           <div className={styles.empty}>尚未选择会话</div>
+        ) : tab === 'files' ? (
+          <ExplorerTree
+            key={init?.cwd ?? session.cwd}
+            cwd={init?.cwd ?? session.cwd}
+            turnStatus={session.status}
+          />
         ) : (
           <>
             <div className={styles.section}>

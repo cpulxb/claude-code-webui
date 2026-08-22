@@ -1,6 +1,7 @@
 import type { RpcMethod, RpcParams, RpcResult } from '@ccw/shared'
 
 import { browseDirectory } from '../files/browse.ts'
+import { listEntries, readFilePreview } from '../files/explorer.ts'
 import { suggestFiles } from '../files/suggest.ts'
 import { listProjects, readMessages, readPermissionMode } from '../history/sessions.ts'
 import { scmDiff, scmDiscard, scmStatus } from '../scm/git.ts'
@@ -90,6 +91,10 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
     }),
 
     'files.browse': async ({ path, showHidden }) => browseDirectory(path, showHidden ?? false),
+
+    'files.list': async ({ path }) => ({ entries: await listEntries(path) }),
+
+    'files.read': async ({ path }) => ({ preview: await readFilePreview(path) }),
 
     'scm.status': async ({ cwd }) => ({ status: await scmStatus(cwd) }),
 

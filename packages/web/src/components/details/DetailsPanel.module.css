@@ -7,10 +7,33 @@
 
 .head {
   display: flex;
+  gap: var(--ccw-space-1);
   align-items: center;
   padding: var(--ccw-space-3);
   font-size: var(--ccw-text-base);
   font-weight: 600;
+}
+
+.tab {
+  padding: 1px 10px;
+  font-size: var(--ccw-text-base);
+  font-weight: 500;
+  color: var(--ccw-text-muted);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.tab:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.tabActive {
+  padding: 1px 10px;
+  font-size: var(--ccw-text-base);
+  font-weight: 600;
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-sunken);
+  border-radius: var(--ccw-radius-pill);
 }
 
 .spacer {

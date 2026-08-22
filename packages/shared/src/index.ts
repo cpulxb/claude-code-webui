@@ -120,6 +120,15 @@ export type DirectoryListing = {
   home: string
 }
 
+/** One node of the Explorer tree — a single readdir level, fetched lazily. */
+export type TreeEntry = { name: string; path: string; isDirectory: boolean }
+
+/** What `files.read` returns for the Explorer's preview overlay. */
+export type FilePreview =
+  | { kind: 'text'; size: number; content: string; truncated: boolean }
+  | { kind: 'image'; size: number; mediaType: string; data: string }
+  | { kind: 'binary'; size: number }
+
 /** One changed file in the source-control panel. */
 export type ScmFile = {
   /** Path relative to `cwd`. */
@@ -202,6 +211,10 @@ export type RpcMap = {
     params: { path?: string; showHidden?: boolean }
     result: DirectoryListing
   }
+  /** One level of the Explorer tree. Unlike `files.browse`, files are included. */
+  'files.list': { params: { path: string }; result: { entries: TreeEntry[] } }
+  /** Bounded read backing the Explorer preview: text capped, images as base64. */
+  'files.read': { params: { path: string }; result: { preview: FilePreview } }
   /** Changed files in `cwd`, or `{ kind: 'none' }` when it is not a git repo. */
   'scm.status': { params: { cwd: string }; result: { status: ScmStatus } }
   /**
