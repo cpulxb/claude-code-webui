@@ -116,6 +116,12 @@
   overflow-y: auto;
 }
 
+/* An open editor tab claims the body's full height (its content scrolls
+   internally), unlike the info/tree tabs which grow and scroll the body. */
+.fileHost {
+  height: 100%;
+}
+
 .section {
   margin-bottom: var(--ccw-space-4);
 }

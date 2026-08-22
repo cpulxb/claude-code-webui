@@ -9,6 +9,7 @@
   --hl-type: #c18401;
   --hl-string2-bg: #ececec;
 
+  height: 100%;
   overflow: hidden;
   background: var(--ccw-bg-sunken);
   border: 1px solid var(--ccw-border-l1);
@@ -27,7 +28,10 @@
 
 /* --- CodeMirror chrome, mapped onto the design tokens ------------------- */
 
+/* Fixed-height mode: the editor fills its host and scrolls internally,
+   which is also what turns CodeMirror's viewport virtualisation on. */
 .host :global(.cm-editor) {
+  height: 100%;
   background: transparent;
 }
 
@@ -36,6 +40,7 @@
 }
 
 .host :global(.cm-scroller) {
+  overflow: auto;
   font-family: var(--ccw-font-mono);
   font-size: var(--ccw-text-sm);
   line-height: 1.55;

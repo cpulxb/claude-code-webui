@@ -72,7 +72,7 @@ export function FileView({ path, onSaved }: { path: string; onSaved: () => void 
   }
 
   return (
-    <div>
+    <div className={styles.root}>
       <div className={styles.head}>
         <span className={styles.pathBox} title={path}>
           {/* The rtl ellipsis trick flips edge punctuation ("/root/…" shows a
@@ -120,20 +120,22 @@ export function FileView({ path, onSaved }: { path: string; onSaved: () => void 
 
       {error && <div className={styles.error}>{error}</div>}
 
-      {!data ? (
-        <div className={styles.placeholder}>读取中…</div>
-      ) : data.kind === 'binary' ? (
-        <div className={styles.placeholder}>二进制文件，无法预览</div>
-      ) : data.kind === 'image' ? (
-        <img className={styles.image} src={`data:${data.mediaType};base64,${data.data}`} alt={path} />
-      ) : markdown && mdMode === 'preview' ? (
-        // The preview renders the unsaved buffer too, so edits show up
-        // without a save round-trip.
-        <div className={styles.mdPreview}>
-          <AssistantMarkdown text={draft ?? data.content} />
-        </div>
-      ) : (
-        <div onKeyDown={onEditorKeyDown}>
+      {/* The keydown listener lives on the shared frame so it covers the
+          markdown edit view too; only the editor can actually focus inside. */}
+      <div className={styles.content} onKeyDown={onEditorKeyDown}>
+        {!data ? (
+          <div className={styles.placeholder}>读取中…</div>
+        ) : data.kind === 'binary' ? (
+          <div className={styles.placeholder}>二进制文件，无法预览</div>
+        ) : data.kind === 'image' ? (
+          <img className={styles.image} src={`data:${data.mediaType};base64,${data.data}`} alt={path} />
+        ) : markdown && mdMode === 'preview' ? (
+          // The preview renders the unsaved buffer too, so edits show up
+          // without a save round-trip.
+          <div className={styles.mdPreview}>
+            <AssistantMarkdown text={draft ?? data.content} />
+          </div>
+        ) : (
           <CodeEditor
             path={path}
             value={draft ?? data.content}
@@ -141,8 +143,8 @@ export function FileView({ path, onSaved }: { path: string; onSaved: () => void 
             dirty={draft !== null}
             onChange={(text) => setDraft(text === data.content ? null : text)}
           />
-        </div>
-      )}
+        )}
+      </div>
 
       {data?.kind === 'text' && data.truncated && (
         <div className={styles.note}>文件过大，仅显示前 256 KB，编辑已禁用（共 {formatSize(data.size)}）</div>

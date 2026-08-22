@@ -91,7 +91,9 @@ export function DetailsPanel({
             </div>
 
             {openFiles.map((file) => (
-              <div key={file.path} hidden={tab !== file.path}>
+              // Full-height so the editor fills the panel and scrolls inside
+              // itself; the other tabs keep scrolling the body as before.
+              <div key={file.path} className={styles.fileHost} hidden={tab !== file.path}>
                 <FileView path={file.path} onSaved={() => touchFs(session.sessionId)} />
               </div>
             ))}

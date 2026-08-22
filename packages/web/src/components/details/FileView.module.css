@@ -1,3 +1,17 @@
+/* Vertical frame: head and notes stay pinned, the content pane between
+   them takes the rest and scrolls anything the editor doesn't handle. */
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .head {
   display: flex;
   gap: var(--ccw-space-2);
