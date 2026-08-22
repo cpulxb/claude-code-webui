@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { SessionState } from '../../store/session.ts'
 import { PanelRightIcon } from '../Icons.tsx'
 import styles from './DetailsPanel.module.css'
+import { ScmSection } from './ScmPanel.tsx'
 
 /** Session facts drawn from the CLI's own `init` message. */
 export function DetailsPanel({
@@ -46,6 +47,9 @@ export function DetailsPanel({
               {init && <Field label="CLI" value={init.version} />}
               <Field label="会话" value={session.sessionId.slice(0, 8)} mono />
             </div>
+
+            {/* Keyed by cwd: switching workspaces drops open diffs and pending confirms. */}
+            <ScmSection key={init?.cwd ?? session.cwd} cwd={init?.cwd ?? session.cwd} turnStatus={session.status} />
 
             <div className={styles.section}>
               <div className={styles.sectionTitle}>能力</div>

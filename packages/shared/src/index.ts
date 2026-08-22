@@ -120,6 +120,25 @@ export type DirectoryListing = {
   home: string
 }
 
+/** One changed file in the source-control panel. */
+export type ScmFile = {
+  /** Path relative to `cwd`. */
+  path: string
+  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflicted'
+  /** The pre-rename path, present only when `status` is `renamed`. */
+  oldPath?: string
+}
+
+/**
+ * What the source-control panel shows for a directory.
+ *
+ * `git` means a real repository: changes are measured against `HEAD` (or the
+ * empty tree while the branch is unborn). `none` means the directory is not a
+ * repository — the shadow-git fallback is a later phase, so for now the panel
+ * says so instead of inventing a baseline.
+ */
+export type ScmStatus = { kind: 'git'; branch: string | null; files: ScmFile[] } | { kind: 'none' }
+
 /**
  * Every RPC the server answers over `POST /api/rpc`, keyed by method name.
  * The client's `call()` derives both argument and return types from this map.
@@ -183,6 +202,15 @@ export type RpcMap = {
     params: { path?: string; showHidden?: boolean }
     result: DirectoryListing
   }
+  /** Changed files in `cwd`, or `{ kind: 'none' }` when it is not a git repo. */
+  'scm.status': { params: { cwd: string }; result: { status: ScmStatus } }
+  /**
+   * Unified diff for one changed file, against HEAD (or the empty tree on an
+   * unborn branch). `binary` marks files git cannot textually diff.
+   */
+  'scm.diff': { params: { cwd: string; path: string }; result: { diff: string; binary: boolean } }
+  /** Destructive: restores the file to HEAD, or deletes it when untracked. */
+  'scm.discard': { params: { cwd: string; path: string }; result: Record<string, never> }
 }
 
 export type RpcMethod = keyof RpcMap

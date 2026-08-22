@@ -3,6 +3,7 @@ import type { RpcMethod, RpcParams, RpcResult } from '@ccw/shared'
 import { browseDirectory } from '../files/browse.ts'
 import { suggestFiles } from '../files/suggest.ts'
 import { listProjects, readMessages, readPermissionMode } from '../history/sessions.ts'
+import { scmDiff, scmDiscard, scmStatus } from '../scm/git.ts'
 import type { SessionManager } from '../session/manager.ts'
 
 export type RpcHandlers = {
@@ -89,5 +90,14 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
     }),
 
     'files.browse': async ({ path, showHidden }) => browseDirectory(path, showHidden ?? false),
+
+    'scm.status': async ({ cwd }) => ({ status: await scmStatus(cwd) }),
+
+    'scm.diff': async ({ cwd, path }) => scmDiff(cwd, path),
+
+    'scm.discard': async ({ cwd, path }) => {
+      await scmDiscard(cwd, path)
+      return {}
+    },
   }
 }

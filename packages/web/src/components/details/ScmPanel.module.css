@@ -1,0 +1,172 @@
+.titleRow {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  margin-bottom: var(--ccw-space-2);
+}
+
+.title {
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.branch {
+  padding: 0 7px;
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-secondary);
+  background: var(--ccw-bg-sunken);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.error {
+  margin-bottom: var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-danger);
+  overflow-wrap: anywhere;
+}
+
+/* Bleeds past the section edge so the hover pill reads as a full-width row. */
+.fileRow {
+  display: flex;
+  align-items: center;
+  margin: 0 -6px;
+  border-radius: var(--ccw-radius-sm);
+}
+
+.fileRow:hover {
+  background: var(--ccw-bg-hover);
+}
+
+.fileMain {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 3px 0 3px 6px;
+  text-align: left;
+}
+
+.fileName {
+  flex: none;
+  max-width: 70%;
+  overflow: hidden;
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileDir {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discard {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--ccw-text-muted);
+  visibility: hidden;
+  border-radius: var(--ccw-radius-sm);
+}
+
+.fileRow:hover .discard {
+  visibility: visible;
+}
+
+/* Hover-on-hover needs one step deeper than the row's own hover fill. */
+.discard:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-border-l1);
+}
+
+.discardConfirm {
+  flex: none;
+  padding: 0 5px;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-danger);
+  white-space: nowrap;
+  border-radius: var(--ccw-radius-sm);
+}
+
+.discardConfirm:hover {
+  background: color-mix(in srgb, var(--ccw-danger) 12%, transparent);
+}
+
+.badge {
+  flex: none;
+  width: 20px;
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+  font-weight: 600;
+  text-align: center;
+}
+
+.modified {
+  color: var(--ccw-warning);
+}
+
+.added,
+.untracked {
+  color: var(--ccw-success);
+}
+
+.deleted,
+.conflicted {
+  color: var(--ccw-danger);
+}
+
+.renamed {
+  color: var(--ccw-accent);
+}
+
+/* --- diff (same palette as the chat's Edit cards) ---------------------- */
+
+.diffBox {
+  max-height: 320px;
+  margin: 2px 0 var(--ccw-space-2);
+  overflow: auto;
+  background: var(--ccw-bg-sunken);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.diffEmpty {
+  padding: var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-faint);
+}
+
+.diffLine {
+  padding: 0 var(--ccw-space-2);
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.diffAdd {
+  color: var(--ccw-success);
+  background: color-mix(in srgb, var(--ccw-success) 10%, transparent);
+}
+
+.diffRemove {
+  color: var(--ccw-danger);
+  background: color-mix(in srgb, var(--ccw-danger) 9%, transparent);
+}
+
+.diffHunk {
+  color: var(--ccw-text-faint);
+}
