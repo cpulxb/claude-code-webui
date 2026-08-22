@@ -148,7 +148,11 @@ export type RpcMap = {
    * the on-disk shape carries an opaque `message` payload, so the renderer
    * adapts them rather than reusing the live-stream path unchanged.
    */
-  'history.messages': { params: { sessionId: string; cwd?: string }; result: { messages: SessionMessage[] } }
+  'history.messages': {
+    params: { sessionId: string; cwd?: string }
+    /** `permissionMode` is absent when the session's mode was never toggled. */
+    result: { messages: SessionMessage[]; permissionMode?: PermissionMode }
+  }
   'files.suggest': {
     params: { sessionId: string; query: string }
     result: { suggestions: FileSuggestion[] }

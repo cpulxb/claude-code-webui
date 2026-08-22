@@ -2,7 +2,7 @@ import type { RpcMethod, RpcParams, RpcResult } from '@ccw/shared'
 
 import { browseDirectory } from '../files/browse.ts'
 import { suggestFiles } from '../files/suggest.ts'
-import { listProjects, readMessages } from '../history/sessions.ts'
+import { listProjects, readMessages, readPermissionMode } from '../history/sessions.ts'
 import type { SessionManager } from '../session/manager.ts'
 
 export type RpcHandlers = {
@@ -68,9 +68,13 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
       projects: await listProjects(new Set(manager.liveIds())),
     }),
 
-    'history.messages': async ({ sessionId, cwd }) => ({
-      messages: await readMessages(sessionId, cwd),
-    }),
+    'history.messages': async ({ sessionId, cwd }) => {
+      const [messages, permissionMode] = await Promise.all([
+        readMessages(sessionId, cwd),
+        readPermissionMode(sessionId),
+      ])
+      return { messages, ...(permissionMode ? { permissionMode } : {}) }
+    },
 
     'files.suggest': async ({ sessionId, query }) => ({
       suggestions: await suggestFiles(manager.require(sessionId).config.cwd, query),

@@ -10,6 +10,7 @@ import type {
   ServerEvent,
   SlashCommand,
 } from '@ccw/shared'
+import { PERMISSION_MODES } from '@ccw/shared'
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 
@@ -88,12 +89,27 @@ function newSession(sessionId: string, cwd: string, attached: boolean): SessionS
     init: null,
     commands: [],
     models: [],
-    permissionMode: 'default',
+    permissionMode: rememberedMode(),
     effort: 'high',
     model: null,
     pendingPermissions: [],
     contextUsage: null,
   }
+}
+
+/**
+ * The permission mode to start a session in.
+ *
+ * The CLI starts every session at `default` and expects shift+tab, which is
+ * fine in a terminal but tedious here — so the last mode picked in the browser
+ * carries over. A session opened from the sidebar overrides this with whatever
+ * its transcript recorded, when it recorded one.
+ */
+const MODE_KEY = 'ccw.permissionMode'
+
+function rememberedMode(): PermissionMode {
+  const stored = localStorage.getItem(MODE_KEY)
+  return stored && (PERMISSION_MODES as readonly string[]).includes(stored) ? (stored as PermissionMode) : 'default'
 }
 
 export const useStore = create<Store>()(
@@ -129,7 +145,10 @@ export const useStore = create<Store>()(
         state.activeId = sessionId
       })
       try {
-        await call('session.create', { cwd, sessionId })
+        // The runner starts in `default` unless told otherwise, which would
+        // contradict the mode the composer is already showing.
+        const permissionMode = get().sessions[sessionId]?.permissionMode ?? 'default'
+        await call('session.create', { cwd, sessionId, permissionMode })
       } catch (error) {
         set((state) => {
           delete state.sessions[sessionId]
@@ -214,6 +233,7 @@ export const useStore = create<Store>()(
       const sessionId = get().activeId
       if (!sessionId) return
       if (get().sessions[sessionId]?.attached) await call('session.setPermissionMode', { sessionId, mode })
+      localStorage.setItem(MODE_KEY, mode)
       set((state) => {
         const session = state.sessions[sessionId]
         if (session) session.permissionMode = mode
@@ -379,13 +399,17 @@ async function reconcileSessions(set: Setter): Promise<void> {
  */
 async function loadHistory(set: Setter, get: () => Store, sessionId: string, cwd: string): Promise<void> {
   try {
-    const { messages } = await call('history.messages', { sessionId, cwd })
+    const { messages, permissionMode } = await call('history.messages', { sessionId, cwd })
     if (!get().sessions[sessionId]) return
     const transcript = emptyTranscript()
     for (const entry of messages) applyHistoryMessage(transcript, entry)
     set((state) => {
       const session = state.sessions[sessionId]
-      if (session) session.transcript = transcript
+      if (!session) return
+      session.transcript = transcript
+      // Only when the transcript actually recorded a toggle; otherwise the
+      // remembered default already in place is the better guess.
+      if (permissionMode) session.permissionMode = permissionMode
     })
   } catch (error) {
     set((state) => {
