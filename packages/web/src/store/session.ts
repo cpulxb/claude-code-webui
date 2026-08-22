@@ -357,6 +357,9 @@ async function adoptRunner(set: Setter, get: () => Store, sessionId: string): Pr
     session.pendingPermissions = state.pendingPermissions
   })
   await loadSessionMeta(set, get, sessionId)
+  // The reading normally refreshes on each `result`, all of which this page
+  // missed — so the meter would sit empty until the next turn otherwise.
+  void loadContextUsage(set, get, sessionId)
 }
 
 function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {

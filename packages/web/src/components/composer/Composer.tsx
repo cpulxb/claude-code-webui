@@ -6,6 +6,7 @@ import type { SessionState } from '../../store/session.ts'
 import { useStore } from '../../store/session.ts'
 import { fileToAttachment } from '../../utils/attachments.ts'
 import styles from './Composer.module.css'
+import { ContextMeter } from './ContextMeter.tsx'
 import { ModeIcon } from './ModeIcon.tsx'
 import { MODE_META, ModesPopover } from './ModesPopover.tsx'
 import { applyTrigger, detectTrigger, type Trigger } from './trigger.ts'
@@ -278,6 +279,8 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
               />
               <span className={mode.danger ? styles.modeDanger : ''}>{mode.label}</span>
             </button>
+
+            <ContextMeter usage={session.contextUsage} />
 
             {running ? (
               <button

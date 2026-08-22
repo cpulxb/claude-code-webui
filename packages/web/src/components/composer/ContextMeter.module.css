@@ -1,0 +1,119 @@
+/* Context-occupancy ring beside the send button plus its click-open breakdown
+   panel — dsh's ContextMeter shape on this app's tokens. */
+
+.root {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Same hit-target family as the composer's icon buttons. */
+.trigger {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: var(--ccw-text-muted);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.trigger:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.track {
+  fill: none;
+  stroke: var(--ccw-border-l2);
+  stroke-width: 2;
+}
+
+.fill {
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  box-sizing: border-box;
+  width: 264px;
+  padding: 12px;
+  font-size: var(--ccw-text-xs);
+  line-height: 20px;
+  color: var(--ccw-text-secondary);
+  cursor: default;
+  background: var(--ccw-bg-raised);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-md);
+  box-shadow: var(--ccw-shadow-popover);
+}
+
+.header {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.headline {
+  color: var(--ccw-text-muted);
+}
+
+.percent {
+  font-weight: 500;
+  color: var(--ccw-text-primary);
+}
+
+.figures {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--ccw-text-primary);
+}
+
+/* The colored parts proportion the provider-exact percent; the track behind
+   them is the whole window. */
+.bar {
+  display: flex;
+  height: 6px;
+  margin-top: 8px;
+  overflow: hidden;
+  background: var(--ccw-bg-hover);
+  border-radius: 999px;
+}
+
+.segment {
+  min-width: 1px;
+  height: 100%;
+}
+
+.rows {
+  margin: 8px 0 0;
+}
+
+.row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.row dt {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.row dd {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
