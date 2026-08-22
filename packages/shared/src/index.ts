@@ -153,8 +153,13 @@ export type RpcMap = {
     /** `permissionMode` is absent when the session's mode was never toggled. */
     result: { messages: SessionMessage[]; permissionMode?: PermissionMode }
   }
+  /**
+   * Scans `cwd` for `@` completions. Deliberately keyed on the directory rather
+   * than a session: the scan needs nothing from the CLI, and requiring a runner
+   * would break the menu for sessions opened read-only.
+   */
   'files.suggest': {
-    params: { sessionId: string; query: string }
+    params: { cwd: string; query: string }
     result: { suggestions: FileSuggestion[] }
   }
   /** Directory listing for the workspace picker. Omit `path` to start at home. */

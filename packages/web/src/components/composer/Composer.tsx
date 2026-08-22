@@ -54,16 +54,17 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
   useEffect(() => setActiveIndex(0), [trigger?.kind, trigger?.query])
 
   // File suggestions come from the server's fs scan, debounced per keystroke.
+  // Keyed on the directory, so a read-only session completes files too.
   useEffect(() => {
     if (trigger?.kind !== '@') return
     const query = trigger.query
     const timer = setTimeout(() => {
-      void call('files.suggest', { sessionId: session.sessionId, query })
+      void call('files.suggest', { cwd: session.cwd, query })
         .then((result) => setFiles(result.suggestions))
         .catch(() => setFiles([]))
     }, FILE_SUGGEST_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [trigger?.kind, trigger?.query, session.sessionId])
+  }, [trigger?.kind, trigger?.query, session.cwd])
 
   // Clicking anywhere outside dismisses the modes popover. The trigger button
   // is excluded so its own onClick still toggles instead of being reopened.
@@ -182,13 +183,13 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
               items={items}
               activeIndex={activeIndex}
               emptyText={
-                // Both menus are answered by the runner, which a read-only
-                // session has none of — that is not the same as "no matches".
-                !session.attached
-                  ? '只读回放中 — 发送消息接管后可用'
-                  : trigger.kind === '/'
+                // Only the command list needs the runner to answer it; file
+                // completion is a plain directory scan and works read-only.
+                trigger.kind !== '/'
+                  ? '没有匹配的文件'
+                  : session.attached
                     ? '没有匹配的命令'
-                    : '没有匹配的文件'
+                    : '只读回放中 — 发送消息接管后可用'
               }
               onSelect={choose}
               onHover={setActiveIndex}

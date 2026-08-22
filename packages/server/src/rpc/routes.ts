@@ -76,8 +76,8 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
       return { messages, ...(permissionMode ? { permissionMode } : {}) }
     },
 
-    'files.suggest': async ({ sessionId, query }) => ({
-      suggestions: await suggestFiles(manager.require(sessionId).config.cwd, query),
+    'files.suggest': async ({ cwd, query }) => ({
+      suggestions: await suggestFiles(cwd, query),
     }),
 
     'files.browse': async ({ path, showHidden }) => browseDirectory(path, showHidden ?? false),
