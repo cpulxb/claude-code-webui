@@ -82,7 +82,7 @@ export function ModesPopover(props: {
               {efforts.map((level) => (
                 <button
                   key={level}
-                  className={`${styles.stop} ${level === props.effort ? styles.stopActive : ''}`}
+                  className={`${styles.effortStop} ${level === props.effort ? styles.effortStopActive : ''}`}
                   onClick={() => props.onEffort(level)}
                   type="button"
                   title={EFFORT_LABEL[level]}

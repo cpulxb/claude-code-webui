@@ -291,7 +291,7 @@
   justify-content: flex-end;
 }
 
-.stop {
+.effortStop {
   width: 9px;
   height: 9px;
   background: var(--ccw-gray-300);
@@ -299,11 +299,11 @@
   transition: background var(--ccw-duration-fast) var(--ccw-ease);
 }
 
-.stop:hover {
+.effortStop:hover {
   background: var(--ccw-gray-400);
 }
 
-.stopActive {
+.effortStopActive {
   width: 13px;
   height: 13px;
   background: var(--ccw-text-primary);
