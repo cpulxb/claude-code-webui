@@ -78,14 +78,6 @@ export function UndoIcon(props: { size?: number }): JSX.Element {
   )
 }
 
-export function ChevronRightIcon(props: { size?: number }): JSX.Element {
-  return (
-    <Icon size={props.size}>
-      <path d="m9 18 6-6-6-6" />
-    </Icon>
-  )
-}
-
 export function FolderIcon(props: { size?: number }): JSX.Element {
   return (
     <Icon size={props.size}>
@@ -94,11 +86,22 @@ export function FolderIcon(props: { size?: number }): JSX.Element {
   )
 }
 
-export function FileIcon(props: { size?: number }): JSX.Element {
+export function FolderOpenIcon(props: { size?: number }): JSX.Element {
   return (
     <Icon size={props.size}>
-      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
-      <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+      <path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2" />
+    </Icon>
+  )
+}
+
+/** dsh 风格的文件行标记 — 树里的文件不用纸页图标，用 #。 */
+export function HashIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M4 9h16" />
+      <path d="M4 15h16" />
+      <path d="m10 3-2 18" />
+      <path d="m16 3-2 18" />
     </Icon>
   )
 }

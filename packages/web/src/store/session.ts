@@ -62,8 +62,8 @@ export type SessionState = {
    */
   liveTokens: number | null
   /**
-   * Bumped after a file rewind so cwd-watching panels (SCM, Explorer) know
-   * the tree changed without a turn ending.
+   * Bumped when files change outside a turn — a rewind or an editor-tab save —
+   * so cwd-watching panels (SCM, Explorer) know to re-read.
    */
   fsVersion: number
 }
@@ -91,6 +91,8 @@ type Store = {
   respondToPermission: (requestId: string, decision: PermissionDecision) => Promise<void>
   /** dryRun previews; a real run bumps `fsVersion` and posts a notice node. */
   rewindFiles: (nodeId: string, dryRun: boolean) => Promise<RewindFilesResult>
+  /** Bumps `fsVersion` after an out-of-band write (editor-tab save). */
+  touchFs: (sessionId: string) => void
 }
 
 function newSession(sessionId: string, cwd: string, attached: boolean): SessionState {
@@ -340,6 +342,12 @@ export const useStore = create<Store>()(
       }
       return rewind
     },
+
+    touchFs: (sessionId) =>
+      set((state) => {
+        const session = state.sessions[sessionId]
+        if (session) session.fsVersion += 1
+      }),
   })),
 )
 

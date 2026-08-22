@@ -24,7 +24,7 @@
 /* Bleeds past the section edge so the hover pill reads as a full-width row. */
 .row {
   display: flex;
-  gap: 4px;
+  gap: 5px;
   align-items: center;
   width: calc(100% + 12px);
   margin: 0 -6px;
@@ -41,20 +41,14 @@
   background: var(--ccw-bg-hover);
 }
 
-.chevron {
-  display: flex;
-  flex: none;
+/* dsh 的层级感：普通目录加重，点开头的隐藏项退后。 */
+.rowStrong {
+  font-weight: 600;
+  color: var(--ccw-text-primary);
+}
+
+.rowMuted {
   color: var(--ccw-text-faint);
-  transition: transform var(--ccw-duration-fast) var(--ccw-ease);
-}
-
-.chevronOpen {
-  transform: rotate(90deg);
-}
-
-.chevronPad {
-  flex: none;
-  width: 12px;
 }
 
 .icon {
@@ -74,92 +68,4 @@
   padding-bottom: 1px;
   font-size: var(--ccw-text-xs);
   color: var(--ccw-text-faint);
-}
-
-/* --- preview overlay ---------------------------------------------------- */
-
-.overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgb(0 0 0 / 40%);
-}
-
-.previewPanel {
-  display: flex;
-  flex-direction: column;
-  width: min(860px, 86vw);
-  max-height: 84vh;
-  overflow: hidden;
-  background: var(--ccw-bg-base);
-  border-radius: var(--ccw-radius-lg);
-  box-shadow: var(--ccw-shadow-popover);
-}
-
-.previewHead {
-  display: flex;
-  gap: var(--ccw-space-2);
-  align-items: center;
-  padding: var(--ccw-space-3);
-  border-bottom: 1px solid var(--ccw-border-l1);
-}
-
-.previewName {
-  flex: none;
-  font-family: var(--ccw-font-mono);
-  font-size: var(--ccw-text-sm);
-  font-weight: 600;
-}
-
-.previewPath {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  font-family: var(--ccw-font-mono);
-  font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-faint);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.previewSize {
-  flex: none;
-  font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-muted);
-}
-
-.previewBody {
-  overflow: auto;
-}
-
-.previewText {
-  margin: 0;
-  padding: var(--ccw-space-3);
-  font-family: var(--ccw-font-mono);
-  font-size: var(--ccw-text-sm);
-  line-height: 1.55;
-  white-space: pre;
-}
-
-.previewImage {
-  display: block;
-  max-width: 100%;
-  margin: 0 auto;
-  padding: var(--ccw-space-3);
-}
-
-.previewEmpty {
-  padding: var(--ccw-space-4);
-  font-size: var(--ccw-text-sm);
-  color: var(--ccw-text-faint);
-}
-
-.previewNote {
-  padding: 6px var(--ccw-space-3);
-  font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-muted);
-  border-top: 1px solid var(--ccw-border-l1);
 }

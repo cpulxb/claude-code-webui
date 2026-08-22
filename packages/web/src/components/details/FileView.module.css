@@ -1,0 +1,125 @@
+.head {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  margin-bottom: var(--ccw-space-2);
+}
+
+.path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Long paths matter at their tail, not their head. */
+  direction: rtl;
+  text-align: left;
+}
+
+.size {
+  flex: none;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+}
+
+.error {
+  margin-bottom: var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-danger);
+  overflow-wrap: anywhere;
+}
+
+.placeholder {
+  padding: var(--ccw-space-4) 0;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-faint);
+}
+
+.viewText {
+  min-height: 120px;
+  margin: 0;
+  padding: var(--ccw-space-3);
+  overflow-x: auto;
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-sm);
+  line-height: 1.55;
+  white-space: pre;
+  cursor: text;
+  background: var(--ccw-bg-sunken);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.image {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--ccw-radius-sm);
+}
+
+.editor {
+  width: 100%;
+  height: 60vh;
+  padding: var(--ccw-space-3);
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-sm);
+  line-height: 1.55;
+  color: var(--ccw-text-primary);
+  white-space: pre;
+  resize: vertical;
+  background: var(--ccw-bg-sunken);
+  border: 1px solid var(--ccw-border-l2);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.editor:focus {
+  border-color: var(--ccw-accent);
+  outline: none;
+}
+
+.editBar {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  margin-top: var(--ccw-space-2);
+}
+
+.save {
+  padding: 1px 10px;
+  font-size: var(--ccw-text-sm);
+  color: #fff;
+  background: var(--ccw-accent);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.save:hover {
+  opacity: 0.85;
+}
+
+.save:disabled {
+  opacity: 0.6;
+}
+
+.cancel {
+  padding: 1px 10px;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.cancel:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.hint {
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+}
+
+.note {
+  margin-top: 6px;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+}

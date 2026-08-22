@@ -238,6 +238,12 @@ export type RpcMap = {
   'files.list': { params: { path: string }; result: { entries: TreeEntry[] } }
   /** Bounded read backing the Explorer preview: text capped, images as base64. */
   'files.read': { params: { path: string }; result: { preview: FilePreview } }
+  /**
+   * Whole-file save from an editor tab. The client only offers editing for
+   * untruncated text previews — writing a capped read back would shear the
+   * file at 256KB — and the server refuses anything but an existing file.
+   */
+  'files.write': { params: { path: string; content: string }; result: { bytesWritten: number } }
   /** Changed files in `cwd`, or `{ kind: 'none' }` when it is not a git repo. */
   'scm.status': { params: { cwd: string }; result: { status: ScmStatus } }
   /**

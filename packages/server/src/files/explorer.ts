@@ -1,4 +1,4 @@
-import { open, readdir, stat } from 'node:fs/promises'
+import { open, readdir, stat, writeFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 
 import type { FilePreview, TreeEntry } from '@ccw/shared'
@@ -84,4 +84,16 @@ export async function readFilePreview(path: string): Promise<FilePreview> {
   } finally {
     await handle.close()
   }
+}
+
+/**
+ * Whole-file save behind the editor tab. Only an existing regular file is
+ * accepted: the tab was opened from the tree, so a miss means the file was
+ * deleted or replaced since — surfacing that beats silently creating one.
+ */
+export async function writeTextFile(path: string, content: string): Promise<number> {
+  const info = await stat(path)
+  if (!info.isFile()) throw new Error(`不是普通文件：${path}`)
+  await writeFile(path, content, 'utf8')
+  return Buffer.byteLength(content, 'utf8')
 }

@@ -1,30 +1,31 @@
-import type { FilePreview, SessionStatus, TreeEntry } from '@ccw/shared'
+import type { SessionStatus, TreeEntry } from '@ccw/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { call } from '../../api/client.ts'
-import { ChevronRightIcon, FileIcon, FolderIcon, RefreshIcon, XIcon } from '../Icons.tsx'
+import { FolderIcon, FolderOpenIcon, HashIcon, RefreshIcon } from '../Icons.tsx'
 import panelStyles from './DetailsPanel.module.css'
 import styles from './ExplorerTree.module.css'
 
 /**
  * 文件 tab of the details panel: a lazy tree over `files.list` — one readdir
- * per expanded node, never a recursive walk — with a bounded preview overlay
- * behind `files.read`.
+ * per expanded node, never a recursive walk. Clicking a file hands it to the
+ * panel, which opens it as an editor tab beside 详情/文件.
  */
 export function ExplorerTree({
   cwd,
   turnStatus,
   fsVersion,
+  onOpenFile,
 }: {
   cwd: string
   turnStatus: SessionStatus
-  /** Bumped by the store after a rewind — the tree changed without a turn. */
+  /** Bumped by the store after a rewind or save — the tree changed without a turn. */
   fsVersion: number
+  onOpenFile: (entry: TreeEntry) => void
 }): JSX.Element {
   const [children, setChildren] = useState<Record<string, TreeEntry[]>>({})
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
-  const [preview, setPreview] = useState<{ entry: TreeEntry; data: FilePreview | null } | null>(null)
   // Mirrors `open` so the turn-end refresh effect does not refire on toggles.
   const openRef = useRef<ReadonlySet<string>>(open)
   openRef.current = open
@@ -57,21 +58,12 @@ export function ExplorerTree({
     if (!children[path]) void loadDir(path)
   }
 
-  const openFile = async (entry: TreeEntry): Promise<void> => {
-    setPreview({ entry, data: null })
-    try {
-      const result = await call('files.read', { path: entry.path })
-      // A slow response for a file the user already closed must not reopen it.
-      setPreview((current) => (current?.entry.path === entry.path ? { entry, data: result.preview } : current))
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-      setPreview(null)
-    }
-  }
-
   return (
     <div>
       <div className={styles.rootRow}>
+        <span className={styles.icon}>
+          <FolderOpenIcon size={13} />
+        </span>
         <span className={styles.rootName} title={cwd}>
           {basename(cwd)}
         </span>
@@ -94,13 +86,17 @@ export function ExplorerTree({
           open={open}
           childrenByDir={children}
           onToggle={toggleDir}
-          onOpenFile={(entry) => void openFile(entry)}
+          onOpenFile={onOpenFile}
         />
       )}
-
-      {preview && <PreviewOverlay entry={preview.entry} data={preview.data} onClose={() => setPreview(null)} />}
     </div>
   )
+}
+
+/** dsh look: dotfiles fade back, real directories carry the weight. */
+function rowClass(entry: TreeEntry): string {
+  if (entry.name.startsWith('.')) return `${styles.row} ${styles.rowMuted}`
+  return entry.isDirectory ? `${styles.row} ${styles.rowStrong}` : styles.row
 }
 
 function Rows({
@@ -127,16 +123,14 @@ function Rows({
           return (
             <button
               key={entry.path}
-              className={styles.row}
+              className={rowClass(entry)}
               style={indent}
               onClick={() => onOpenFile(entry)}
               type="button"
               title={entry.path}
             >
-              {/* Files carry no chevron; the pad keeps their names aligned with siblings. */}
-              <span className={styles.chevronPad} />
               <span className={styles.icon}>
-                <FileIcon size={13} />
+                <HashIcon size={12} />
               </span>
               <span className={styles.name}>{entry.name}</span>
             </button>
@@ -148,17 +142,14 @@ function Rows({
         return (
           <div key={entry.path}>
             <button
-              className={styles.row}
+              className={rowClass(entry)}
               style={indent}
               onClick={() => onToggle(entry.path)}
               type="button"
               title={entry.path}
             >
-              <span className={expanded ? `${styles.chevron} ${styles.chevronOpen}` : styles.chevron}>
-                <ChevronRightIcon size={12} />
-              </span>
               <span className={styles.icon}>
-                <FolderIcon size={13} />
+                {expanded ? <FolderOpenIcon size={13} /> : <FolderIcon size={13} />}
               </span>
               <span className={styles.name}>{entry.name}</span>
             </button>
@@ -187,61 +178,6 @@ function Rows({
       })}
     </>
   )
-}
-
-function PreviewOverlay({
-  entry,
-  data,
-  onClose,
-}: {
-  entry: TreeEntry
-  data: FilePreview | null
-  onClose: () => void
-}): JSX.Element {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
-  return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.previewPanel} onClick={(event) => event.stopPropagation()}>
-        <div className={styles.previewHead}>
-          <span className={styles.previewName}>{entry.name}</span>
-          <span className={styles.previewPath}>{entry.path}</span>
-          {data && <span className={styles.previewSize}>{formatSize(data.size)}</span>}
-          <button className={panelStyles.iconButton} onClick={onClose} type="button" title="关闭">
-            <XIcon size={14} />
-          </button>
-        </div>
-
-        <div className={styles.previewBody}>
-          {!data ? (
-            <div className={styles.previewEmpty}>读取中…</div>
-          ) : data.kind === 'binary' ? (
-            <div className={styles.previewEmpty}>二进制文件，无法预览</div>
-          ) : data.kind === 'image' ? (
-            <img className={styles.previewImage} src={`data:${data.mediaType};base64,${data.data}`} alt={entry.name} />
-          ) : (
-            <pre className={styles.previewText}>{data.content}</pre>
-          )}
-        </div>
-
-        {data?.kind === 'text' && data.truncated && (
-          <div className={styles.previewNote}>文件过大，仅显示前 256 KB（共 {formatSize(data.size)}）</div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function formatSize(size: number): string {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function basename(path: string): string {

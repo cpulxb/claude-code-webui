@@ -7,6 +7,7 @@
 
 .head {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--ccw-space-1);
   align-items: center;
   padding: var(--ccw-space-3);
@@ -38,6 +39,59 @@
 
 .spacer {
   flex: 1;
+}
+
+/* --- editor tabs (one per file opened from the tree) -------------------- */
+
+.fileTab {
+  display: flex;
+  align-items: center;
+  max-width: 150px;
+  color: var(--ccw-text-muted);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.fileTab:hover {
+  background: var(--ccw-bg-hover);
+}
+
+.fileTabActive {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-sunken);
+}
+
+.fileTabName {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  min-width: 0;
+  padding: 2px 2px 2px 8px;
+  font-size: var(--ccw-text-sm);
+  font-weight: 500;
+  color: inherit;
+}
+
+.fileTabLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileTabClose {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-right: 4px;
+  color: inherit;
+  border-radius: 50%;
+}
+
+.fileTabClose:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
 }
 
 .iconButton {
