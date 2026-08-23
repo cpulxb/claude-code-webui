@@ -32,6 +32,17 @@ export type SessionInit = {
   terminalSlashCommands: string[]
 }
 
+/**
+ * Live stats for the in-flight turn, shown as the composer's status line.
+ * `currentTokens` tracks the API message currently streaming (its usage
+ * arrives cumulatively); `doneTokens` folds each message in on message_stop.
+ */
+export type TurnStats = {
+  startedAt: number
+  doneTokens: number
+  currentTokens: number
+}
+
 export type SessionState = {
   sessionId: string
   cwd: string
@@ -61,6 +72,8 @@ export type SessionState = {
    * is the fresher reading.
    */
   liveTokens: number | null
+  /** Elapsed time + ↓ tokens of the running turn. Null while idle. */
+  turnStats: TurnStats | null
   /**
    * Bumped when files change outside a turn — a rewind or an editor-tab save —
    * so cwd-watching panels (SCM, Explorer) know to re-read.
@@ -113,6 +126,7 @@ function newSession(sessionId: string, cwd: string, attached: boolean): SessionS
     pendingPermissions: [],
     contextUsage: null,
     liveTokens: null,
+    turnStats: null,
     fsVersion: 0,
   }
 }
@@ -265,6 +279,7 @@ export const useStore = create<Store>()(
         })
         session.status = 'running'
         session.error = null
+        session.turnStats = { startedAt: Date.now(), doneTokens: 0, currentTokens: 0 }
       })
       await call('session.send', { sessionId, text, ...(attachments?.length ? { attachments } : {}) })
     },
@@ -463,6 +478,20 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
             usage.output_tokens
         }
 
+        // Turn status line: ↓ tokens ride the main thread's streaming usage
+        // (subagents burn their own budget concurrently and would interleave
+        // the counters). Created lazily so a reloaded page picks the turn back
+        // up from the next delta.
+        if (message.type === 'stream_event' && message.parent_tool_use_id === null) {
+          const stats = (session.turnStats ??= { startedAt: Date.now(), doneTokens: 0, currentTokens: 0 })
+          if (message.event.type === 'message_delta') {
+            stats.currentTokens = message.event.usage.output_tokens ?? stats.currentTokens
+          } else if (message.event.type === 'message_stop') {
+            stats.doneTokens += stats.currentTokens
+            stats.currentTokens = 0
+          }
+        }
+
         if (message.type === 'system' && message.subtype === 'init') {
           sawInit = session.init === null
           session.init = {
@@ -484,6 +513,7 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
         }
         if (message.type === 'result') {
           session.status = 'idle'
+          session.turnStats = null
           sawResult = true
         }
         return
@@ -497,13 +527,15 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
       case 'session_error':
         session.error = event.error
         session.status = 'idle'
-        // No `result` follows an errored turn, so nothing else clears this.
+        // No `result` follows an errored turn, so nothing else clears these.
         session.liveTokens = null
+        session.turnStats = null
         return
       case 'session_closed':
         session.closed = true
         session.status = 'idle'
         session.liveTokens = null
+        session.turnStats = null
         return
     }
   })

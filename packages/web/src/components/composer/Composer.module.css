@@ -319,3 +319,28 @@
   border: none;
   outline: none;
 }
+
+.turnStatus {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  padding: 0 var(--ccw-space-2) var(--ccw-space-2);
+  font-size: 12px;
+  color: var(--ccw-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.turnSpinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--ccw-border-strong);
+  border-top-color: var(--ccw-accent);
+  border-radius: 50%;
+  animation: turn-spin 0.9s linear infinite;
+}
+
+@keyframes turn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

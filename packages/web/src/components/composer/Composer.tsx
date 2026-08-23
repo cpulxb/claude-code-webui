@@ -11,6 +11,7 @@ import { ModeIcon } from './ModeIcon.tsx'
 import { MODE_META, ModesPopover } from './ModesPopover.tsx'
 import { applyTrigger, detectTrigger, type Trigger } from './trigger.ts'
 import { TriggerMenu, type MenuItem } from './TriggerMenu.tsx'
+import { TurnStatus } from './TurnStatus.tsx'
 
 const FILE_SUGGEST_DEBOUNCE_MS = 90
 
@@ -178,6 +179,7 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
   return (
     <div className={styles.wrap}>
       <div className={styles.inner}>
+        {running && session.turnStats && <TurnStatus stats={session.turnStats} />}
         <div className={styles.box} style={{ position: 'relative' }}>
           {trigger && (
             <TriggerMenu
