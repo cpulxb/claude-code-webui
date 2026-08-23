@@ -5,6 +5,7 @@ import {
   type ModelInfo,
   type Query,
   type RewindFilesResult,
+  type SDKMessage,
   type SDKUserMessage,
   type SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk'
@@ -29,6 +30,9 @@ type ContentBlocks = Extract<MessageParam['content'], readonly unknown[]>
 
 export type EmitEvent = (event: ServerEvent) => void
 
+/** Backlog cap — a runaway turn with hundreds of tool calls must not grow memory unbounded. */
+const BACKLOG_LIMIT = 500
+
 /**
  * One WebUI session backed by one SDK `Query`, which in turn owns one Claude
  * Code subprocess. Prompts go in through {@link send}; everything the CLI
@@ -45,6 +49,7 @@ export class SessionRunner {
   readonly #query: Query
   #done = false
   #status: SessionStatus = 'idle'
+  readonly #backlog: SDKMessage[] = []
 
   constructor(config: SessionConfig, emit: EmitEvent) {
     this.config = config
@@ -116,6 +121,7 @@ export class SessionRunner {
           this.#status = message.state === 'running' ? 'running' : 'idle'
         }
         if (message.type === 'result') this.#status = 'idle'
+        this.#trackBacklog(message)
         this.#emit({ type: 'sdk', sessionId: this.sessionId, message })
       }
     } catch (error) {
@@ -134,6 +140,27 @@ export class SessionRunner {
     }
   }
 
+  /**
+   * Retains the in-flight turn's messages for a browser that reloads mid-turn:
+   * the CLI flushes the jsonl lazily, so the history read alone misses what
+   * already streamed. Cleared when the turn ends — from there the transcript
+   * catches up, and `session.state` payloads stay small.
+   */
+  #trackBacklog(message: SDKMessage): void {
+    const turnEnded =
+      message.type === 'result' ||
+      (message.type === 'system' && message.subtype === 'session_state_changed' && message.state !== 'running')
+    if (turnEnded) {
+      this.#backlog.length = 0
+      return
+    }
+    // Only what the renderer rebuilds from: stream_event (one per delta) and
+    // tool_progress (one per second) would flood the ring for no benefit.
+    if (message.type !== 'assistant' && message.type !== 'user' && message.type !== 'system') return
+    this.#backlog.push(message)
+    if (this.#backlog.length > BACKLOG_LIMIT) this.#backlog.shift()
+  }
+
   get done(): boolean {
     return this.#done
   }
@@ -146,6 +173,11 @@ export class SessionRunner {
   /** Permission prompts still open, for a browser that reconnected. */
   get pendingPermissions(): PermissionRequest[] {
     return this.#permissions.list()
+  }
+
+  /** The in-flight turn's messages, for the same reconnecting browser; see {@link #trackBacklog}. */
+  get backlog(): SDKMessage[] {
+    return [...this.#backlog]
   }
 
   send(text: string, attachments?: Attachment[]): void {

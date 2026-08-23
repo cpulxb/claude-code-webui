@@ -35,18 +35,21 @@ export function applyHistoryMessage(transcript: Transcript, entry: SessionMessag
   if (!Array.isArray(content)) return
 
   const blocks = content as { type: string; text?: string }[]
+
+  // Tool results ride in on user messages; the live renderer already knows how
+  // to attach them to their card. Runs before the text render so the delegated
+  // applyMessage sees this entry's uuid unrecorded — it only mutates existing
+  // tool cards, so the visual order is unchanged.
+  if (blocks.some((block) => block.type === 'tool_result')) {
+    applyMessage(transcript, entry as unknown as SDKMessage)
+  }
+
   const text = blocks
     .filter((block) => block.type === 'text')
     .map((block) => block.text ?? '')
     .join('\n')
   const images = blocks.filter((block) => block.type === 'image' || block.type === 'document').length
   if (text || images) applyUserText(transcript, entry.uuid, text, images)
-
-  // Tool results ride in on user messages; the live renderer already knows how
-  // to attach them to their card.
-  if (blocks.some((block) => block.type === 'tool_result')) {
-    applyMessage(transcript, entry as unknown as SDKMessage)
-  }
 }
 
 /** `<local-command-stdout>…</local-command-stdout>` — a slash command's output. */
@@ -56,6 +59,7 @@ const COMMAND_NAME = /<command-name>([^<]*)<\/command-name>/
 const COMMAND_ARGS = /<command-args>([^<]*)<\/command-args>/
 
 function applyUserText(transcript: Transcript, uuid: string, raw: string, attachments: number): void {
+  transcript.seen[uuid] = true
   const trimmed = raw.trim()
 
   const output = LOCAL_OUTPUT.exec(trimmed)

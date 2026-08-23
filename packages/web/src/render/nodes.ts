@@ -46,10 +46,16 @@ export type Transcript = {
   streaming: StreamingBlock | null
   /** toolUseId → index into `nodes`, so tool results land on the right card. */
   toolIndex: Record<string, number>
+  /**
+   * Envelope uuids already folded in. The SDK treats the uuid as an idempotency
+   * key and it is identical between the live stream and the jsonl history, so
+   * history replay, backlog replay, and live events can overlap safely.
+   */
+  seen: Record<string, true>
 }
 
 export function emptyTranscript(): Transcript {
-  return { nodes: [], streaming: null, toolIndex: {} }
+  return { nodes: [], streaming: null, toolIndex: {}, seen: {} }
 }
 
 /**
@@ -66,6 +72,16 @@ export function emptyTranscript(): Transcript {
  * thrown on, or a newer CLI would break the transcript.
  */
 export function applyMessage(transcript: Transcript, message: SDKMessage): void {
+  // stream_event and tool_progress are exempt from dedup: both fire at high
+  // frequency with per-event uuids, reapplying them is harmless, and recording
+  // each one would only bloat the seen map.
+  if (message.type !== 'stream_event' && message.type !== 'tool_progress') {
+    const uuid = (message as { uuid?: string }).uuid
+    if (uuid) {
+      if (transcript.seen[uuid]) return
+      transcript.seen[uuid] = true
+    }
+  }
   switch (message.type) {
     case 'stream_event':
       applyStreamEvent(transcript, message.event)

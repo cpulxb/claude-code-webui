@@ -181,11 +181,18 @@ export type RpcMap = {
    * only trustworthy answer to "is this session already running?" — guessing
    * `false` would present a live session as a read-only replay and let the next
    * message spawn a second process writing the same transcript. `status` and
-   * `pendingPermissions` restore what the dropped downlink took with it.
+   * `pendingPermissions` restore what the dropped downlink took with it, and
+   * `backlog` restores the in-flight turn's messages, which the CLI may not
+   * have flushed to the jsonl yet; it is empty while the session is idle.
    */
   'session.state': {
     params: { sessionId: string }
-    result: { live: boolean; status: SessionStatus; pendingPermissions: PermissionRequest[] }
+    result: {
+      live: boolean
+      status: SessionStatus
+      pendingPermissions: PermissionRequest[]
+      backlog: SDKMessage[]
+    }
   }
   'session.setPermissionMode': {
     params: { sessionId: string; mode: PermissionMode }

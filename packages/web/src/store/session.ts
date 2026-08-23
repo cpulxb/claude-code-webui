@@ -426,6 +426,10 @@ async function adoptRunner(set: Setter, get: () => Store, sessionId: string): Pr
     session.status = state.status
     // Prompts raised while the page was gone are still parked on the CLI side.
     session.pendingPermissions = state.pendingPermissions
+    // So is whatever the turn already streamed but the jsonl has not flushed
+    // yet — replay it through the normal path; `seen` drops the overlap with
+    // history and with live events that raced this snapshot.
+    for (const message of state.backlog) applyMessage(session.transcript, message)
   })
   await loadSessionMeta(set, get, sessionId)
   // The reading normally refreshes on each `result`, all of which this page
