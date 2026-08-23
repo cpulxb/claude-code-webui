@@ -97,7 +97,9 @@ export class SessionRunner {
     })
 
     void this.#pump()
-    if (config.effort) void this.setEffort(config.effort)
+    // Failure here means the CLI died before the flag landed; #pump already
+    // reports that, and an escaped rejection would crash the whole server.
+    if (config.effort) this.setEffort(config.effort).catch(() => {})
   }
 
   /** Drains the SDK's message stream onto the downlink until the CLI exits. */
