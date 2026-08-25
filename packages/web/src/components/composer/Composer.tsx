@@ -288,11 +288,9 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
               activeIndex={activeIndex}
               emptyText="没有匹配的命令"
               note={
-                // Only the command list needs the runner to answer it; the
-                // built-in rows and the effort slider work read-only too.
-                commands.length === 0 && !session.attached
-                  ? '斜杠命令在只读回放中不可用 — 发送消息接管后加载'
-                  : undefined
+                // Opening a session eagerly attaches, so an empty list just
+                // means the CLI is still booting or the fetch is in flight.
+                commands.length === 0 ? '命令加载中…' : undefined
               }
               efforts={efforts}
               effort={session.effort}
@@ -365,7 +363,7 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
                 ? '会话已结束 — 从侧栏重新打开即可继续'
                 : session.attached
                   ? '输入消息，/ 唤出命令，@ 引用文件'
-                  : '只读回放 — 发送消息后由 WebUI 接管这个会话'
+                  : '正在接管会话…'
             }
             onChange={(event) => updateText(event.target.value, event.target.selectionStart)}
             onKeyDown={onKeyDown}

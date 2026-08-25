@@ -216,16 +216,19 @@ export const useStore = create<Store>()(
       return sessionId
     },
 
-    // Opening is read-only *unless the server is already running this session*.
-    // Resuming one it is not would spawn a CLI process that appends to the very
-    // JSONL the terminal may have open, and two writers clobber each other — so
-    // the transcript is read off disk and the runner is deferred until the user
-    // actually says something.
+    // Opening eagerly attaches, VS Code style: the transcript renders from
+    // disk first, then the runner resumes in the background so slash commands
+    // and models are ready before the first message. The tradeoff is a CLI
+    // process per opened session — and, as in VS Code, resuming a session a
+    // terminal still has open means two writers on one JSONL.
     openSession: async (sessionId, cwd) => {
-      if (get().sessions[sessionId]) {
+      const known = get().sessions[sessionId]
+      if (known) {
         set((state) => {
           state.activeId = sessionId
         })
+        // e.g. opened before the runner existed, or the eager attach failed.
+        if (!known.attached && !known.closed) attach(set, get, sessionId).catch(() => {})
         return
       }
       const target = cwd ?? get().defaultCwd
@@ -237,6 +240,9 @@ export const useStore = create<Store>()(
       // history replay overwrites the whole transcript when it lands.
       await loadHistory(set, get, sessionId, target)
       await adoptRunner(set, get, sessionId)
+      // Fire-and-forget: rendering must not wait for a CLI to boot. A failure
+      // leaves the session detached, and `send` retries the attach anyway.
+      if (!get().sessions[sessionId]?.attached) attach(set, get, sessionId).catch(() => {})
     },
 
     setActive: (sessionId) =>
@@ -550,7 +556,9 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
 }
 
 /**
- * Starts the CLI process behind a session opened read-only from the sidebar.
+ * Starts the CLI process behind a session opened from the sidebar. Called
+ * eagerly by `openSession`, and again by `send`/`rewindFiles` as the retry
+ * path if that eager attach failed.
  *
  * Whatever mode, model, or effort was picked while detached is handed to the
  * runner at startup, since there was no process to forward those calls to.

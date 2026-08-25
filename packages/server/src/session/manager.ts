@@ -15,6 +15,11 @@ export class SessionManager {
   readonly #subscribers = new Set<(event: ServerEvent) => void>()
 
   create(config: SessionConfig): SessionRunner {
+    // Idempotent on the session id: the browser eagerly attaches on open and
+    // again on first send, and a second runner for the same id would leak the
+    // first process while both append to the same JSONL.
+    const existing = this.#runners.get(config.resume ?? config.sessionId ?? '')
+    if (existing) return existing
     const runner = new SessionRunner(config, (event) => this.#broadcast(event))
     this.#runners.set(runner.sessionId, runner)
     return runner
