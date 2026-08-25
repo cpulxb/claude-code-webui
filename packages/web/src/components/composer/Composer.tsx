@@ -1,13 +1,16 @@
-import { fuzzyFilter, type Attachment, type FileSuggestion, type SlashCommand } from '@ccw/shared'
+import type { Attachment, FileSuggestion, ModelInfo } from '@ccw/shared'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { call } from '../../api/client.ts'
 import type { SessionState } from '../../store/session.ts'
 import { useStore } from '../../store/session.ts'
 import { fileToAttachment } from '../../utils/attachments.ts'
+import { buildPaletteEntries, CommandPalette, type PaletteEntry } from './CommandPalette.tsx'
 import styles from './Composer.module.css'
 import { ContextMeter } from './ContextMeter.tsx'
+import { effortChoices } from './EffortSlider.tsx'
 import { ModeIcon } from './ModeIcon.tsx'
+import { findModel, ModelPicker } from './ModelPicker.tsx'
 import { MODE_META, ModesPopover } from './ModesPopover.tsx'
 import { applyTrigger, detectTrigger, type Trigger } from './trigger.ts'
 import { TriggerMenu, type MenuItem } from './TriggerMenu.tsx'
@@ -28,11 +31,15 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
   const [activeIndex, setActiveIndex] = useState(0)
   const [files, setFiles] = useState<FileSuggestion[]>([])
   const [modesOpen, setModesOpen] = useState(false)
+  // The VS Code-style "Select a model" popup, opened from the `/` palette.
+  const [modelsOpen, setModelsOpen] = useState(false)
+  const [modelIndex, setModelIndex] = useState(0)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const modesRef = useRef<HTMLDivElement>(null)
   const modeButtonRef = useRef<HTMLButtonElement>(null)
+  const modelsRef = useRef<HTMLDivElement>(null)
 
   const running = session.status === 'running'
 
@@ -43,15 +50,22 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
     return session.commands.filter((command) => !terminalOnly.has(command.name))
   }, [session.commands, session.init?.terminalSlashCommands])
 
-  const items: MenuItem[] = useMemo(() => {
-    if (!trigger) return []
-    if (trigger.kind === '/') {
-      return fuzzyFilter(trigger.query, commands, (command) => command.name)
-        .slice(0, 40)
-        .map(toCommandItem)
-    }
-    return files.slice(0, 40).map((file) => ({ key: file.path, name: file.path }))
-  }, [trigger, commands, files])
+  const entries: PaletteEntry[] = useMemo(
+    () =>
+      trigger?.kind === '/' ? buildPaletteEntries(trigger.query, commands, session.models, session.model) : [],
+    [trigger?.kind, trigger?.query, commands, session.models, session.model],
+  )
+
+  const fileItems: MenuItem[] = useMemo(
+    () =>
+      trigger?.kind === '@'
+        ? files.slice(0, 40).map((file) => ({ key: file.path, name: file.path, isDirectory: file.isDirectory }))
+        : [],
+    [trigger?.kind, files],
+  )
+
+  const menuLength = trigger?.kind === '/' ? entries.length : trigger?.kind === '@' ? fileItems.length : 0
+  const efforts = effortChoices(session.models, session.model)
 
   useEffect(() => setActiveIndex(0), [trigger?.kind, trigger?.query])
 
@@ -81,6 +95,18 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [modesOpen])
 
+  // Clicking anywhere outside dismisses the model picker. Rows select on
+  // mousedown with preventDefault, so they never count as "outside".
+  useEffect(() => {
+    if (!modelsOpen) return
+    const onPointerDown = (event: PointerEvent): void => {
+      if (modelsRef.current?.contains(event.target as Node)) return
+      setModelsOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [modelsOpen])
+
   useLayoutEffect(() => {
     const element = textareaRef.current
     if (!element) return
@@ -90,14 +116,17 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
 
   const updateText = useCallback((next: string, caret: number) => {
     setText(next)
-    setTrigger(detectTrigger(next, caret))
+    const detected = detectTrigger(next, caret)
+    setTrigger(detected)
+    // Typing a fresh `/` or `@` stacks a second popover over the picker.
+    if (detected) setModelsOpen(false)
   }, [])
 
-  const choose = useCallback(
+  const chooseFile = useCallback(
     (item: MenuItem) => {
       const element = textareaRef.current
       if (!element || !trigger) return
-      const replacement = trigger.kind === '/' ? `/${item.name} ` : `@${item.name}${item.name.endsWith('/') ? '' : ' '}`
+      const replacement = `@${item.name}${item.name.endsWith('/') ? '' : ' '}`
       const applied = applyTrigger(text, element.selectionStart, trigger, replacement)
       setText(applied.text)
       setTrigger(null)
@@ -107,6 +136,48 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
       })
     },
     [text, trigger],
+  )
+
+  const choosePalette = useCallback(
+    (entry: PaletteEntry) => {
+      const element = textareaRef.current
+      if (!element || !trigger) return
+      if (entry.kind === 'command') {
+        const applied = applyTrigger(text, element.selectionStart, trigger, `/${entry.command.name} `)
+        setText(applied.text)
+        setTrigger(null)
+        requestAnimationFrame(() => {
+          element.focus()
+          element.setSelectionRange(applied.caret, applied.caret)
+        })
+        return
+      }
+      // Built-in rows act rather than insert, so the `/query` token goes away —
+      // except "mention", which turns it into the `@` trigger in place.
+      const applied = applyTrigger(text, element.selectionStart, trigger, entry.action === 'mention' ? '@' : '')
+      setText(applied.text)
+      setTrigger(entry.action === 'mention' ? detectTrigger(applied.text, applied.caret) : null)
+      requestAnimationFrame(() => {
+        element.focus()
+        element.setSelectionRange(applied.caret, applied.caret)
+      })
+      if (entry.action === 'attach') fileInputRef.current?.click()
+      if (entry.action === 'switch-model') {
+        const current = findModel(session.models, session.model)
+        setModelIndex(Math.max(0, current ? session.models.indexOf(current) : 0))
+        setModelsOpen(true)
+      }
+    },
+    [text, trigger, session.models, session.model],
+  )
+
+  const chooseModel = useCallback(
+    (model: ModelInfo) => {
+      void setModel(model.value)
+      setModelsOpen(false)
+      textareaRef.current?.focus()
+    },
+    [setModel],
   )
 
   const submit = useCallback(() => {
@@ -133,27 +204,56 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
   }, [text])
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (trigger && items.length > 0) {
+    if (modelsOpen && session.models.length > 0) {
+      const count = session.models.length
       if (event.key === 'ArrowDown') {
         event.preventDefault()
-        setActiveIndex((index) => (index + 1) % items.length)
+        setModelIndex((index) => (index + 1) % count)
         return
       }
       if (event.key === 'ArrowUp') {
         event.preventDefault()
-        setActiveIndex((index) => (index - 1 + items.length) % items.length)
+        setModelIndex((index) => (index - 1 + count) % count)
         return
       }
       if (event.key === 'Enter' || event.key === 'Tab') {
         event.preventDefault()
-        const item = items[activeIndex]
-        if (item) choose(item)
+        const model = session.models[modelIndex]
+        if (model) chooseModel(model)
+        return
+      }
+      if (event.key === 'Escape') {
+        setModelsOpen(false)
+        return
+      }
+    }
+    if (trigger && menuLength > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setActiveIndex((index) => (index + 1) % menuLength)
+        return
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setActiveIndex((index) => (index - 1 + menuLength) % menuLength)
+        return
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault()
+        if (trigger.kind === '/') {
+          const entry = entries[activeIndex]
+          if (entry) choosePalette(entry)
+        } else {
+          const item = fileItems[activeIndex]
+          if (item) chooseFile(item)
+        }
         return
       }
     }
     if (event.key === 'Escape') {
       setTrigger(null)
       setModesOpen(false)
+      setModelsOpen(false)
       return
     }
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -181,21 +281,43 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
       <div className={styles.inner}>
         {running && session.turnStats && <TurnStatus stats={session.turnStats} />}
         <div className={styles.box} style={{ position: 'relative' }}>
-          {trigger && (
-            <TriggerMenu
-              items={items}
+          {trigger?.kind === '/' && (
+            <CommandPalette
+              entries={entries}
+              grouped={trigger.query === ''}
               activeIndex={activeIndex}
-              emptyText={
-                // Only the command list needs the runner to answer it; file
-                // completion is a plain directory scan and works read-only.
-                trigger.kind !== '/'
-                  ? '没有匹配的文件'
-                  : session.attached
-                    ? '没有匹配的命令'
-                    : '只读回放中 — 发送消息接管后可用'
+              emptyText="没有匹配的命令"
+              note={
+                // Only the command list needs the runner to answer it; the
+                // built-in rows and the effort slider work read-only too.
+                commands.length === 0 && !session.attached
+                  ? '斜杠命令在只读回放中不可用 — 发送消息接管后加载'
+                  : undefined
               }
-              onSelect={choose}
+              efforts={efforts}
+              effort={session.effort}
+              onEffort={(next) => void setEffort(next)}
+              onSelect={choosePalette}
               onHover={setActiveIndex}
+            />
+          )}
+          {trigger?.kind === '@' && (
+            <TriggerMenu
+              items={fileItems}
+              activeIndex={activeIndex}
+              emptyText="没有匹配的文件"
+              onSelect={chooseFile}
+              onHover={setActiveIndex}
+            />
+          )}
+          {modelsOpen && (
+            <ModelPicker
+              models={session.models}
+              current={session.model}
+              activeIndex={modelIndex}
+              rootRef={modelsRef}
+              onSelect={chooseModel}
+              onHover={setModelIndex}
             />
           )}
           {modesOpen && (
@@ -321,13 +443,4 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
       </div>
     </div>
   )
-}
-
-function toCommandItem(command: SlashCommand): MenuItem {
-  return {
-    key: command.name,
-    name: command.name,
-    ...(command.argumentHint ? { hint: command.argumentHint } : {}),
-    ...(command.description ? { description: command.description } : {}),
-  }
 }

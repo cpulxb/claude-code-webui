@@ -1,7 +1,9 @@
-import { EFFORT_LEVELS, PERMISSION_MODES, type EffortLevel, type ModelInfo, type PermissionMode } from '@ccw/shared'
+import { PERMISSION_MODES, type EffortLevel, type ModelInfo, type PermissionMode } from '@ccw/shared'
 
 import styles from './Composer.module.css'
+import { EFFORT_LABEL, EffortSlider, effortChoices } from './EffortSlider.tsx'
 import { ModeIcon } from './ModeIcon.tsx'
+import { findModel, modelLabel } from './ModelPicker.tsx'
 
 type ModeMeta = { label: string; hint: string; danger?: boolean }
 
@@ -13,14 +15,6 @@ export const MODE_META: Record<PermissionMode, ModeMeta> = {
   auto: { label: '自动', hint: '通过安全检查的操作自动批准，有风险的仍会暂停询问' },
   bypassPermissions: { label: '跳过权限', hint: '执行任何操作前都不再询问', danger: true },
   dontAsk: { label: '不询问', hint: '从不弹窗；未预先授权的操作直接拒绝' },
-}
-
-const EFFORT_LABEL: Record<EffortLevel, string> = {
-  low: '低',
-  medium: '中',
-  high: '高',
-  xhigh: '很高',
-  max: '最高',
 }
 
 /**
@@ -37,13 +31,8 @@ export function ModesPopover(props: {
   onEffort: (effort: EffortLevel) => void
   onModel: (model: string) => void
 }): JSX.Element {
-  const selected = props.models.find(
-    (model) => model.value === props.model || model.resolvedModel === props.model,
-  )
-  // Offering an effort level the active model rejects would just produce an
-  // error on the next turn, so the slider follows the model's own list.
-  const efforts =
-    selected?.supportedEffortLevels ?? (selected && selected.supportsEffort === false ? [] : EFFORT_LEVELS)
+  const selected = findModel(props.models, props.model)
+  const efforts = effortChoices(props.models, props.model)
 
   return (
     <div ref={props.rootRef} className={`${styles.popover} ${styles.modesPopover}`} role="menu">
@@ -78,18 +67,7 @@ export function ModesPopover(props: {
           <div className={styles.divider} />
           <div className={styles.effortRow}>
             <span className={styles.effortLabel}>思考强度（{EFFORT_LABEL[props.effort]}）</span>
-            <span className={styles.effortStops}>
-              {efforts.map((level) => (
-                <button
-                  key={level}
-                  className={`${styles.effortStop} ${level === props.effort ? styles.effortStopActive : ''}`}
-                  onClick={() => props.onEffort(level)}
-                  type="button"
-                  title={EFFORT_LABEL[level]}
-                  aria-label={`思考强度 ${EFFORT_LABEL[level]}`}
-                />
-              ))}
-            </span>
+            <EffortSlider levels={efforts} value={props.effort} onChange={props.onEffort} />
           </div>
         </>
       )}
@@ -113,14 +91,4 @@ export function ModesPopover(props: {
       )}
     </div>
   )
-}
-
-/**
- * A channel can point two aliases at the same underlying model, which leaves
- * the SDK reporting one `displayName` twice — appending the alias keeps the
- * rows tellable apart.
- */
-function modelLabel(model: ModelInfo, all: ModelInfo[]): string {
-  const ambiguous = all.filter((other) => other.displayName === model.displayName).length > 1
-  return ambiguous ? `${model.displayName}（${model.value}）` : model.displayName
 }

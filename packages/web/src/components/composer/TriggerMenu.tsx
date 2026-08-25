@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 
+import { FileIcon, FolderIcon } from '../Icons.tsx'
 import styles from './Composer.module.css'
 
 export type MenuItem = {
@@ -8,9 +9,11 @@ export type MenuItem = {
   /** Right-aligned argument hint, e.g. `<file>`. */
   hint?: string
   description?: string
+  /** Set on file rows — renders VS Code's folder/document glyph. */
+  isDirectory?: boolean
 }
 
-/** Candidate list for the `/` and `@` triggers. Selection lives in the caller. */
+/** Candidate list for the `@` trigger. Selection lives in the caller. */
 export function TriggerMenu(props: {
   items: MenuItem[]
   activeIndex: number
@@ -51,6 +54,9 @@ export function TriggerMenu(props: {
           role="option"
           aria-selected={index === props.activeIndex}
         >
+          {item.isDirectory !== undefined && (
+            <span className={styles.menuIcon}>{item.isDirectory ? <FolderIcon size={13} /> : <FileIcon size={13} />}</span>
+          )}
           <span className={styles.menuName}>{item.name}</span>
           {item.hint && <span className={styles.menuHint}>{item.hint}</span>}
           {item.description && <span className={styles.menuDesc}>{item.description}</span>}

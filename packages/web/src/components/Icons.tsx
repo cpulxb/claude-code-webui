@@ -94,6 +94,28 @@ export function FolderOpenIcon(props: { size?: number }): JSX.Element {
   )
 }
 
+/** VS Code 式的 `@` 文件菜单用纸页图标；Explorer 树仍保留 #。 */
+export function FileIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z" />
+      <path d="M14 3v6h6" />
+    </Icon>
+  )
+}
+
+export function DumbbellIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M7 6v12" />
+      <path d="M17 6v12" />
+      <path d="M3.5 9v6" />
+      <path d="M20.5 9v6" />
+      <path d="M7 12h10" />
+    </Icon>
+  )
+}
+
 /** dsh 风格的文件行标记 — 树里的文件不用纸页图标，用 #。 */
 export function HashIcon(props: { size?: number }): JSX.Element {
   return (
