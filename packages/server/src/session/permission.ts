@@ -16,6 +16,12 @@ type Pending = {
  */
 export class PermissionBroker {
   #pending = new Map<string, Pending>()
+  readonly #onAborted: (requestId: string) => void
+
+  /** `onAborted` fires for prompts the SDK cancels, so the browser can drop the card. */
+  constructor(onAborted: (requestId: string) => void) {
+    this.#onAborted = onAborted
+  }
 
   /** Parks until `respond()` is called, or the SDK aborts the request. */
   await(request: PermissionRequest, signal: AbortSignal): Promise<PermissionResult> {
@@ -25,6 +31,7 @@ export class PermissionBroker {
       const onAbort = (): void => {
         if (this.#pending.delete(request.requestId)) {
           resolve({ behavior: 'deny', message: 'Permission request aborted.' })
+          this.#onAborted(request.requestId)
         }
       }
       // The SDK aborts when the turn is interrupted while a prompt is open.

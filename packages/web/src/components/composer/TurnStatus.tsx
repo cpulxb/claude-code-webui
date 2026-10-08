@@ -1,13 +1,21 @@
 import { useEffect, useState } from 'react'
 
-import type { TurnStats } from '../../store/session.ts'
+import { useActiveSessionValue } from '../../store/session.ts'
 import styles from './Composer.module.css'
 
 /**
  * The CLI's "Warping… (31s · ↓ 783 tokens)" line, webui edition: elapsed time
  * off the local clock, output tokens off the main thread's streaming usage.
+ *
+ * `turnStats` is subscribed here rather than passed down, because it changes on
+ * every streamed token — reading it in the composer would re-render the palette,
+ * the model picker and the effort slider along with it.
  */
-export function TurnStatus({ stats }: { stats: TurnStats }): JSX.Element {
+export function TurnStatus(): JSX.Element | null {
+  const startedAt = useActiveSessionValue((session) => session.turnStats?.startedAt)
+  const doneTokens = useActiveSessionValue((session) => session.turnStats?.doneTokens) ?? 0
+  const currentTokens = useActiveSessionValue((session) => session.turnStats?.currentTokens) ?? 0
+
   // The elapsed seconds only move if something re-renders this component.
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -15,8 +23,9 @@ export function TurnStatus({ stats }: { stats: TurnStats }): JSX.Element {
     return () => clearInterval(timer)
   }, [])
 
-  const elapsed = Math.max(0, Math.floor((Date.now() - stats.startedAt) / 1000))
-  const tokens = stats.doneTokens + stats.currentTokens
+  if (startedAt === undefined) return null
+  const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
+  const tokens = doneTokens + currentTokens
   return (
     <div className={styles.turnStatus}>
       <span className={styles.turnSpinner} aria-hidden />

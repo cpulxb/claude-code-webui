@@ -1,8 +1,6 @@
-import { createReadStream } from 'node:fs'
-import { access, readdir } from 'node:fs/promises'
+import { access, open, readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { createInterface } from 'node:readline'
 
 import { getSessionMessages, listSessions, type SDKSessionInfo } from '@anthropic-ai/claude-agent-sdk'
 import type { PermissionMode, ProjectGroup, SessionMessage, SessionSummary } from '@ccw/shared'
@@ -54,29 +52,62 @@ const UNKNOWN_CWD = '(unknown)'
  * `getSessionMessages` filters those out — so the file is read directly. The
  * last such line wins; a session that was never toggled has none, and the
  * caller keeps its own default rather than being forced to `default`.
+ *
+ * Read backwards from the end so the common case — the mode was toggled during
+ * the recent part of the conversation — costs one chunk instead of streaming
+ * the whole file. When the last toggle sits near the front of the file, or
+ * there is none at all, the file is read to its front: the same order of work
+ * as a forward scan, plus one copy per chunk.
  */
 export async function readPermissionMode(sessionId: string): Promise<PermissionMode | null> {
   const path = await findTranscript(sessionId)
   if (!path) return null
 
-  let mode: PermissionMode | null = null
-  const lines = createInterface({ input: createReadStream(path, 'utf8'), crlfDelay: Infinity })
+  const handle = await open(path, 'r')
   try {
-    for await (const line of lines) {
-      // Cheap prefilter: parsing every line of a multi-megabyte transcript to
-      // find a handful of toggles is not worth it.
-      if (!line.includes('"permission-mode"')) continue
-      try {
-        const entry = JSON.parse(line) as { type?: string; permissionMode?: PermissionMode }
-        if (entry.type === 'permission-mode' && entry.permissionMode) mode = entry.permissionMode
-      } catch {
-        // A partially flushed trailing line — the CLI may be mid-write.
+    let end = (await handle.stat()).size
+    // Bytes of the chunk's leading, still incomplete line.
+    let carry = Buffer.alloc(0)
+    while (end > 0) {
+      const start = Math.max(0, end - TAIL_CHUNK)
+      const chunk = Buffer.alloc(end - start)
+      await handle.read(chunk, 0, chunk.length, start)
+      const merged = Buffer.concat([chunk, carry])
+      // Splitting on a line boundary keeps multi-byte characters intact.
+      const boundary = start > 0 ? merged.indexOf(0x0a) : -1
+      if (start > 0 && boundary < 0) {
+        carry = merged
+        end = start
+        continue
       }
+      carry = merged.subarray(0, boundary + 1)
+      const lines = merged.subarray(boundary + 1).toString('utf8').split('\n')
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const mode = parsePermissionMode(lines[i]!)
+        if (mode) return mode
+      }
+      end = start
     }
+    return null
   } finally {
-    lines.close()
+    await handle.close()
   }
-  return mode
+}
+
+/** Chunk size of the backwards read; larger transcripts take several chunks. */
+const TAIL_CHUNK = 64 * 1024
+
+function parsePermissionMode(line: string): PermissionMode | null {
+  // Cheap prefilter: parsing every line of a multi-megabyte transcript to find
+  // a handful of toggles is not worth it.
+  if (!line.includes('"permission-mode"')) return null
+  try {
+    const entry = JSON.parse(line) as { type?: string; permissionMode?: PermissionMode }
+    return entry.type === 'permission-mode' && entry.permissionMode ? entry.permissionMode : null
+  } catch {
+    // A partially flushed trailing line — the CLI may be mid-write.
+    return null
+  }
 }
 
 /**

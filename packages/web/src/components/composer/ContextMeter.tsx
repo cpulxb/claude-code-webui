@@ -1,6 +1,7 @@
 import type { ContextUsage } from '@ccw/shared'
 import { useEffect, useRef, useState } from 'react'
 
+import { useActiveSessionValue } from '../../store/session.ts'
 import styles from './ContextMeter.module.css'
 
 /** Ring geometry: 14px viewBox, 2px stroke — dsh's ContextMeter proportions. */
@@ -16,14 +17,13 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS
  * `liveTokens` — the running total streamed with each assistant message —
  * and snaps back to the authoritative reading when the turn's snapshot lands.
  * The category rows always show the snapshot: the stream carries no breakdown.
+ *
+ * `liveTokens` is subscribed here rather than passed down, because it moves on
+ * every streamed token and the composer around this ring must not re-render
+ * with it.
  */
-export function ContextMeter({
-  usage,
-  liveTokens,
-}: {
-  usage: ContextUsage | null
-  liveTokens: number | null
-}): JSX.Element | null {
+export function ContextMeter({ usage }: { usage: ContextUsage | null }): JSX.Element | null {
+  const liveTokens = useActiveSessionValue((session) => session.liveTokens) ?? null
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLSpanElement>(null)
 

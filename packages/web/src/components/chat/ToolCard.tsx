@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 
 import type { ChatNode } from '../../render/nodes.ts'
 import styles from './ToolCard.module.css'
@@ -6,13 +6,25 @@ import styles from './ToolCard.module.css'
 type ToolNode = Extract<ChatNode, { kind: 'tool' }>
 
 const CLAMP_AFTER_LINES = 12
+/** Collapsed char budget, so one 200KB line collapses like 200 short lines do. */
+const CLAMP_AFTER_CHARS = 2_000
+const MAX_RENDER_LINES = 500
+const MAX_RENDER_CHARS = 60_000
+
+/** Which hard cap cut the text, so the notice can name the one that applied. */
+type Cap = 'lines' | 'chars'
+
+const CAP_LABEL: Record<Cap, string> = {
+  lines: `前 ${MAX_RENDER_LINES} 行`,
+  chars: `前 ${MAX_RENDER_CHARS / 1000}k 字符`,
+}
 
 /**
  * A tool call rendered by kind. Bash gets the IN/OUT terminal pair, edits get a
  * diff, reads get the file body — a JSON dump for everything else would be
  * unreadable for the three tools that carry most of a session's traffic.
  */
-export function ToolCard({ node }: { node: ToolNode }): JSX.Element {
+export const ToolCard = memo(function ToolCard({ node }: { node: ToolNode }): JSX.Element {
   const { title, subtitle } = describe(node)
 
   return (
@@ -29,7 +41,7 @@ export function ToolCard({ node }: { node: ToolNode }): JSX.Element {
       </div>
     </>
   )
-}
+})
 
 function ToolBody({ node }: { node: ToolNode }): JSX.Element {
   const input = node.input
@@ -86,7 +98,32 @@ function OutputLine({ node }: { node: ToolNode }): JSX.Element {
 
 function Line({ gutter, text, error }: { gutter: string; text: string; error?: boolean }): JSX.Element {
   const [expanded, setExpanded] = useState(false)
-  const overflows = text.split('\n').length > CLAMP_AFTER_LINES
+  // Tool output can be hundreds of KB; only the part that is actually visible
+  // goes into the DOM, and splitting once keeps re-renders cheap. Both states
+  // are capped by lines *and* by chars, so a single huge line is clamped and
+  // reported like a long one: `cappedBy` names the cap a full expansion would
+  // still hit, which is why the notice cannot key off the line count alone.
+  // The notice only shows once expanded — while collapsed the button label
+  // already says how much expanding is going to give.
+  const { lineCount, visible, cappedBy } = useMemo((): {
+    lineCount: number
+    visible: string
+    cappedBy: Cap | null
+  } => {
+    const lines = text.split('\n')
+    const budget = lines.slice(0, MAX_RENDER_LINES).join('\n')
+    const kept = expanded ? budget : lines.slice(0, CLAMP_AFTER_LINES).join('\n')
+    const chars = expanded ? MAX_RENDER_CHARS : CLAMP_AFTER_CHARS
+    return {
+      lineCount: lines.length,
+      visible: kept.length > chars ? kept.slice(0, chars) : kept,
+      // When the char cap applies it ends inside the first MAX_RENDER_LINES
+      // lines, so it is the limit the reader actually runs into.
+      cappedBy: budget.length > MAX_RENDER_CHARS ? 'chars' : lines.length > MAX_RENDER_LINES ? 'lines' : null,
+    }
+  }, [text, expanded])
+  // Whether collapsing hides anything — the expand button and the CSS clamp.
+  const overflows = lineCount > CLAMP_AFTER_LINES || text.length > CLAMP_AFTER_CHARS
 
   return (
     <>
@@ -97,12 +134,13 @@ function Line({ gutter, text, error }: { gutter: string; text: string; error?: b
             .filter(Boolean)
             .join(' ')}
         >
-          {text}
+          {visible}
         </span>
       </div>
+      {expanded && cappedBy && <div className={styles.truncated}>输出过长，最多显示{CAP_LABEL[cappedBy]}</div>}
       {overflows && (
         <button className={styles.more} onClick={() => setExpanded(!expanded)} type="button">
-          {expanded ? '收起' : `展开全部 ${text.split('\n').length} 行`}
+          {expanded ? '收起' : cappedBy ? `展开${CAP_LABEL[cappedBy]}（共 ${lineCount} 行）` : `展开全部 ${lineCount} 行`}
         </button>
       )}
     </>

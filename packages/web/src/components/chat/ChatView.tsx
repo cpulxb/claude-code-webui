@@ -1,8 +1,8 @@
 import type { RewindFilesResult } from '@ccw/shared'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import type { AssistantBlock, ChatNode, StreamingBlock } from '../../render/nodes.ts'
-import { useStore, type SessionState } from '../../store/session.ts'
+import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import { HistoryIcon } from '../Icons.tsx'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 import styles from './ChatView.module.css'
@@ -15,39 +15,66 @@ const FOLLOW_THRESHOLD = 120
 /** One in-flight rewind interaction, anchored to a single user bubble. */
 type RewindState = { nodeId: string; busy: boolean; preview: RewindFilesResult | null; error: string | null }
 
-export function ChatView({ session }: { session: SessionState }): JSX.Element {
+export function ChatView(): JSX.Element | null {
   const scrollRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
+  const frameRef = useRef<number | undefined>(undefined)
+  // Last session and node count this component scrolled for, to tell a swapped
+  // node list apart from a node appended by the running turn.
+  const seenRef = useRef<{ id: string | null; count: number }>({ id: null, count: 0 })
+  const activeId = useStore((state) => state.activeId)
   const rewindFiles = useStore((state) => state.rewindFiles)
   const [rewind, setRewind] = useState<RewindState | null>(null)
+  // Rewind previews race each other when the user clicks several bubbles in a
+  // row; only the newest request may write state.
+  const rewindSeq = useRef(0)
 
-  const { nodes, streaming } = session.transcript
+  const transcript = useActiveSessionValue((session) => session.transcript)
+  const pendingPermissions = useActiveSessionValue((session) => session.pendingPermissions)
+  const error = useActiveSessionValue((session) => session.error)
 
-  const startRewind = async (nodeId: string): Promise<void> => {
-    setRewind({ nodeId, busy: true, preview: null, error: null })
-    try {
-      const preview = await rewindFiles(nodeId, true)
-      setRewind({
-        nodeId,
-        busy: false,
-        preview,
-        error: preview.canRewind ? null : (preview.error ?? '无法回退到这条消息'),
-      })
-    } catch (cause) {
-      setRewind({ nodeId, busy: false, preview: null, error: cause instanceof Error ? cause.message : String(cause) })
-    }
-  }
+  const startRewind = useCallback(
+    async (nodeId: string): Promise<void> => {
+      const seq = ++rewindSeq.current
+      setRewind({ nodeId, busy: true, preview: null, error: null })
+      try {
+        const preview = await rewindFiles(nodeId, true)
+        if (seq !== rewindSeq.current) return
+        setRewind({
+          nodeId,
+          busy: false,
+          preview,
+          error: preview.canRewind ? null : (preview.error ?? '无法回退到这条消息'),
+        })
+      } catch (cause) {
+        if (seq !== rewindSeq.current) return
+        setRewind({ nodeId, busy: false, preview: null, error: cause instanceof Error ? cause.message : String(cause) })
+      }
+    },
+    [rewindFiles],
+  )
 
-  const confirmRewind = async (nodeId: string): Promise<void> => {
-    setRewind((current) => (current ? { ...current, busy: true } : current))
-    try {
-      const result = await rewindFiles(nodeId, false)
-      if (result.canRewind) setRewind(null)
-      else setRewind({ nodeId, busy: false, preview: null, error: result.error ?? '回退失败' })
-    } catch (cause) {
-      setRewind({ nodeId, busy: false, preview: null, error: cause instanceof Error ? cause.message : String(cause) })
-    }
-  }
+  const confirmRewind = useCallback(
+    async (nodeId: string): Promise<void> => {
+      const seq = ++rewindSeq.current
+      setRewind((current) => (current ? { ...current, busy: true } : current))
+      try {
+        const result = await rewindFiles(nodeId, false)
+        if (seq !== rewindSeq.current) return
+        if (result.canRewind) setRewind(null)
+        else setRewind({ nodeId, busy: false, preview: null, error: result.error ?? '回退失败' })
+      } catch (cause) {
+        if (seq !== rewindSeq.current) return
+        setRewind({ nodeId, busy: false, preview: null, error: cause instanceof Error ? cause.message : String(cause) })
+      }
+    },
+    [rewindFiles],
+  )
+
+  const cancelRewind = useCallback(() => {
+    rewindSeq.current += 1
+    setRewind(null)
+  }, [])
 
   // Only auto-scroll while the reader is already at the bottom; yanking the
   // viewport away from someone reading scrollback is the classic chat bug.
@@ -61,11 +88,54 @@ export function ChatView({ session }: { session: SessionState }): JSX.Element {
     return () => element.removeEventListener('scroll', onScroll)
   }, [])
 
-  useLayoutEffect(() => {
-    const element = scrollRef.current
-    if (element && followRef.current) element.scrollTop = element.scrollHeight
-  }, [nodes.length, streaming?.text.length, session.pendingPermissions.length])
+  const nodes = transcript?.nodes
+  const streaming = transcript?.streaming
 
+  // Streaming coalesces into one scroll per frame: measuring on every token
+  // forced a synchronous layout per delta. A swapped node list — session
+  // switch, history replay landing — is positioned before paint instead, since
+  // a frame later means the browser first draws the whole history at scrollTop
+  // 0. `nodes` is a fresh array whenever a node is added *or* mutated, so
+  // arriving tool output follows too.
+  useLayoutEffect(() => {
+    const count = nodes?.length ?? 0
+    const seen = seenRef.current
+    const switched = seen.id !== activeId
+    // Per-token deltas mutate a node in place or append one; a bigger jump is
+    // a replacement — or a multi-tool assistant message, which is just as
+    // cheap to place synchronously because it lands once per turn, not once
+    // per token.
+    const swapped = switched || count > seen.count + 1
+    seenRef.current = { id: activeId, count }
+    // A freshly opened session opens at the bottom, whatever the reader was
+    // doing in the session they came from.
+    if (switched) followRef.current = true
+    if (!followRef.current) return
+    const element = scrollRef.current
+    if (!element) return
+    if (swapped) {
+      if (frameRef.current !== undefined) {
+        cancelAnimationFrame(frameRef.current)
+        frameRef.current = undefined
+      }
+      element.scrollTop = element.scrollHeight
+      return
+    }
+    if (frameRef.current !== undefined) return
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = undefined
+      if (followRef.current) element.scrollTop = element.scrollHeight
+    })
+  }, [nodes, streaming, pendingPermissions, activeId])
+
+  useEffect(
+    () => () => {
+      if (frameRef.current !== undefined) cancelAnimationFrame(frameRef.current)
+    },
+    [],
+  )
+
+  if (!nodes) return null
   const empty = nodes.length === 0 && !streaming
 
   return (
@@ -83,26 +153,26 @@ export function ChatView({ session }: { session: SessionState }): JSX.Element {
                 key={node.id}
                 node={node}
                 rewind={rewind?.nodeId === node.id ? rewind : null}
-                onRewind={() => void startRewind(node.id)}
-                onConfirm={() => void confirmRewind(node.id)}
-                onCancel={() => setRewind(null)}
+                onRewind={startRewind}
+                onConfirm={confirmRewind}
+                onCancel={cancelRewind}
               />
             ) : (
               <NodeView key={node.id} node={node} />
             ),
           )}
           {streaming && <StreamingRow block={streaming} />}
-          {session.pendingPermissions.map((request) => (
+          {pendingPermissions?.map((request) => (
             <PermissionCard key={request.requestId} request={request} />
           ))}
-          {session.error && <div className={`${styles.row} ${styles.rowError}`}>{session.error}</div>}
+          {error && <div className={`${styles.row} ${styles.rowError}`}>{error}</div>}
         </div>
       )}
     </div>
   )
 }
 
-function UserTurn({
+const UserTurn = memo(function UserTurn({
   node,
   rewind,
   onRewind,
@@ -111,8 +181,8 @@ function UserTurn({
 }: {
   node: Extract<ChatNode, { kind: 'user' }>
   rewind: RewindState | null
-  onRewind: () => void
-  onConfirm: () => void
+  onRewind: (nodeId: string) => void
+  onConfirm: (nodeId: string) => void
   onCancel: () => void
 }): JSX.Element {
   return (
@@ -122,7 +192,7 @@ function UserTurn({
         {node.attachments > 0 && <div className={styles.attachmentNote}>附件 × {node.attachments}</div>}
         <button
           className={styles.rewindButton}
-          onClick={onRewind}
+          onClick={() => onRewind(node.id)}
           type="button"
           title="把文件回退到这条消息之前的状态"
         >
@@ -143,7 +213,7 @@ function UserTurn({
             </span>
           ) : null}
           {!rewind.busy && !rewind.error && rewind.preview && (
-            <button className={styles.rewindConfirm} onClick={onConfirm} type="button">
+            <button className={styles.rewindConfirm} onClick={() => onConfirm(node.id)} type="button">
               确认回退
             </button>
           )}
@@ -156,9 +226,9 @@ function UserTurn({
       )}
     </>
   )
-}
+})
 
-function NodeView({ node }: { node: Exclude<ChatNode, { kind: 'user' }> }): JSX.Element | null {
+const NodeView = memo(function NodeView({ node }: { node: Exclude<ChatNode, { kind: 'user' }> }): JSX.Element | null {
   switch (node.kind) {
     case 'assistant':
       return (
@@ -219,14 +289,14 @@ function NodeView({ node }: { node: Exclude<ChatNode, { kind: 'user' }> }): JSX.
         </div>
       )
   }
-}
+})
 
 function BlockView({ block }: { block: AssistantBlock }): JSX.Element {
   return block.type === 'thinking' ? <ReasoningRow text={block.text} /> : <AssistantMarkdown text={block.text} />
 }
 
 /** Thinking is collapsed by default — it is context, not the answer. */
-function ReasoningRow({ text, live }: { text: string; live?: boolean }): JSX.Element {
+const ReasoningRow = memo(function ReasoningRow({ text, live }: { text: string; live?: boolean }): JSX.Element {
   const [open, setOpen] = useState(false)
 
   return (
@@ -238,7 +308,7 @@ function ReasoningRow({ text, live }: { text: string; live?: boolean }): JSX.Ele
       {open && <div className={styles.reasoningBody}>{text}</div>}
     </div>
   )
-}
+})
 
 function StreamingRow({ block }: { block: StreamingBlock }): JSX.Element {
   return (

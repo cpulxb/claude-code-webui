@@ -1,4 +1,5 @@
-import { open, readdir, stat, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { open, readdir, stat } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 
 import type { FilePreview, TreeEntry } from '@ccw/shared'
@@ -66,8 +67,10 @@ export async function readFilePreview(path: string): Promise<FilePreview> {
     const handle = await open(path, 'r')
     try {
       const buffer = Buffer.alloc(size)
-      await handle.read(buffer, 0, size, 0)
-      return { kind: 'image', size, mediaType, data: buffer.toString('base64') }
+      // The file can shrink between the stat and the read; anything past
+      // `bytesRead` is still zero-filled padding, not image data.
+      const { bytesRead } = await handle.read(buffer, 0, size, 0)
+      return { kind: 'image', size, mediaType, data: buffer.subarray(0, bytesRead).toString('base64') }
     } finally {
       await handle.close()
     }
@@ -77,10 +80,11 @@ export async function readFilePreview(path: string): Promise<FilePreview> {
   try {
     const length = Math.min(size, TEXT_CAP)
     const buffer = Buffer.alloc(length)
-    await handle.read(buffer, 0, length, 0)
+    const { bytesRead } = await handle.read(buffer, 0, length, 0)
+    const read = buffer.subarray(0, bytesRead)
     // git's own heuristic: a NUL in the first 8KB means "not text".
-    if (buffer.subarray(0, 8192).includes(0)) return { kind: 'binary', size }
-    return { kind: 'text', size, content: buffer.toString('utf8'), truncated: size > TEXT_CAP }
+    if (read.subarray(0, 8192).includes(0)) return { kind: 'binary', size }
+    return { kind: 'text', size, content: read.toString('utf8'), truncated: size > TEXT_CAP }
   } finally {
     await handle.close()
   }
@@ -92,8 +96,46 @@ export async function readFilePreview(path: string): Promise<FilePreview> {
  * deleted or replaced since — surfacing that beats silently creating one.
  */
 export async function writeTextFile(path: string, content: string): Promise<number> {
-  const info = await stat(path)
-  if (!info.isFile()) throw new Error(`不是普通文件：${path}`)
-  await writeFile(path, content, 'utf8')
-  return Buffer.byteLength(content, 'utf8')
+  // O_NOFOLLOW plus the fstat on the open handle closes the gap a plain
+  // stat-then-writeFile leaves: the target cannot be swapped for a symlink
+  // pointing somewhere else between the check and the write. The tradeoff is
+  // that a path which *is* a symlink cannot be opened at all — saving a
+  // symlinked file is no longer supported, and the raw ELOOP is translated
+  // below so the editor says why. O_CREAT is deliberately absent: a missing
+  // file is ENOENT, since the tab was opened from the tree and a miss means it
+  // was deleted since.
+  const handle = await open(path, constants.O_WRONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(
+    (error: unknown) => {
+      const code = (error as NodeJS.ErrnoException)?.code
+      if (code === 'ELOOP') throw new Error(`symlinked files cannot be saved: ${path}`)
+      // O_NONBLOCK only changes anything for the non-regular files the `isFile`
+      // check below rejects anyway: opening a reader-less FIFO blocks until a
+      // reader shows up, so without it the request hangs and that check is
+      // never reached. ENXIO is the fast failure it turns that case into.
+      if (code === 'ENXIO') throw new Error(`不是普通文件：${path}`)
+      throw error
+    },
+  )
+  const buffer = Buffer.from(content, 'utf8')
+  try {
+    if (!(await handle.stat()).isFile()) throw new Error(`不是普通文件：${path}`)
+    // Write first and only then shrink to the new length: truncating up front
+    // would leave an empty file behind if the write failed halfway.
+    //
+    // Each `write` is one write(2), which is free to be short (a filling disk,
+    // an interrupting signal), so loop until the whole buffer is out. Ignoring
+    // `bytesWritten` here would let the truncate below pad a half-written file
+    // back to full length with NULs and still report a successful save.
+    for (let written = 0; written < buffer.length; ) {
+      const { bytesWritten } = await handle.write(buffer, written, buffer.length - written, written)
+      if (bytesWritten <= 0) {
+        throw new Error(`write stalled at ${written} of ${buffer.length} bytes: ${path}`)
+      }
+      written += bytesWritten
+    }
+    await handle.truncate(buffer.length)
+  } finally {
+    await handle.close()
+  }
+  return buffer.length
 }

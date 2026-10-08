@@ -1,5 +1,5 @@
 import type { DirectoryListing } from '@ccw/shared'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { call } from '../../api/client.ts'
 import styles from './DirectoryPicker.module.css'
@@ -20,14 +20,21 @@ export function DirectoryPicker(props: {
   const [showHidden, setShowHidden] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Listings race: a slow earlier response must not bounce the view back.
+  const requestId = useRef(0)
 
   const load = (path?: string): void => {
+    const id = ++requestId.current
     void call('files.browse', { ...(path ? { path } : {}), showHidden })
       .then((result) => {
+        if (id !== requestId.current) return
         setListing(result)
         setError(null)
       })
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => {
+        if (id !== requestId.current) return
+        setError(cause instanceof Error ? cause.message : String(cause))
+      })
   }
 
   // Re-list on mount and whenever the hidden-file filter flips.

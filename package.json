@@ -11,6 +11,7 @@
     "dev": "pnpm -r --parallel dev",
     "start": "pnpm -r --parallel start",
     "build": "pnpm -r build",
+    "test": "pnpm --filter @ccw/server exec tsx --test scripts/scm.test.ts ../web/scripts/session.test.mjs",
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {

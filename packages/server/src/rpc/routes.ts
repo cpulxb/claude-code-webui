@@ -2,6 +2,7 @@ import type { RpcMethod, RpcParams, RpcResult } from '@ccw/shared'
 
 import { browseDirectory } from '../files/browse.ts'
 import { listEntries, readFilePreview, writeTextFile } from '../files/explorer.ts'
+import { registerRoot, resolveInWorkspace } from '../files/roots.ts'
 import { suggestFiles } from '../files/suggest.ts'
 import { listProjects, readMessages, readPermissionMode } from '../history/sessions.ts'
 import { scmDiff, scmDiscard, scmStatus, shadowBaseline } from '../scm/git.ts'
@@ -14,6 +15,9 @@ export type RpcHandlers = {
 export function createRpcHandlers(manager: SessionManager): RpcHandlers {
   return {
     'session.create': async (config) => {
+      // The picked cwd becomes a legitimate root for the file RPCs. Trusted:
+      // the user chose this directory, even if it is `~` itself.
+      registerRoot(config.cwd, { trusted: true })
       const runner = manager.create(config)
       return { sessionId: runner.sessionId }
     },
@@ -96,28 +100,33 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
     },
 
     'files.suggest': async ({ cwd, query }) => ({
-      suggestions: await suggestFiles(cwd, query),
+      suggestions: await suggestFiles(await resolveInWorkspace(cwd), query),
     }),
 
     'files.browse': async ({ path, showHidden }) => browseDirectory(path, showHidden ?? false),
 
-    'files.list': async ({ path }) => ({ entries: await listEntries(path) }),
+    'files.list': async ({ path }) => ({ entries: await listEntries(await resolveInWorkspace(path)) }),
 
-    'files.read': async ({ path }) => ({ preview: await readFilePreview(path) }),
+    'files.read': async ({ path }) => ({ preview: await readFilePreview(await resolveInWorkspace(path)) }),
 
-    'files.write': async ({ path, content }) => ({ bytesWritten: await writeTextFile(path, content) }),
+    'files.write': async ({ path, content }) => ({
+      bytesWritten: await writeTextFile(await resolveInWorkspace(path), content),
+    }),
 
-    'scm.status': async ({ cwd }) => ({ status: await scmStatus(cwd) }),
+    'scm.status': async ({ cwd }) => ({ status: await scmStatus(await resolveInWorkspace(cwd)) }),
 
-    'scm.diff': async ({ cwd, path }) => scmDiff(cwd, path),
+    'scm.diff': async ({ cwd, path }) => scmDiff(await resolveInWorkspace(cwd), path),
 
+    // `scm.discard` runs `git restore` and deletes untracked files, so an
+    // unchecked cwd here is a destructive arbitrary-directory write, not just a
+    // read.
     'scm.discard': async ({ cwd, path }) => {
-      await scmDiscard(cwd, path)
+      await scmDiscard(await resolveInWorkspace(cwd), path)
       return {}
     },
 
     'scm.shadowBaseline': async ({ cwd }) => {
-      await shadowBaseline(cwd)
+      await shadowBaseline(await resolveInWorkspace(cwd))
       return {}
     },
   }

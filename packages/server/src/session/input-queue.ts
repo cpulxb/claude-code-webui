@@ -19,6 +19,11 @@ export class InputQueue<T> implements AsyncIterable<T> {
     this.#notify()
   }
 
+  /** Drops whatever the consumer has not pulled yet; used when a turn is interrupted. */
+  drain(): void {
+    this.#pending.length = 0
+  }
+
   close(): void {
     this.#closed = true
     this.#notify()

@@ -44,11 +44,15 @@ export class SessionRunner {
   readonly config: SessionConfig
 
   readonly #input = new InputQueue<SDKUserMessage>()
-  readonly #permissions = new PermissionBroker()
+  readonly #permissions = new PermissionBroker((requestId) => {
+    this.#emit({ type: 'permission_resolved', sessionId: this.sessionId, requestId })
+  })
   readonly #emit: EmitEvent
   readonly #query: Query
   #done = false
   #status: SessionStatus = 'idle'
+  /** Set by {@link interrupt} so the aborted turn's trailing frames cannot revive `running`. */
+  #interrupted = false
   readonly #backlog: SDKMessage[] = []
 
   constructor(config: SessionConfig, emit: EmitEvent) {
@@ -120,7 +124,23 @@ export class SessionRunner {
         if (message.type === 'system' && message.subtype === 'session_state_changed') {
           this.#status = message.state === 'running' ? 'running' : 'idle'
         }
-        if (message.type === 'result') this.#status = 'idle'
+        if (message.type === 'result') {
+          this.#status = 'idle'
+          // The turn is over, so nothing still in flight belongs to it: a later
+          // top-level assistant frame is a new turn and may say `running` again.
+          this.#interrupted = false
+        }
+        // A turn the CLI started on its own — a prompt it had queued behind the
+        // one that just ended — is otherwise invisible: without
+        // `session_state_changed` nothing would move the status off `idle`, and
+        // the browser would offer no way to stop it. Only top-level assistant
+        // output counts: a sub-agent's messages carry a `parent_tool_use_id`
+        // and can still arrive while the parent turn is being torn down. Frames
+        // an interrupted turn had already emitted are skipped for the same
+        // reason — Stop must not bounce back to `running`.
+        else if (message.type === 'assistant' && message.parent_tool_use_id === null && !this.#interrupted) {
+          this.#status = 'running'
+        }
         this.#trackBacklog(message)
         this.#emit({ type: 'sdk', sessionId: this.sessionId, message })
       }
@@ -181,18 +201,33 @@ export class SessionRunner {
   }
 
   send(text: string, attachments?: Attachment[]): void {
+    // Build before the status flips: `buildContent` validates the attachments
+    // and throws, which would otherwise leave `running` set with no turn to
+    // ever clear it — the browser would show Stop for a turn that never began.
+    const content = buildContent(text, attachments)
     this.#status = 'running'
+    this.#interrupted = false
     this.#input.push({
       type: 'user',
-      message: { role: 'user', content: buildContent(text, attachments) },
+      message: { role: 'user', content },
       parent_tool_use_id: null,
       session_id: this.sessionId,
     })
   }
 
   async interrupt(): Promise<void> {
-    await this.#query.interrupt()
-    this.#status = 'idle'
+    // Drop prompts the SDK has not pulled yet, so Stop cannot be followed by
+    // one of them opening a fresh turn.
+    this.#input.drain()
+    // Frames the aborted turn had already emitted are still on their way; the
+    // flag holds until its `result` arrives (or the next `send`) so they cannot
+    // undo the status set below.
+    this.#interrupted = true
+    const receipt = await this.#query.interrupt()
+    // Prompts the CLI had already queued survive the abort — `interrupt()` in
+    // SDK 0.3.238 cannot cancel them — and each one opens a turn of its own,
+    // so the browser must keep showing Stop.
+    this.#status = (receipt?.still_queued?.length ?? 0) > 0 ? 'running' : 'idle'
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
@@ -245,6 +280,7 @@ export class SessionRunner {
  */
 function buildContent(text: string, attachments?: Attachment[]): MessageParam['content'] {
   if (!attachments || attachments.length === 0) return text
+  for (const attachment of attachments) assertAttachment(attachment)
 
   const blocks = attachments.map((attachment) =>
     attachment.kind === 'image'
@@ -260,4 +296,26 @@ function buildContent(text: string, attachments?: Attachment[]): MessageParam['c
   ) as unknown as ContentBlocks
 
   return [...blocks, { type: 'text', text }] as ContentBlocks
+}
+
+const MEDIA_TYPE = /^[\w.+-]+\/[\w.+-]+$/
+// Only the base64 alphabet, padding and whitespace (line breaks are a legal
+// base64 transport form). Deliberately not a full base64 validator: this just
+// catches obvious mistakes such as a leading `data:…;base64,` prefix.
+const BASE64 = /^[A-Za-z0-9+/=\s]+$/
+
+/**
+ * The RPC payload is untrusted JSON, and a malformed block is rejected by the
+ * API mid-turn instead of at the call site — so the shape is checked here.
+ */
+function assertAttachment(attachment: Attachment): void {
+  if (attachment.kind !== 'image' && attachment.kind !== 'document') {
+    throw new Error(`unsupported attachment kind: ${String(attachment.kind)}`)
+  }
+  if (typeof attachment.mediaType !== 'string' || !MEDIA_TYPE.test(attachment.mediaType)) {
+    throw new Error('attachment mediaType must be a MIME type')
+  }
+  if (typeof attachment.data !== 'string' || attachment.data.length === 0 || !BASE64.test(attachment.data)) {
+    throw new Error('attachment data must be base64 without a data-URL prefix')
+  }
 }

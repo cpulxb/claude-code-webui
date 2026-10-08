@@ -83,6 +83,13 @@
   color: var(--ccw-text-primary);
 }
 
+.truncated {
+  padding: var(--ccw-space-1) var(--ccw-space-3);
+  font-family: var(--ccw-font-ui);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+}
+
 .waiting {
   padding: var(--ccw-space-2) var(--ccw-space-3);
   font-family: var(--ccw-font-ui);

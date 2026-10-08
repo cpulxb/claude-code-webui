@@ -1,10 +1,10 @@
 import type { Attachment, FileSuggestion, ModelInfo } from '@ccw/shared'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useShallow } from 'zustand/shallow'
 
 import { call } from '../../api/client.ts'
-import type { SessionState } from '../../store/session.ts'
-import { useStore } from '../../store/session.ts'
-import { fileToAttachment } from '../../utils/attachments.ts'
+import { useActiveSessionValue, useStore } from '../../store/session.ts'
+import { fileToAttachment, isSupportedAttachment } from '../../utils/attachments.ts'
 import { buildPaletteEntries, CommandPalette, type PaletteEntry } from './CommandPalette.tsx'
 import styles from './Composer.module.css'
 import { ContextMeter } from './ContextMeter.tsx'
@@ -17,16 +17,54 @@ import { TriggerMenu, type MenuItem } from './TriggerMenu.tsx'
 import { TurnStatus } from './TurnStatus.tsx'
 
 const FILE_SUGGEST_DEBOUNCE_MS = 90
+/** Per-file cap, kept below what the API accepts after base64 inflation. */
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
+const MAX_ATTACHMENTS = 10
+/**
+ * Total raw bytes per message. The server rejects request bodies over 32MB
+ * (`MAX_BODY_BYTES` in packages/server/src/rpc/server.ts) and attachments
+ * travel as base64, which inflates by 4/3 — so 24MB of raw bytes would already
+ * fill that body. 18MB leaves room for the prompt text and the JSON envelope,
+ * and stops MAX_ATTACHMENTS × MAX_ATTACHMENT_BYTES (50MB raw, ~66MB encoded)
+ * from being accepted into a request the server is certain to reject.
+ */
+const MAX_ATTACHMENT_TOTAL_BYTES = 18 * 1024 * 1024
 
-export function Composer({ session }: { session: SessionState }): JSX.Element {
+/** Raw bytes behind a base64 payload, give or take the two padding chars. */
+function rawBytes(data: string): number {
+  return Math.floor((data.length * 3) / 4)
+}
+
+export function Composer(): JSX.Element | null {
   const send = useStore((state) => state.send)
   const interrupt = useStore((state) => state.interrupt)
   const setPermissionMode = useStore((state) => state.setPermissionMode)
   const setEffort = useStore((state) => state.setEffort)
   const setModel = useStore((state) => state.setModel)
 
+  // Slices rather than the session object: immer replaces that object on every
+  // streamed token, which would re-render the palette, the model picker and the
+  // effort slider once per token. The two per-token readings this line used to
+  // hold — `turnStats` and `liveTokens` — are subscribed by TurnStatus and
+  // ContextMeter themselves. Arrays go through useShallow because re-attaching
+  // refetches commands and models.
+  const cwd = useActiveSessionValue((session) => session.cwd)
+  const running = useActiveSessionValue((session) => session.status === 'running') ?? false
+  const closed = useActiveSessionValue((session) => session.closed) ?? false
+  const attached = useActiveSessionValue((session) => session.attached) ?? false
+  const permissionMode = useActiveSessionValue((session) => session.permissionMode) ?? 'default'
+  const effort = useActiveSessionValue((session) => session.effort) ?? 'high'
+  const model = useActiveSessionValue((session) => session.model) ?? null
+  const contextUsage = useActiveSessionValue((session) => session.contextUsage) ?? null
+  const allCommands = useActiveSessionValue(useShallow((session) => session.commands)) ?? []
+  const models = useActiveSessionValue(useShallow((session) => session.models)) ?? []
+  const terminalSlashCommands = useActiveSessionValue(
+    useShallow((session) => session.init?.terminalSlashCommands ?? []),
+  )
+
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [attachError, setAttachError] = useState<string | null>(null)
   const [trigger, setTrigger] = useState<Trigger | null>(null)
   const [activeIndex, setActiveIndex] = useState(0)
   const [files, setFiles] = useState<FileSuggestion[]>([])
@@ -40,20 +78,18 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
   const modesRef = useRef<HTMLDivElement>(null)
   const modeButtonRef = useRef<HTMLButtonElement>(null)
   const modelsRef = useRef<HTMLDivElement>(null)
-
-  const running = session.status === 'running'
+  const fileSeqRef = useRef(0)
 
   // Commands bound to a terminal (statusline, vim mode…) are meaningless in a
   // browser; the CLI tags them precisely so remote UIs can hide them.
   const commands = useMemo(() => {
-    const terminalOnly = new Set(session.init?.terminalSlashCommands ?? [])
-    return session.commands.filter((command) => !terminalOnly.has(command.name))
-  }, [session.commands, session.init?.terminalSlashCommands])
+    const terminalOnly = new Set(terminalSlashCommands)
+    return allCommands.filter((command) => !terminalOnly.has(command.name))
+  }, [allCommands, terminalSlashCommands])
 
   const entries: PaletteEntry[] = useMemo(
-    () =>
-      trigger?.kind === '/' ? buildPaletteEntries(trigger.query, commands, session.models, session.model) : [],
-    [trigger?.kind, trigger?.query, commands, session.models, session.model],
+    () => (trigger?.kind === '/' ? buildPaletteEntries(trigger.query, commands, models, model) : []),
+    [trigger?.kind, trigger?.query, commands, models, model],
   )
 
   const fileItems: MenuItem[] = useMemo(
@@ -65,22 +101,34 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
   )
 
   const menuLength = trigger?.kind === '/' ? entries.length : trigger?.kind === '@' ? fileItems.length : 0
-  const efforts = effortChoices(session.models, session.model)
+  const efforts = effortChoices(models, model)
 
   useEffect(() => setActiveIndex(0), [trigger?.kind, trigger?.query])
+
+  // Suggestions arrive asynchronously, so a shrinking menu can leave the
+  // highlight past the end — Enter would then select nothing.
+  useEffect(() => {
+    setActiveIndex((index) => (index < menuLength ? index : Math.max(0, menuLength - 1)))
+  }, [menuLength])
 
   // File suggestions come from the server's fs scan, debounced per keystroke.
   // Keyed on the directory, so a read-only session completes files too.
   useEffect(() => {
-    if (trigger?.kind !== '@') return
+    if (trigger?.kind !== '@' || cwd === undefined) return
     const query = trigger.query
+    const seq = ++fileSeqRef.current
     const timer = setTimeout(() => {
-      void call('files.suggest', { cwd: session.cwd, query })
-        .then((result) => setFiles(result.suggestions))
-        .catch(() => setFiles([]))
+      void call('files.suggest', { cwd, query })
+        // A slow earlier request must not overwrite a newer query's results.
+        .then((result) => {
+          if (seq === fileSeqRef.current) setFiles(result.suggestions)
+        })
+        .catch(() => {
+          if (seq === fileSeqRef.current) setFiles([])
+        })
     }, FILE_SUGGEST_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [trigger?.kind, trigger?.query, session.cwd])
+  }, [trigger?.kind, trigger?.query, cwd])
 
   // Clicking anywhere outside dismisses the modes popover. The trigger button
   // is excluded so its own onClick still toggles instead of being reopened.
@@ -163,12 +211,12 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
       })
       if (entry.action === 'attach') fileInputRef.current?.click()
       if (entry.action === 'switch-model') {
-        const current = findModel(session.models, session.model)
-        setModelIndex(Math.max(0, current ? session.models.indexOf(current) : 0))
+        const current = findModel(models, model)
+        setModelIndex(Math.max(0, current ? models.indexOf(current) : 0))
         setModelsOpen(true)
       }
     },
-    [text, trigger, session.models, session.model],
+    [text, trigger, models, model],
   )
 
   const chooseModel = useCallback(
@@ -186,6 +234,7 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
     void send(trimmed, attachments)
     setText('')
     setAttachments([])
+    setAttachError(null)
     setTrigger(null)
   }, [text, attachments, send])
 
@@ -204,8 +253,11 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
   }, [text])
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (modelsOpen && session.models.length > 0) {
-      const count = session.models.length
+    // While an IME composition is open, Enter/arrows belong to the candidate
+    // window — acting on them would pick a model or menu row behind the user's back.
+    if (event.nativeEvent.isComposing) return
+    if (modelsOpen && models.length > 0) {
+      const count = models.length
       if (event.key === 'ArrowDown') {
         event.preventDefault()
         setModelIndex((index) => (index + 1) % count)
@@ -218,8 +270,8 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
       }
       if (event.key === 'Enter' || event.key === 'Tab') {
         event.preventDefault()
-        const model = session.models[modelIndex]
-        if (model) chooseModel(model)
+        const picked = models[modelIndex]
+        if (picked) chooseModel(picked)
         return
       }
       if (event.key === 'Escape') {
@@ -263,7 +315,31 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
   }
 
   const addFiles = async (list: FileList | File[]): Promise<void> => {
-    const added = await Promise.all([...list].map(fileToAttachment))
+    const rejected: string[] = []
+    const accepted: File[] = []
+    // Both budgets shrink as files are taken, so one drop of many files is
+    // capped exactly like several drops of one file.
+    let room = MAX_ATTACHMENTS - attachments.length
+    let budget = MAX_ATTACHMENT_TOTAL_BYTES - attachments.reduce((sum, item) => sum + rawBytes(item.data), 0)
+    let noRoom = false
+    let noBudget = false
+    for (const file of list) {
+      if (!isSupportedAttachment(file)) rejected.push(`${file.name}：不支持的类型 ${file.type || '未知'}`)
+      else if (file.size > MAX_ATTACHMENT_BYTES)
+        rejected.push(`${file.name}：超过 ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB`)
+      else if (room <= 0) noRoom = true
+      else if (file.size > budget) noBudget = true
+      else {
+        accepted.push(file)
+        room -= 1
+        budget -= file.size
+      }
+    }
+    if (noRoom) rejected.push(`最多 ${MAX_ATTACHMENTS} 个附件`)
+    if (noBudget) rejected.push(`附件总大小不能超过 ${MAX_ATTACHMENT_TOTAL_BYTES / (1024 * 1024)} MB`)
+    setAttachError(rejected.length > 0 ? rejected.join('；') : null)
+    if (accepted.length === 0) return
+    const added = await Promise.all(accepted.map(fileToAttachment))
     setAttachments((current) => [...current, ...added])
   }
 
@@ -274,12 +350,14 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
     void addFiles(pasted)
   }
 
-  const mode = MODE_META[session.permissionMode]
+  const mode = MODE_META[permissionMode]
+
+  if (cwd === undefined) return null
 
   return (
     <div className={styles.wrap}>
       <div className={styles.inner}>
-        {running && session.turnStats && <TurnStatus stats={session.turnStats} />}
+        {running && <TurnStatus />}
         <div className={styles.box} style={{ position: 'relative' }}>
           {trigger?.kind === '/' && (
             <CommandPalette
@@ -293,7 +371,7 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
                 commands.length === 0 ? '命令加载中…' : undefined
               }
               efforts={efforts}
-              effort={session.effort}
+              effort={effort}
               onEffort={(next) => void setEffort(next)}
               onSelect={choosePalette}
               onHover={setActiveIndex}
@@ -310,8 +388,8 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
           )}
           {modelsOpen && (
             <ModelPicker
-              models={session.models}
-              current={session.model}
+              models={models}
+              current={model}
               activeIndex={modelIndex}
               rootRef={modelsRef}
               onSelect={chooseModel}
@@ -320,10 +398,10 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
           )}
           {modesOpen && (
             <ModesPopover
-              mode={session.permissionMode}
-              effort={session.effort}
-              model={session.model}
-              models={session.models}
+              mode={permissionMode}
+              effort={effort}
+              model={model}
+              models={models}
               rootRef={modesRef}
               onMode={(next) => {
                 void setPermissionMode(next)
@@ -333,6 +411,8 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
               onModel={(next) => void setModel(next)}
             />
           )}
+
+          {attachError && <div className={styles.attachError}>{attachError}</div>}
 
           {attachments.length > 0 && (
             <div className={styles.attachments}>
@@ -357,11 +437,11 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
             className={styles.textarea}
             value={text}
             rows={1}
-            disabled={session.closed}
+            disabled={closed}
             placeholder={
-              session.closed
+              closed
                 ? '会话已结束 — 从侧栏重新打开即可继续'
-                : session.attached
+                : attached
                   ? '输入消息，/ 唤出命令，@ 引用文件'
                   : '正在接管会话…'
             }
@@ -395,14 +475,14 @@ export function Composer({ session }: { session: SessionState }): JSX.Element {
               aria-expanded={modesOpen}
             >
               <ModeIcon
-                mode={session.permissionMode}
+                mode={permissionMode}
                 size={14}
                 className={mode.danger ? styles.modeDanger : undefined}
               />
               <span className={mode.danger ? styles.modeDanger : ''}>{mode.label}</span>
             </button>
 
-            <ContextMeter usage={session.contextUsage} liveTokens={session.liveTokens} />
+            <ContextMeter usage={contextUsage} />
 
             {running ? (
               <button

@@ -41,15 +41,39 @@ export function ScmSection({
   // Guards a slow diff response from landing on a row opened later.
   const openRef = useRef<string | null>(null)
 
+  const loadDiff = useCallback(
+    async (path: string): Promise<void> => {
+      setDiff(null)
+      try {
+        const result = await call('scm.diff', { cwd, path })
+        if (openRef.current === path) setDiff({ path, text: result.diff, binary: result.binary })
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+    },
+    [cwd],
+  )
+
   const refresh = useCallback(async () => {
     try {
       const result = await call('scm.status', { cwd })
       setStatus(result.status)
       setError(null)
+      // An expanded diff describes the tree as it was before this refresh, so
+      // re-read it — or drop the row if the file has no changes left.
+      const open = openRef.current
+      if (open === null) return
+      if (result.status.kind !== 'none' && result.status.files.some((file) => file.path === open)) {
+        await loadDiff(open)
+      } else {
+        openRef.current = null
+        setOpenPath(null)
+        setDiff(null)
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     }
-  }, [cwd])
+  }, [cwd, loadDiff])
 
   // A turn ending is the moment the working tree can have changed; the mount
   // pass (status is already `idle`) doubles as the initial read.
@@ -77,13 +101,7 @@ export function ScmSection({
     }
     openRef.current = path
     setOpenPath(path)
-    setDiff(null)
-    try {
-      const result = await call('scm.diff', { cwd, path })
-      if (openRef.current === path) setDiff({ path, text: result.diff, binary: result.binary })
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    }
+    await loadDiff(path)
   }
 
   const discard = async (path: string): Promise<void> => {

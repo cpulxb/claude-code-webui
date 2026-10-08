@@ -100,3 +100,27 @@
   font-size: var(--ccw-text-xs);
   color: var(--ccw-text-muted);
 }
+
+/* Sits between head and content so it reads as a state of this file, not an error. */
+.stale {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  margin-bottom: var(--ccw-space-2);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-warning);
+}
+
+.staleAction {
+  flex: none;
+  padding: 2px 8px;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-secondary);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.staleAction:hover:not(:disabled) {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}

@@ -123,6 +123,11 @@
   background: var(--ccw-bg-hover);
 }
 
+.copyFailed,
+.copyFailed:hover {
+  color: var(--ccw-danger);
+}
+
 .codeBlock pre {
   padding: var(--ccw-space-3);
   margin: 0;

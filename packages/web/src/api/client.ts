@@ -8,11 +8,20 @@ import {
   type ServerEvent,
 } from '@ccw/shared'
 
+/**
+ * Shared secret from `?token=` in the page URL, for the non-loopback deployment
+ * where the server demands one (see resolveAccessToken). Empty on the loopback
+ * default, and then nothing extra is sent.
+ */
+const accessToken = new URLSearchParams(window.location.search).get('token') ?? ''
+
 /** Typed RPC over `POST /api/rpc`. Rejects on transport and handler errors alike. */
 export async function call<M extends RpcMethod>(method: M, params: RpcParams<M>): Promise<RpcResult<M>> {
   const response = await fetch(API_RPC_PATH, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: accessToken
+      ? { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` }
+      : { 'content-type': 'application/json' },
     body: JSON.stringify({ method, params }),
   })
   const body = (await response.json()) as RpcResponse<M>
@@ -40,6 +49,9 @@ export function connectEvents(handlers: {
 
     const url = new URL(API_EVENTS_PATH, window.location.href)
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    // A WebSocket handshake cannot carry custom headers, so the token goes in
+    // the query string here instead of an Authorization header.
+    if (accessToken) url.searchParams.set('token', accessToken)
     socket = new WebSocket(url)
 
     socket.addEventListener('open', () => handlers.onStatus?.('open'))

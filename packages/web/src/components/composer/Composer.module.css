@@ -113,6 +113,12 @@
 
 /* --- attachments ------------------------------------------------------ */
 
+.attachError {
+  padding: var(--ccw-space-2) var(--ccw-space-3) 0;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-danger);
+}
+
 .attachments {
   display: flex;
   flex-wrap: wrap;

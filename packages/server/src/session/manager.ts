@@ -12,6 +12,12 @@ import { SessionRunner } from './runner.ts'
  */
 export class SessionManager {
   readonly #runners = new Map<string, SessionRunner>()
+  /**
+   * The most recent runner per session id, kept past `close()` so a runner that
+   * exits after the same session was reopened can be recognised as stale — its
+   * `session_closed` must not unregister or close the new one.
+   */
+  readonly #owners = new Map<string, SessionRunner>()
   readonly #subscribers = new Set<(event: ServerEvent) => void>()
 
   create(config: SessionConfig): SessionRunner {
@@ -20,8 +26,13 @@ export class SessionManager {
     // first process while both append to the same JSONL.
     const existing = this.#runners.get(config.resume ?? config.sessionId ?? '')
     if (existing) return existing
-    const runner = new SessionRunner(config, (event) => this.#broadcast(event))
+    // Tagged onto every frame so #broadcast can tell whose it is. Assigned
+    // right after construction — the constructor emits nothing synchronously.
+    let self: SessionRunner | null = null
+    const runner = new SessionRunner(config, (event) => this.#broadcast(self, event))
+    self = runner
     this.#runners.set(runner.sessionId, runner)
+    this.#owners.set(runner.sessionId, runner)
     return runner
   }
 
@@ -56,8 +67,14 @@ export class SessionManager {
     return () => this.#subscribers.delete(handler)
   }
 
-  #broadcast(event: ServerEvent): void {
-    if (event.type === 'session_closed') this.#runners.delete(event.sessionId)
+  #broadcast(sender: SessionRunner | null, event: ServerEvent): void {
+    // Every other frame type carries the session id the CLI itself reported, so
+    // only lifecycle bookkeeping needs the identity check.
+    if (event.type === 'session_closed') {
+      if (this.#owners.get(event.sessionId) !== sender) return
+      this.#owners.delete(event.sessionId)
+      this.#runners.delete(event.sessionId)
+    }
     for (const subscriber of this.#subscribers) {
       // One bad socket must not stop the others from seeing the frame.
       try {

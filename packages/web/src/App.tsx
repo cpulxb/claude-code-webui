@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import styles from './App.module.css'
 import { AppFrame } from './components/AppFrame.tsx'
@@ -7,12 +7,18 @@ import { Composer } from './components/composer/Composer.tsx'
 import { DetailsPanel } from './components/details/DetailsPanel.tsx'
 import { MoonIcon, PanelLeftIcon, PanelRightIcon, SunIcon } from './components/Icons.tsx'
 import { Sidebar } from './components/sidebar/Sidebar.tsx'
-import { useActiveSession, useStore } from './store/session.ts'
+import { useActiveSessionValue, useStore } from './store/session.ts'
 
 export function App(): JSX.Element {
   const connect = useStore((state) => state.connect)
   const restoreActive = useStore((state) => state.restoreActive)
-  const session = useActiveSession()
+  // Primitive slices only — the details panel and the composer subscribe to
+  // their own slices too. Subscribing to the session object anywhere in here
+  // would re-render that subtree once per streamed token, because immer
+  // replaces the object on every transcript mutation.
+  const cwd = useActiveSessionValue((session) => session.cwd)
+  const running = useActiveSessionValue((session) => session.status === 'running')
+  const closed = useActiveSessionValue((session) => session.closed)
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [detailsCollapsed, setDetailsCollapsed] = useState(true)
@@ -25,12 +31,15 @@ export function App(): JSX.Element {
     document.documentElement.dataset['theme'] = theme
   }, [theme])
 
+  const collapseSidebar = useCallback(() => setSidebarCollapsed(true), [])
+  const collapseDetails = useCallback(() => setDetailsCollapsed(true), [])
+
   return (
     <AppFrame
       sidebarCollapsed={sidebarCollapsed}
       detailsCollapsed={detailsCollapsed}
-      sidebar={<Sidebar onCollapse={() => setSidebarCollapsed(true)} />}
-      details={<DetailsPanel session={session} onCollapse={() => setDetailsCollapsed(true)} />}
+      sidebar={<Sidebar onCollapse={collapseSidebar} />}
+      details={<DetailsPanel onCollapse={collapseDetails} />}
       main={
         <div className={styles.main}>
           <div className={styles.header}>
@@ -39,9 +48,9 @@ export function App(): JSX.Element {
                 <PanelLeftIcon />
               </button>
             )}
-            <span className={styles.title}>{session ? shortCwd(session.cwd) : 'Claude Code'}</span>
-            {session?.status === 'running' && <span className={styles.subtitle}>运行中…</span>}
-            {session?.closed && <span className={styles.subtitle}>会话已结束</span>}
+            <span className={styles.title}>{cwd !== undefined ? shortCwd(cwd) : 'Claude Code'}</span>
+            {running && <span className={styles.subtitle}>运行中…</span>}
+            {closed && <span className={styles.subtitle}>会话已结束</span>}
             <span className={styles.spacer} />
             <button
               className={styles.iconButton}
@@ -61,11 +70,8 @@ export function App(): JSX.Element {
             </button>
           </div>
 
-          {session ? (
-            <>
-              <ChatView session={session} />
-              <Composer session={session} />
-            </>
+          {cwd !== undefined ? (
+            <ActiveConversation />
           ) : (
             <div className={styles.blank}>
               <span className={styles.blankMark}>✳</span>
@@ -75,6 +81,15 @@ export function App(): JSX.Element {
         </div>
       }
     />
+  )
+}
+
+function ActiveConversation(): JSX.Element {
+  return (
+    <>
+      <ChatView />
+      <Composer />
+    </>
   )
 }
 

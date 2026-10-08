@@ -63,6 +63,27 @@
   background: var(--ccw-bg-hover);
 }
 
+.search {
+  width: calc(100% - var(--ccw-space-4));
+  padding: 5px var(--ccw-space-3);
+  margin: 0 var(--ccw-space-2) var(--ccw-space-3);
+  font: inherit;
+  font-size: var(--ccw-text-sm);
+  color: inherit;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-md);
+  outline: none;
+}
+
+.search::placeholder {
+  color: var(--ccw-text-faint);
+}
+
+.search:focus {
+  border-color: var(--ccw-accent);
+}
+
 .list {
   flex: 1;
   min-height: 0;
@@ -72,16 +93,40 @@
 
 .groupHead {
   display: flex;
-  gap: var(--ccw-space-1);
   align-items: center;
   width: 100%;
-  padding: var(--ccw-space-2) var(--ccw-space-3) var(--ccw-space-1);
+  padding-right: var(--ccw-space-2);
+}
+
+.groupToggle {
+  display: flex;
+  flex: 1;
+  gap: var(--ccw-space-1);
+  align-items: center;
+  min-width: 0;
+  padding: var(--ccw-space-2) 0 var(--ccw-space-1) var(--ccw-space-3);
   font-size: var(--ccw-text-sm);
   color: var(--ccw-text-secondary);
   text-align: left;
 }
 
-.groupHead:hover {
+.groupToggle:hover {
+  color: var(--ccw-text-primary);
+}
+
+/* Skips the directory picker — the group already names the cwd. */
+.groupAdd {
+  flex: none;
+  padding: 0 var(--ccw-space-1);
+  color: var(--ccw-text-faint);
+  opacity: 0;
+}
+
+.groupHead:hover .groupAdd {
+  opacity: 1;
+}
+
+.groupAdd:hover {
   color: var(--ccw-text-primary);
 }
 
@@ -169,6 +214,45 @@
   color: var(--ccw-text-faint);
 }
 
+/* Two-line search result: title row plus a project · branch meta line. */
+.hitRow {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  width: 100%;
+  padding: 5px var(--ccw-space-3);
+  font-size: var(--ccw-text-base);
+  color: var(--ccw-text-secondary);
+}
+
+.hitRow:hover .itemClose {
+  opacity: 1;
+}
+
+.hitOpen {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.hitTitleLine {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: baseline;
+}
+
+.hitMeta {
+  display: block;
+  overflow: hidden;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .liveDot {
   flex: none;
   width: 6px;
@@ -206,4 +290,10 @@
   padding: var(--ccw-space-4) var(--ccw-space-3);
   font-size: var(--ccw-text-sm);
   color: var(--ccw-text-faint);
+}
+
+.error {
+  padding: 0 var(--ccw-space-3) var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-danger);
 }

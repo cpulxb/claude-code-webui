@@ -109,6 +109,7 @@ type Store = {
 }
 
 function newSession(sessionId: string, cwd: string, attached: boolean): SessionState {
+  snapshotVersions.set(sessionId, newSnapshotVersions())
   return {
     sessionId,
     cwd,
@@ -146,6 +147,75 @@ function rememberedMode(): PermissionMode {
   return stored && (PERMISSION_MODES as readonly string[]).includes(stored) ? (stored as PermissionMode) : 'default'
 }
 
+/**
+ * Sessions whose runner is being spawned right now. They already read as
+ * attached, but the server does not list them yet — reconciliation has to leave
+ * them alone for the ~1s the CLI takes to come up.
+ */
+const starting = new Set<string>()
+
+/**
+ * Sessions where the user picked an effort level in this tab. `effort` starts
+ * at the store's guess, which is not what the CLI is actually on, so resuming
+ * only forwards a level that was really chosen.
+ */
+const effortPicked = new Set<string>()
+
+/**
+ * Bumped every time a `session_closed` event lands for a session. `attach`
+ * samples it before spawning and again before marking the session attached: a
+ * CLI that dies on startup (bad cwd, bad model) emits `session_closed` right
+ * after the create response, and without this the stale `attached = true`
+ * would win and leave the session unrecoverable from the sidebar.
+ *
+ * Grows monotonically: the bump in `handleEvent` is deliberately unfiltered, so
+ * this also records sessions this tab never opened, while `forgetSession` only
+ * drops the ones closed from here. Left uncapped on purpose — an entry is a
+ * uuid and an int, the bound is "sessions that closed during this page's life",
+ * and a reload clears it. Any eviction rule could drop an epoch an in-flight
+ * `attach` is about to compare against, which is the wedge this map prevents.
+ */
+const closedEpoch = new Map<string, number>()
+
+type PermissionChanges = Map<string, PermissionRequest | null>
+type SnapshotVersions = { status: number; permissions: number; pending: Set<PermissionChanges> }
+
+// Kept separate from streaming data: token deltas must not prevent a reconnect
+// from adopting a snapshot. A fresh object also identifies a reopened session.
+const snapshotVersions = new Map<string, SnapshotVersions>()
+
+function newSnapshotVersions(): SnapshotVersions {
+  return { status: 0, permissions: 0, pending: new Set() }
+}
+
+function versionsFor(sessionId: string): SnapshotVersions {
+  let versions = snapshotVersions.get(sessionId)
+  if (!versions) {
+    versions = newSnapshotVersions()
+    snapshotVersions.set(sessionId, versions)
+  }
+  return versions
+}
+
+function setSessionStatus(session: SessionState, status: SessionStatus): void {
+  session.status = status
+  versionsFor(session.sessionId).status += 1
+}
+
+// Record only while a snapshot is in flight. Per-request changes let it recover
+// prompts missed offline without reviving a prompt resolved during the read.
+function recordPermissionChange(sessionId: string, requestId: string, request: PermissionRequest | null): void {
+  for (const changes of versionsFor(sessionId).pending) changes.set(requestId, request)
+}
+
+/** Drops the per-session bookkeeping held outside the store. */
+function forgetSession(sessionId: string): void {
+  starting.delete(sessionId)
+  effortPicked.delete(sessionId)
+  closedEpoch.delete(sessionId)
+  snapshotVersions.delete(sessionId)
+}
+
 export const useStore = create<Store>()(
   immer((set, get) => ({
     connection: 'connecting',
@@ -164,7 +234,13 @@ export const useStore = create<Store>()(
           })
           // A reconnect can mean the server restarted, which takes every runner
           // with it. The socket alone cannot say, so re-read the live set.
-          if (status === 'open') void reconcileSessions(set)
+          if (status === 'open') {
+            // Without a catch this is an unhandled rejection. Nothing is
+            // reset on failure: a `history.projects` that did not answer is no
+            // evidence about which runners are alive, and the next reconnect
+            // runs this again.
+            void reconcileSessions(set, get).catch(() => {})
+          }
         },
         onEvent: (event) => handleEvent(set, get, event),
       }),
@@ -197,6 +273,7 @@ export const useStore = create<Store>()(
         state.sessions[sessionId] = newSession(sessionId, cwd, true)
         state.activeId = sessionId
       })
+      starting.add(sessionId)
       try {
         // The runner starts in `default` unless told otherwise, which would
         // contradict the mode the composer is already showing.
@@ -207,7 +284,10 @@ export const useStore = create<Store>()(
           delete state.sessions[sessionId]
           if (state.activeId === sessionId) state.activeId = null
         })
+        forgetSession(sessionId)
         throw error
+      } finally {
+        starting.delete(sessionId)
       }
       void loadSessionMeta(set, get, sessionId)
       // The boot cost (system prompt, tools, memory files) is context already
@@ -224,11 +304,26 @@ export const useStore = create<Store>()(
     openSession: async (sessionId, cwd) => {
       const known = get().sessions[sessionId]
       if (known) {
+        // e.g. opened before the runner existed, the eager attach failed, or
+        // the runner has since gone away (server restart) — reopening from the
+        // sidebar is how a closed session is meant to come back, and is also
+        // the only automatic caller (`restoreActive`, once per reload), so a
+        // doomed CLI is never spawned in a loop.
+        const retrying = !known.attached
         set((state) => {
           state.activeId = sessionId
+          // Cleared only when this click really starts a new attempt, so the
+          // row does not keep a stale error while it runs. The sidebar is also
+          // the only way to switch sessions, so clearing unconditionally would
+          // wipe a live failure (a failed send, a failed history read, a
+          // `session_error`) on a plain switch away and back, with nothing
+          // taking over the display.
+          if (retrying) {
+            const session = state.sessions[sessionId]
+            if (session) session.error = null
+          }
         })
-        // e.g. opened before the runner existed, or the eager attach failed.
-        if (!known.attached && !known.closed) attach(set, get, sessionId).catch(() => {})
+        if (retrying) void eagerAttach(set, get, sessionId)
         return
       }
       const target = cwd ?? get().defaultCwd
@@ -242,7 +337,7 @@ export const useStore = create<Store>()(
       await adoptRunner(set, get, sessionId)
       // Fire-and-forget: rendering must not wait for a CLI to boot. A failure
       // leaves the session detached, and `send` retries the attach anyway.
-      if (!get().sessions[sessionId]?.attached) attach(set, get, sessionId).catch(() => {})
+      if (!get().sessions[sessionId]?.attached) void eagerAttach(set, get, sessionId)
     },
 
     setActive: (sessionId) =>
@@ -256,6 +351,7 @@ export const useStore = create<Store>()(
         delete state.sessions[sessionId]
         if (state.activeId === sessionId) state.activeId = Object.keys(state.sessions)[0] ?? null
       })
+      forgetSession(sessionId)
       // The sidebar's live dots come from the runner table, so they only go
       // stale if the list is not re-read here.
       await get().refreshProjects()
@@ -272,7 +368,17 @@ export const useStore = create<Store>()(
     send: async (text, attachments) => {
       const sessionId = get().activeId
       if (!sessionId) return
-      await attach(set, get, sessionId)
+      try {
+        await attach(set, get, sessionId)
+      } catch (error) {
+        // Nothing was echoed yet, so the message is simply not sent — say so
+        // instead of letting the click look like it worked.
+        set((state) => {
+          const session = state.sessions[sessionId]
+          if (session) session.error = `无法启动会话：${String(error)}`
+        })
+        return
+      }
       set((state) => {
         const session = state.sessions[sessionId]
         if (!session) return
@@ -283,11 +389,22 @@ export const useStore = create<Store>()(
           text,
           attachments: attachments?.length ?? 0,
         })
-        session.status = 'running'
+        setSessionStatus(session, 'running')
         session.error = null
         session.turnStats = { startedAt: Date.now(), doneTokens: 0, currentTokens: 0 }
       })
-      await call('session.send', { sessionId, text, ...(attachments?.length ? { attachments } : {}) })
+      try {
+        await call('session.send', { sessionId, text, ...(attachments?.length ? { attachments } : {}) })
+      } catch (error) {
+        // No turn was started, so no `result` will ever clear the running state.
+        set((state) => {
+          const session = state.sessions[sessionId]
+          if (!session) return
+          setSessionStatus(session, 'idle')
+          session.turnStats = null
+          session.error = `发送失败：${String(error)}`
+        })
+      }
     },
 
     interrupt: async () => {
@@ -311,6 +428,7 @@ export const useStore = create<Store>()(
       const sessionId = get().activeId
       if (!sessionId) return
       if (get().sessions[sessionId]?.attached) await call('session.setEffort', { sessionId, effort })
+      effortPicked.add(sessionId)
       set((state) => {
         const session = state.sessions[sessionId]
         if (session) session.effort = effort
@@ -335,6 +453,7 @@ export const useStore = create<Store>()(
         const session = state.sessions[sessionId]
         if (session) {
           session.pendingPermissions = session.pendingPermissions.filter((p) => p.requestId !== requestId)
+          recordPermissionChange(sessionId, requestId, null)
         }
       })
       await call('permission.respond', { sessionId, requestId, decision })
@@ -385,7 +504,13 @@ const ACTIVE_KEY = 'ccw.activeSession'
 useStore.subscribe((state) => {
   const session = state.activeId ? state.sessions[state.activeId] : null
   if (session) {
-    localStorage.setItem(ACTIVE_KEY, JSON.stringify({ sessionId: session.sessionId, cwd: session.cwd }))
+    const value = JSON.stringify({ sessionId: session.sessionId, cwd: session.cwd })
+    // The subscription fires on every streamed token; only the two fields
+    // above are persisted, so skip the synchronous write when they are
+    // unchanged. Compared against what is actually stored, so a removal from
+    // elsewhere (`restoreActive` clearing a dead session) is written again.
+    if (value === localStorage.getItem(ACTIVE_KEY)) return
+    localStorage.setItem(ACTIVE_KEY, value)
   } else if (state.activeId === null) {
     localStorage.removeItem(ACTIVE_KEY)
   }
@@ -432,21 +557,40 @@ async function resolveUserUuid(get: () => Store, sessionId: string, nodeId: stri
  * a *second* process appending to the same transcript.
  */
 async function adoptRunner(set: Setter, get: () => Store, sessionId: string): Promise<void> {
+  if (!get().sessions[sessionId]) return
+  const versions = versionsFor(sessionId)
+  const { status: statusVersion, permissions: permissionsVersion } = versions
+  const epoch = closedEpoch.get(sessionId) ?? 0
+  const permissionChanges: PermissionChanges = new Map()
+  versions.pending.add(permissionChanges)
   let state
   try {
     state = await call('session.state', { sessionId })
   } catch {
     // Treat an unreachable server as "not live"; the reconnect path re-checks.
     return
+  } finally {
+    versions.pending.delete(permissionChanges)
   }
-  if (!state.live || !get().sessions[sessionId]) return
+  // A close or a new local instance invalidates the entire snapshot. Other
+  // events only invalidate their own fields, so missed messages still replay.
+  if (!state.live || snapshotVersions.get(sessionId) !== versions || (closedEpoch.get(sessionId) ?? 0) !== epoch) return
   set((draft) => {
     const session = draft.sessions[sessionId]
-    if (!session) return
+    if (!session || session.closed) return
     session.attached = true
-    session.status = state.status
-    // Prompts raised while the page was gone are still parked on the CLI side.
-    session.pendingPermissions = state.pendingPermissions
+    if (versions.status === statusVersion) setSessionStatus(session, state.status)
+    // Merge events received during the read over its permission list. The
+    // version excludes older overlapping snapshots that finish after this one.
+    if (versions.permissions === permissionsVersion) {
+      const pending = new Map(state.pendingPermissions.map((request) => [request.requestId, request]))
+      for (const [requestId, request] of permissionChanges) {
+        if (request) pending.set(requestId, request)
+        else pending.delete(requestId)
+      }
+      session.pendingPermissions = [...pending.values()]
+      versions.permissions += 1
+    }
     // So is whatever the turn already streamed but the jsonl has not flushed
     // yet — replay it through the normal path; `seen` drops the overlap with
     // history and with live events that raced this snapshot.
@@ -461,6 +605,12 @@ async function adoptRunner(set: Setter, get: () => Store, sessionId: string): Pr
 function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
   let sawInit = false
   let sawResult = false
+
+  // Recorded outside the store update so `attach` can see it even for a
+  // session the store has already dropped.
+  if (event.type === 'session_closed') {
+    closedEpoch.set(event.sessionId, (closedEpoch.get(event.sessionId) ?? 0) + 1)
+  }
 
   set((state) => {
     const session = state.sessions[event.sessionId]
@@ -482,6 +632,12 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
             (usage.cache_read_input_tokens ?? 0) +
             (usage.cache_creation_input_tokens ?? 0) +
             usage.output_tokens
+          // Same rule the runner applies: assistant output only happens inside
+          // a turn. A turn the CLI started on its own — a queued prompt that
+          // survived an interrupt — would otherwise leave the composer idle
+          // with no way to stop it. Subagent output is excluded because it
+          // keeps streaming after the main thread has stopped.
+          setSessionStatus(session, 'running')
         }
 
         // Turn status line: ↓ tokens ride the main thread's streaming usage
@@ -515,10 +671,10 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
           session.commands = message.commands
         }
         if (message.type === 'system' && message.subtype === 'session_state_changed') {
-          session.status = message.state === 'running' ? 'running' : 'idle'
+          setSessionStatus(session, message.state === 'running' ? 'running' : 'idle')
         }
         if (message.type === 'result') {
-          session.status = 'idle'
+          setSessionStatus(session, 'idle')
           session.turnStats = null
           sawResult = true
         }
@@ -526,20 +682,26 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
       }
       case 'permission_request':
         session.pendingPermissions.push(event.request)
+        recordPermissionChange(event.sessionId, event.request.requestId, event.request)
         return
       case 'permission_resolved':
         session.pendingPermissions = session.pendingPermissions.filter((p) => p.requestId !== event.requestId)
+        recordPermissionChange(event.sessionId, event.requestId, null)
         return
       case 'session_error':
         session.error = event.error
-        session.status = 'idle'
+        setSessionStatus(session, 'idle')
         // No `result` follows an errored turn, so nothing else clears these.
         session.liveTokens = null
         session.turnStats = null
         return
       case 'session_closed':
         session.closed = true
-        session.status = 'idle'
+        // The runner is gone, so nothing is attached any more. Without this the
+        // session could never be re-attached: `attach` early-returns on
+        // `attached`, and reopening from the sidebar would be a no-op.
+        session.attached = false
+        setSessionStatus(session, 'idle')
         session.liveTokens = null
         session.turnStats = null
         return
@@ -566,13 +728,27 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
 async function attach(set: Setter, get: () => Store, sessionId: string): Promise<void> {
   const session = get().sessions[sessionId]
   if (!session || session.attached) return
-  await call('session.create', {
-    cwd: session.cwd,
-    resume: sessionId,
-    permissionMode: session.permissionMode,
-    effort: session.effort,
-    ...(session.model ? { model: session.model } : {}),
-  })
+  starting.add(sessionId)
+  const epoch = closedEpoch.get(sessionId) ?? 0
+  try {
+    await call('session.create', {
+      cwd: session.cwd,
+      resume: sessionId,
+      permissionMode: session.permissionMode,
+      // Only when it was really chosen here: forwarding the store's default
+      // would silently reset whatever the resumed session was running on.
+      ...(effortPicked.has(sessionId) ? { effort: session.effort } : {}),
+      ...(session.model ? { model: session.model } : {}),
+    })
+  } finally {
+    starting.delete(sessionId)
+  }
+  // A `session_closed` that arrived while the create request was in flight
+  // means the runner is already gone; overwriting it here is what used to
+  // wedge the session as permanently "attached" with no process behind it.
+  if ((closedEpoch.get(sessionId) ?? 0) !== epoch) {
+    throw new Error('会话进程刚启动就退出了')
+  }
   set((state) => {
     const target = state.sessions[sessionId]
     if (target) {
@@ -587,26 +763,56 @@ async function attach(set: Setter, get: () => Store, sessionId: string): Promise
 }
 
 /**
+ * The eager attach `openSession` fires without waiting. Rendering must not
+ * block on a CLI boot, but the failure must not vanish either: a session that
+ * silently stayed detached looked open while nothing could be sent.
+ */
+function eagerAttach(set: Setter, get: () => Store, sessionId: string): void {
+  attach(set, get, sessionId).catch((error: unknown) => {
+    set((state) => {
+      const session = state.sessions[sessionId]
+      if (session) session.error = `无法恢复会话：${String(error)}`
+    })
+  })
+}
+
+/**
  * Reconciles local session state against the server's runner table. Anything
  * the server no longer runs is marked closed rather than deleted, so the
  * transcript stays readable and the sidebar can reopen it.
  */
-async function reconcileSessions(set: Setter): Promise<void> {
+async function reconcileSessions(set: Setter, get: () => Store): Promise<void> {
   const { projects } = await call('history.projects', {})
   const live = new Set(projects.flatMap((project) => project.sessions.filter((s) => s.live).map((s) => s.sessionId)))
+  const resync: string[] = []
   set((state) => {
     state.projects = projects
     if (!state.defaultCwd && projects[0]) state.defaultCwd = projects[0].cwd
     for (const session of Object.values(state.sessions)) {
       // A detached session has no runner by design, and one mid-creation does
       // not have one yet — neither is evidence the server dropped anything.
-      if (!session.attached) continue
-      if (!live.has(session.sessionId)) {
+      if (!session.attached || starting.has(session.sessionId)) continue
+      if (live.has(session.sessionId)) {
+        resync.push(session.sessionId)
+      } else {
         session.closed = true
-        session.status = 'idle'
+        session.attached = false
+        setSessionStatus(session, 'idle')
       }
     }
   })
+  // The downlink was down while these kept working: re-adopt them so the turn
+  // they streamed meanwhile is replayed instead of leaving a hole.
+  for (const sessionId of resync) {
+    // Its immer recipe runs `applyMessage` over the server's backlog, so a
+    // message shape the renderer chokes on would be an unhandled rejection on
+    // every reconnect. Immer commits no partial draft, so the session keeps the
+    // attached state it already had and only this re-adoption is lost — logged
+    // rather than surfaced, since the next reconnect runs it again.
+    adoptRunner(set, get, sessionId).catch((error: unknown) => {
+      console.error('[ccw] session resync failed', sessionId, error)
+    })
+  }
 }
 
 /**
@@ -669,6 +875,14 @@ async function loadSessionMeta(set: Setter, get: () => Store, sessionId: string)
   })
 }
 
-export function useActiveSession(): SessionState | null {
-  return useStore((state) => (state.activeId ? (state.sessions[state.activeId] ?? null) : null))
+/**
+ * Subscribes to one slice of the active session. Immer replaces the session
+ * object on every transcript mutation, so subscribing to the whole session
+ * re-renders the caller once per streamed token; a primitive slice does not.
+ */
+export function useActiveSessionValue<T>(select: (session: SessionState) => T): T | undefined {
+  return useStore((state) => {
+    const session = state.activeId ? state.sessions[state.activeId] : undefined
+    return session ? select(session) : undefined
+  })
 }
