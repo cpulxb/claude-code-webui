@@ -3,7 +3,7 @@ import { test } from 'node:test'
 
 import type { ModelInfo, Settings } from '@anthropic-ai/claude-agent-sdk'
 
-import { SessionModels } from '../src/session/models.ts'
+import { applyRoleMappings, SessionModels } from '../src/session/models.ts'
 
 // SessionModels falls back to process.env, so the developer's shell must not leak into these assertions.
 for (const key of Object.keys(process.env)) if (key.startsWith('ANTHROPIC_')) delete process.env[key]
@@ -173,4 +173,30 @@ test('a failed provider refresh prevents enqueueing a message with stale setting
   let sent = false
   await assert.rejects(f.catalog.withCurrentSettings(() => { sent = true }), /refresh failed/)
   assert.equal(sent, false)
+})
+
+test('a channel switch relabels role rows even when the CLI menu still lists the old channel', async () => {
+  // The CLI keeps returning its startup menu from reinitialize(); the mock does the same.
+  const oldModels = cliModels.map((row) => row.value === 'haiku'
+    ? { ...row, resolvedModel: 'claude-haiku-5-5', displayName: 'Haiku A', description: 'Channel A haiku' }
+    : row)
+  const f = fixture('haiku', oldModels, 'haiku')
+  f.configure({ env: { ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5', ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME: 'Haiku B' } })
+  const result = await f.catalog.list()
+  const haiku = result.models.find((row) => row.value === 'haiku')
+  assert.equal(result.model, 'haiku')
+  assert.equal(haiku?.resolvedModel, 'claude-haiku-4-5')
+  assert.equal(haiku?.displayName, 'Haiku B')
+  assert.equal(f.events.at(-1)?.models.find((row) => row.value === 'haiku')?.displayName, 'Haiku B')
+})
+
+test('role labels follow the CLI defaults when a channel gives no name or description', () => {
+  const [sonnet, haiku, other] = applyRoleMappings([
+    { value: 'sonnet', resolvedModel: 'old', displayName: 'Old', description: 'Old' },
+    { value: 'haiku', resolvedModel: 'claude-haiku-5-5', displayName: 'Haiku A', description: 'A' },
+    { value: 'claude-opus-5-5[1m]', resolvedModel: 'claude-opus-5-5[1m]', displayName: 'Opus 5.5', description: 'x' },
+  ], { ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-5-5[1M]', ANTHROPIC_DEFAULT_HAIKU_MODEL: '' })
+  assert.deepEqual(sonnet, { value: 'sonnet', resolvedModel: 'claude-sonnet-5-5[1M]', displayName: 'claude-sonnet-5-5', description: 'Custom Sonnet model (1M context)' })
+  assert.equal(haiku?.displayName, 'Haiku A')
+  assert.equal(other?.displayName, 'Opus 5.5')
 })

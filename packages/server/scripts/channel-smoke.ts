@@ -152,13 +152,16 @@ try {
       const updated = await runner.models()
       assert.equal(updated.model, 'haiku')
       assert.equal(updated.models.find((model) => model.value === 'haiku')?.displayName, 'Haiku B')
+      assert.equal(updated.models.find((model) => model.value === 'haiku')?.resolvedModel, 'claude-haiku-4-5')
+      const lastModels = modelEvents.at(-1)
+      assert.equal(lastModels?.type === 'session_models' ? lastModels.model : undefined, 'haiku')
 
       expectedBKey = 'fixture-b-rotated-key'
       await writeSettings('B')
       await send('Check a credential-only change.')
       assert.equal(records.at(-1)?.credential, expectedBKey)
       assert.equal(JSON.stringify(modelEvents).includes('fixture-'), false)
-      console.log('PASS: same conversation, A → B model and endpoint, bearer → API key, credential rotation, and deferred refresh during a turn.')
+      console.log('PASS: same conversation, A → B model and endpoint, bearer → API key, credential rotation, and deferred refresh during a turn, and the picker relabelled to channel B.')
     })(),
     new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error('Channel smoke test timed out')), 30_000) }),
   ])
@@ -168,5 +171,6 @@ try {
   runner?.close()
   await Promise.all([a.close(), b.close()])
   await settle()
-  await rm(root, { recursive: true, force: true })
+  // The CLI may still be flushing its transcript as it exits.
+  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 }
