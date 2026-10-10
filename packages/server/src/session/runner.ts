@@ -88,6 +88,9 @@ export class SessionRunner {
         // prompt and behaves differently from the terminal.
         systemPrompt: { type: 'preset', preset: 'claude_code' },
         includePartialMessages: true,
+        // Without it a subagent forwards only its tool calls: enough for a
+        // heartbeat, not for the conversation the browser lets you open.
+        forwardSubagentText: true,
         enableFileCheckpointing: true,
         // Thinking display defaults to 'omitted' on Opus 5 / 4.8 / 4.7 /
         // Sonnet 5 — the blocks stream with empty text unless asked for.
@@ -285,6 +288,16 @@ export class SessionRunner {
   /** Checkpoint rewind of tracked files to their state at a user message. */
   async rewindFiles(userMessageId: string, dryRun: boolean): Promise<RewindFilesResult> {
     return this.#query.rewindFiles(userMessageId, { dryRun })
+  }
+
+  /** Stops one subagent (or background shell); its task_notification says `stopped`. */
+  async stopTask(taskId: string): Promise<void> {
+    await this.#query.stopTask(taskId)
+  }
+
+  /** Ctrl+B for one foreground subagent: its Agent call returns and the turn moves on. */
+  async backgroundTask(toolUseId: string): Promise<boolean> {
+    return this.#query.backgroundTasks(toolUseId)
   }
 
   respondToPermission(requestId: string, decision: PermissionDecision): boolean {

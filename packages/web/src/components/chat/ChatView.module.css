@@ -275,3 +275,9 @@
     opacity: 0;
   }
 }
+
+.agentPromptLabel {
+  margin-bottom: var(--ccw-space-2);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+}

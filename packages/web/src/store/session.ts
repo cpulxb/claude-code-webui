@@ -19,7 +19,7 @@ import { immer } from 'zustand/middleware/immer'
 
 import { call, connectEvents, type ConnectionStatus } from '../api/client.ts'
 import { applyHistoryMessage, listUserPromptUuids } from '../render/history.ts'
-import { applyMessage, emptyTranscript, type Transcript } from '../render/nodes.ts'
+import { applyMessage, emptyTranscript, findAgent, type AgentRun, type Transcript } from '../render/nodes.ts'
 
 /** Facts the CLI reports once per turn in its `init` message. */
 export type SessionInit = {
@@ -80,6 +80,11 @@ export type SessionState = {
    * so cwd-watching panels (SCM, Explorer) know to re-read.
    */
   fsVersion: number
+  /**
+   * The subagent whose conversation the chat pane shows instead of the main
+   * thread, by the Agent tool_use id that spawned it. Null for the main thread.
+   */
+  viewAgent: string | null
 }
 
 type Store = {
@@ -108,6 +113,10 @@ type Store = {
   rewindFiles: (nodeId: string, dryRun: boolean) => Promise<RewindFilesResult>
   /** Bumps `fsVersion` after an out-of-band write (editor-tab save). */
   touchFs: (sessionId: string) => void
+  /** Shows a subagent's conversation in the chat pane; null goes back to the main thread. */
+  openAgent: (toolUseId: string | null) => Promise<void>
+  stopAgent: (toolUseId: string) => Promise<void>
+  backgroundAgent: (toolUseId: string) => Promise<void>
 }
 
 function newSession(sessionId: string, cwd: string, attached: boolean): SessionState {
@@ -131,6 +140,7 @@ function newSession(sessionId: string, cwd: string, attached: boolean): SessionS
     liveTokens: null,
     turnStats: null,
     fsVersion: 0,
+    viewAgent: null,
   }
 }
 
@@ -281,6 +291,7 @@ export const useStore = create<Store>()(
       if (!remembered) return
       try {
         await get().openSession(remembered.sessionId, remembered.cwd)
+        if (remembered.agent) await get().openAgent(remembered.agent).catch(() => {})
       } catch {
         // The session was deleted, or its project directory moved.
         localStorage.removeItem(ACTIVE_KEY)
@@ -523,6 +534,30 @@ export const useStore = create<Store>()(
         const session = state.sessions[sessionId]
         if (session) session.fsVersion += 1
       }),
+
+    openAgent: async (toolUseId) => {
+      const sessionId = get().activeId
+      if (!sessionId) return
+      set((state) => {
+        const session = state.sessions[sessionId]
+        if (session) session.viewAgent = toolUseId && findAgent(session.transcript, toolUseId) ? toolUseId : null
+      })
+      if (toolUseId) await loadAgentHistory(set, get, sessionId, toolUseId)
+    },
+
+    stopAgent: async (toolUseId) => {
+      const sessionId = get().activeId
+      const session = sessionId ? get().sessions[sessionId] : undefined
+      const agent = session && findAgent(session.transcript, toolUseId)
+      if (!sessionId || !session?.attached || !agent?.agentId) return
+      await call('session.stopTask', { sessionId, taskId: agent.agentId })
+    },
+
+    backgroundAgent: async (toolUseId) => {
+      const sessionId = get().activeId
+      if (!sessionId || !get().sessions[sessionId]?.attached) return
+      await call('session.backgroundTask', { sessionId, toolUseId })
+    },
   })),
 )
 
@@ -539,7 +574,11 @@ const ACTIVE_KEY = 'ccw.activeSession'
 useStore.subscribe((state) => {
   const session = state.activeId ? state.sessions[state.activeId] : null
   if (session) {
-    const value = JSON.stringify({ sessionId: session.sessionId, cwd: session.cwd })
+    const value = JSON.stringify({
+      sessionId: session.sessionId,
+      cwd: session.cwd,
+      ...(session.viewAgent ? { agent: session.viewAgent } : {}),
+    })
     // The subscription fires on every streamed token; only the two fields
     // above are persisted, so skip the synchronous write when they are
     // unchanged. Compared against what is actually stored, so a removal from
@@ -551,13 +590,17 @@ useStore.subscribe((state) => {
   }
 })
 
-function readRememberedSession(): { sessionId: string; cwd: string } | null {
+function readRememberedSession(): { sessionId: string; cwd: string; agent?: string } | null {
   const raw = localStorage.getItem(ACTIVE_KEY)
   if (!raw) return null
   try {
-    const parsed = JSON.parse(raw) as { sessionId?: unknown; cwd?: unknown }
+    const parsed = JSON.parse(raw) as { sessionId?: unknown; cwd?: unknown; agent?: unknown }
     if (typeof parsed.sessionId !== 'string' || typeof parsed.cwd !== 'string') return null
-    return { sessionId: parsed.sessionId, cwd: parsed.cwd }
+    return {
+      sessionId: parsed.sessionId,
+      cwd: parsed.cwd,
+      ...(typeof parsed.agent === 'string' ? { agent: parsed.agent } : {}),
+    }
   } catch {
     return null
   }
@@ -893,10 +936,22 @@ async function loadProjects(set: Setter): Promise<ProjectGroup[] | undefined> {
  */
 async function loadHistory(set: Setter, get: () => Store, sessionId: string, cwd: string): Promise<void> {
   try {
-    const { messages, permissionMode } = await call('history.messages', { sessionId, cwd })
+    const [{ messages, permissionMode }, subagents] = await Promise.all([
+      call('history.messages', { sessionId, cwd }),
+      // Optional: without it the cards still render, they just cannot open
+      // a conversation until a live event names the agent.
+      call('history.subagents', { sessionId }).catch(() => ({ agents: [] })),
+    ])
     if (!get().sessions[sessionId]) return
     const transcript = emptyTranscript()
     for (const entry of messages) applyHistoryMessage(transcript, entry)
+    for (const meta of subagents.agents) {
+      const agent = meta.toolUseId ? findAgent(transcript, meta.toolUseId) : null
+      if (!agent) continue
+      agent.agentId ??= meta.agentId
+      if (!agent.subagentType && meta.agentType) agent.subagentType = meta.agentType
+      if (!agent.description && meta.description) agent.description = meta.description
+    }
     set((state) => {
       const session = state.sessions[sessionId]
       if (!session) return
@@ -973,5 +1028,40 @@ export function useActiveSessionValue<T>(select: (session: SessionState) => T): 
   return useStore((state) => {
     const session = state.activeId ? state.sessions[state.activeId] : undefined
     return session ? select(session) : undefined
+  })
+}
+
+/**
+ * Folds a subagent's on-disk transcript into its view the first time it is
+ * opened. A subagent still streaming into a live view is left alone: its
+ * events already built the view, and the JSONL may lag behind them.
+ */
+async function loadAgentHistory(set: Setter, get: () => Store, sessionId: string, toolUseId: string): Promise<void> {
+  const session = get().sessions[sessionId]
+  const agent: AgentRun | null = session ? findAgent(session.transcript, toolUseId) : null
+  if (!session || !agent || agent.historyLoaded) return
+  if (agent.status === 'running' && agent.transcript.nodes.length > 0) return
+  let agentId = agent.agentId
+  if (!agentId) {
+    const { agents } = await call('history.subagents', { sessionId })
+    agentId = agents.find((meta) => meta.toolUseId === toolUseId)?.agentId
+  }
+  if (!agentId) return
+  const { messages } = await call('history.subagent', { sessionId, agentId })
+  const rebuilt = emptyTranscript()
+  for (const entry of messages) applyHistoryMessage(rebuilt, entry)
+  set((state) => {
+    const target = state.sessions[sessionId]
+    const draft = target && findAgent(target.transcript, toolUseId)
+    if (!draft) return
+    draft.agentId ??= agentId
+    draft.historyLoaded = true
+    // Nothing on disk yet (still spawning) — keep whatever streamed live.
+    if (rebuilt.nodes.length === 0) return
+    // History is the complete record; live-only nodes it does not know of
+    // would be newer output, which `seen` lets the stream re-add on arrival.
+    rebuilt.agents = { ...rebuilt.agents, ...draft.transcript.agents }
+    rebuilt.agentOrder = [...new Set([...rebuilt.agentOrder, ...draft.transcript.agentOrder])]
+    draft.transcript = rebuilt
   })
 }

@@ -63,6 +63,15 @@ export type PermissionRequest = {
   agentId?: string
 }
 
+/** A subagent transcript found next to a session's JSONL. */
+export type SubagentMeta = {
+  agentId: string
+  /** The Agent tool_use that spawned it, when the CLI recorded one. */
+  toolUseId?: string
+  description?: string
+  agentType?: string
+}
+
 export type PermissionDecision =
   | { behavior: 'allow'; remember?: boolean }
   | { behavior: 'deny'; message?: string }
@@ -213,6 +222,16 @@ export type RpcMap = {
     params: { sessionId: string; userMessageId: string; dryRun?: boolean }
     result: { rewind: RewindFilesResult }
   }
+  /** Stops one running subagent or background task (`task_notification` follows). */
+  'session.stopTask': { params: { sessionId: string; taskId: string }; result: Record<string, never> }
+  /**
+   * Moves a foreground subagent to the background — the terminal's Ctrl+B.
+   * The blocked Agent call returns at once and the turn continues.
+   */
+  'session.backgroundTask': {
+    params: { sessionId: string; toolUseId: string }
+    result: { backgrounded: boolean }
+  }
   'permission.respond': {
     params: { sessionId: string; requestId: string; decision: PermissionDecision }
     result: Record<string, never>
@@ -227,6 +246,16 @@ export type RpcMap = {
     params: { sessionId: string; cwd?: string }
     /** `permissionMode` is absent when the session's mode was never toggled. */
     result: { messages: SessionMessage[]; permissionMode?: PermissionMode }
+  }
+  /** Subagents a session spawned, read from `<session>/subagents/*.meta.json`. */
+  'history.subagents': { params: { sessionId: string }; result: { agents: SubagentMeta[] } }
+  /**
+   * One subagent's own conversation, from `<session>/subagents/agent-<id>.jsonl`.
+   * Shaped like `history.messages` so the same renderer replays it.
+   */
+  'history.subagent': {
+    params: { sessionId: string; agentId: string }
+    result: { messages: SessionMessage[] }
   }
   /**
    * Scans `cwd` for `@` completions. Deliberately keyed on the directory rather

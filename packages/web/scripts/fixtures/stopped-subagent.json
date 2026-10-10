@@ -1,0 +1,694 @@
+[
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "system",
+   "subtype": "background_tasks_changed",
+   "tasks": [],
+   "uuid": "0430ef53-7a04-408c-b6cd-307b83e89c78",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "system",
+   "subtype": "init",
+   "cwd": "/work/demo",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+   "tools": [
+    "Task",
+    "AskUserQuestion",
+    "Bash",
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "Edit",
+    "EnterPlanMode",
+    "EnterWorktree",
+    "ExitPlanMode",
+    "ExitWorktree",
+    "ListAgents",
+    "NotebookEdit",
+    "Read",
+    "ReportFindings",
+    "ScheduleWakeup",
+    "SendMessage",
+    "Skill",
+    "TaskStop",
+    "WebFetch",
+    "WebSearch",
+    "Workflow",
+    "Write"
+   ],
+   "mcp_servers": [],
+   "model": "claude-haiku-5.5:free",
+   "permissionMode": "bypassPermissions",
+   "slash_commands": [
+    "deep-research",
+    "dataviz",
+    "update-config",
+    "verify",
+    "debug",
+    "code-review",
+    "simplify",
+    "batch",
+    "fewer-permission-prompts",
+    "doctor",
+    "loop",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "run-skill-generator",
+    "plugin-authoring",
+    "agents",
+    "auto-mode-setup",
+    "autocompact",
+    "clear",
+    "color",
+    "compact",
+    "config",
+    "output-style",
+    "context",
+    "effort",
+    "fast",
+    "focus",
+    "heapdump",
+    "init",
+    "mcp",
+    "model",
+    "__remote-workflow",
+    "workflow-launch-exec",
+    "reload-plugins",
+    "reload-skills",
+    "rename",
+    "security-review",
+    "usage",
+    "insights",
+    "recap",
+    "goal",
+    "list-agents",
+    "team-onboarding"
+   ],
+   "terminal_slash_commands": [
+    "doctor",
+    "color",
+    "focus",
+    "reload-plugins"
+   ],
+   "apiKeySource": "none",
+   "claude_code_version": "2.1.293",
+   "output_style": "default",
+   "agents": [
+    "claude",
+    "Explore",
+    "general-purpose",
+    "Plan",
+    "statusline-setup"
+   ],
+   "skills": [
+    "deep-research",
+    "dataviz",
+    "update-config",
+    "verify",
+    "debug",
+    "code-review",
+    "simplify",
+    "batch",
+    "fewer-permission-prompts",
+    "doctor",
+    "loop",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "run-skill-generator",
+    "plugin-authoring"
+   ],
+   "plugins": [
+    {
+     "name": "cc-plugin-agents-md",
+     "path": "builtin",
+     "source": "cc-plugin-agents-md@builtin"
+    },
+    {
+     "name": "cc-plugin-plugin-authoring",
+     "path": "builtin",
+     "source": "cc-plugin-plugin-authoring@builtin"
+    }
+   ],
+   "capabilities": [
+    "interrupt_receipt_v1",
+    "interrupt_cancel_queued_v1",
+    "interrupt_send_now_v1",
+    "msg_lifecycle_v1",
+    "request_marker_lists_v1",
+    "sdk_mcp_tools_list_changed",
+    "sdk_mcp_manifests",
+    "mcp_read_resource_v1",
+    "mcp_tool_ui_meta_v1",
+    "ui_surface_v1"
+   ],
+   "analytics_disabled": true,
+   "product_feedback_disabled": true,
+   "uuid": "4e57a41b-c37d-4e36-8b0e-f4614f523cbf",
+   "memory_paths": {
+    "auto": "/tmp/ccw-sub-vFqiaV/cfg/projects/-tmp-ccw-sub-vFqiaV-work/memory/"
+   },
+   "messaging_socket_path": "/tmp/cc-socks/13106.sock",
+   "fast_mode_state": "off",
+   "fast_mode_disabled_reason": "sdk_opt_in_required",
+   "per_turn_effort_active": false,
+   "view_mode": "default"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "system",
+   "subtype": "status",
+   "status": "requesting",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+   "uuid": "ac27bd3b-c799-4631-bf0b-7aa6aa1d67d5"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "assistant",
+   "message": {
+    "id": "msg_d1648170e3bc466c83b3d7c035c26252",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "thinking",
+      "thinking": "I'll launch two general-purpose agents in a single message, each tasked with running the sleep-and-echo command and reporting back its output, labeled \"Slow one\" and \"Slow two.\"\n\n",
+      "signature": "CAQStgsKEAgSGAI4AUIIdGhpbmtpbmcSDBawqQvSChClVOGVsRoMOas4IuWI2/HNTLo9IjD3kkZ3ZOHkdjOy4kCDFlA/K0LMIbzSc7Yxmbygfz8uXWeRGWxjZj0QwJP3W0QJNukq0wq8rH90WP+7GyMUaURQRDMy5FRpZw/1vqwmcIU3Ym//TZrurzl+RPzgahh+w3S+891jm72FXQeCHCbYcKQlLApjWyaMyfz7zmJFCzDZWdsWNimlj4aJfixdOZhF3LanY6OV1DnSy2A112dw6GFqlwFVKldAgiaMoYnwSLBCcPbjVNYJicHqkKeOOt9n9BUbV8ltKJxDnd9KhgF/bQx0JLX3zuLms6lNovswHofjganDl2PjaX1B+3iXds0Avkz7o8/8IX9VBhn8pebD9qLtnO9GdZz0a0kG8wgubWaHAZ8rM/9FhoKipGDqyLFiWy7IcdkJOjmEHabFc+ycPJakCJNOncpOyFvNI/sm7SriEbW+eF00c8qDiuFC+VJfeZpof1VZywe3harqYYxil2GSw0w/1khVwzujstmIBLzqd+W+mFH/4k/yPbvvSJNPwB+m0zN/GDbfw6a9nNLeSlXdeglqhKb/iZF0LRGHjjbRGBMKCowY0Wk1UdEk3dBVOOOpY80ONUpXci5eRCu0qNclCD00Xi9+9RCuONVIukfdlHLfKLfiGifgir7gxNHxn0KZ748kS5/I62SbAEmXNkIl+ZK6J5e++Xi2qa0toE38+OHJlZTia+uc1Y8uQKDqAYYXkM3jzUVDoNqi4H4Wn2KkOpZoWf+o5AuctGUybFi7CZmGgnCrdUG4ACcHXmeqZL2DWytYSe9YkNUwKwijYu/6EYSuxG2Keby9GDDlIUJRKtCYjGCWkKgYHpyHaW6ijCTfXdCZbbS3OUNmME2FYZcVa1T18dD0kZ726QWpoMLWokinVOdcOZV6iufJ7brKTCCXMWSs61G3sTl7ST4zev/dTCQ0P9CsuHmxdNkLS2VPyTZHVHFwAlTCbA0at7bGX0COtzVAH9NNgrriTYVrQVo1bDOloTlRdhn5teX2EZ2UyJjLATKPIVaR5NofeCwrZhGzYYLuAQiDYr+ZzhoAq37JCYUGUv41eZKng82dXUqM+tc36OIorHjbNE4VNl2BprQLFcPg9ndHyHsfvxsOrZ1cH4f2rOecndgNn08wmKA4tE1qcJqLbFsq92p9wTHTNzrpnM2509TQsm7ruD/6Hl5P4FJXCu3khLlAbpgHnwPo8DP575k4Sak3R3X5EDjotZlEXOPsQNRYKvPx4xkN5snft84DS9CTTHNSisfJGdC0FI7j7aP+NlQqXgFXfLjW5TGpx6H2vYrrrqKncns5m4u5f07f5GtHfb5UGZULV5vckYYeXMLzeeHLT/85RpnYkmLN2aX8cc8C3mBHAn8yAaDelwwD/USZ7aPjgLEDnUXfn1fCwpNjdyuv9ls4Fq2z1cM+hRA/QgnLtSCi6ZjUsb/zhrKIXHL4ijq+7kZXVuutMSnQMw0vRWGwgcn5v0s7BspZoZKAKjfOuDeeM29ElUmdQb+dKuN4DdT54MJ3Mwl4+QqC58/hVWuOrfnG2PikmyVSP/2vR0hA7tvlHQZdAVWMh076pl6VCr4VMWL1dNl1UeHiUalgPodEkYlSf93eeIc7XpofVCilOKzhbM/vkaB4LSYVNG3FWXuF1ODibp07vlvECn6gSp21dPBZb821nlHeAL+9urBKSB1B8yO3gt2qlaSnAX2KhGMW+qKU8hJa8HS/Of591BGKZlFst7g6VfbrRV4ClcTmZkRpRiborH0GsCkXD8Boj1cwx/BK/RAYN2aACVTygXO65vvhl7dW2IYIyWlsDauiJ9DjWd/uEf1OF6jWYMt0XWjI1s+NMrC/xFd7RLxnEPpDqGXhhBXoyApPo4oM4ELJbIYLwLYqpB2KED2ZMQbVGAE="
+     }
+    ],
+    "model": "claude-haiku-5.5:free",
+    "stop_reason": null,
+    "stop_sequence": null,
+    "usage": {
+     "input_tokens": 39226,
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "output_tokens": 0
+    },
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+   "uuid": "5c672564-60aa-40ee-b20a-dde3eb3f3388",
+   "timestamp": "2026-10-10T13:46:22.793Z",
+   "thinking_duration_ms": 5
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "assistant",
+   "message": {
+    "id": "msg_d1648170e3bc466c83b3d7c035c26252",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "I'm launching both subagents in parallel, each running `sleep 25 && echo done`."
+     }
+    ],
+    "model": "claude-haiku-5.5:free",
+    "stop_reason": null,
+    "stop_sequence": null,
+    "usage": {
+     "input_tokens": 39226,
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "output_tokens": 0
+    },
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+   "uuid": "69bbc62d-5631-472b-8c12-af5e4e08d77d",
+   "timestamp": "2026-10-10T13:46:22.798Z"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "assistant",
+   "message": {
+    "id": "msg_d1648170e3bc466c83b3d7c035c26252",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01KRgoRriHj3ofw6Jx3UCn9x",
+      "name": "Agent",
+      "input": {
+       "description": "Slow one",
+       "subagent_type": "general-purpose",
+       "prompt": "Run this exact Bash command and nothing else: sleep 25 && echo done\nThen report the command's output in your final answer. Keep the report to one or two lines.",
+       "run_in_background": false
+      }
+     }
+    ],
+    "model": "claude-haiku-5.5:free",
+    "stop_reason": null,
+    "stop_sequence": null,
+    "usage": {
+     "input_tokens": 39226,
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "output_tokens": 0
+    },
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+   "uuid": "44520dc7-437e-41f3-81d1-83cb7f9a4dcd",
+   "timestamp": "2026-10-10T13:46:22.809Z"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "system",
+   "subtype": "task_started",
+   "task_id": "a5554ac036beb00ec",
+   "run_id": "0mv2g6qcj-3aecc370",
+   "tool_use_id": "toolu_01KRgoRriHj3ofw6Jx3UCn9x",
+   "description": "Slow one",
+   "subagent_type": "general-purpose",
+   "is_backgrounded": false,
+   "spawn_depth": 1,
+   "task_type": "local_agent",
+   "prompt": "Run this exact Bash command and nothing else: sleep 25 && echo done\nThen report the command's output in your final answer. Keep the report to one or two lines.",
+   "uuid": "a850c1a9-ba39-47d3-8b79-372afd3a5e79",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "Run this exact Bash command and nothing else: sleep 25 && echo done\nThen report the command's output in your final answer. Keep the report to one or two lines."
+     }
+    ]
+   },
+   "parent_tool_use_id": "toolu_01KRgoRriHj3ofw6Jx3UCn9x",
+   "agent_id": "a5554ac036beb00ec",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+   "uuid": "f7fe99f8-cbb9-420a-82da-fddfeb352183",
+   "timestamp": "2026-10-10T13:46:22.816Z",
+   "subagent_type": "general-purpose",
+   "task_description": "Slow one"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "assistant",
+   "message": {
+    "id": "msg_d1648170e3bc466c83b3d7c035c26252",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01CfQgSSQrV9nLuHCyeUHE2C",
+      "name": "Agent",
+      "input": {
+       "description": "Slow two",
+       "subagent_type": "general-purpose",
+       "prompt": "Run this exact Bash command and nothing else: sleep 25 && echo done\nThen report the command's output in your final answer. Keep the report to one or two lines.",
+       "run_in_background": false
+      }
+     }
+    ],
+    "model": "claude-haiku-5.5:free",
+    "stop_reason": null,
+    "stop_sequence": null,
+    "usage": {
+     "input_tokens": 39226,
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "output_tokens": 0
+    },
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+   "uuid": "4309390b-9ed2-48ea-bb91-643b18aa9bc0",
+   "timestamp": "2026-10-10T13:46:22.842Z"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "system",
+   "subtype": "task_started",
+   "task_id": "a7b459b0398d7556e",
+   "run_id": "0mv2g6qdb-af7e4912",
+   "tool_use_id": "toolu_01CfQgSSQrV9nLuHCyeUHE2C",
+   "description": "Slow two",
+   "subagent_type": "general-purpose",
+   "is_backgrounded": false,
+   "spawn_depth": 1,
+   "task_type": "local_agent",
+   "prompt": "Run this exact Bash command and nothing else: sleep 25 && echo done\nThen report the command's output in your final answer. Keep the report to one or two lines.",
+   "uuid": "f1c60ce7-2745-43c1-bb4a-de7c0c59dea9",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "Run this exact Bash command and nothing else: sleep 25 && echo done\nThen report the command's output in your final answer. Keep the report to one or two lines."
+     }
+    ]
+   },
+   "parent_tool_use_id": "toolu_01CfQgSSQrV9nLuHCyeUHE2C",
+   "agent_id": "a7b459b0398d7556e",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+   "uuid": "21207bff-84d4-4a78-a8c6-a0559dbe977a",
+   "timestamp": "2026-10-10T13:46:22.846Z",
+   "subagent_type": "general-purpose",
+   "task_description": "Slow two"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "system",
+   "subtype": "task_progress",
+   "task_id": "a7b459b0398d7556e",
+   "run_id": "0mv2g6qdb-af7e4912",
+   "tool_use_id": "toolu_01CfQgSSQrV9nLuHCyeUHE2C",
+   "description": "Running Sleep 25 seconds then echo done",
+   "subagent_type": "general-purpose",
+   "usage": {
+    "total_tokens": 23277,
+    "tool_uses": 1,
+    "duration_ms": 1424
+   },
+   "last_tool_name": "Bash",
+   "uuid": "b251475a-dcf6-48d4-af40-4e94a5220230",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "assistant",
+   "message": {
+    "id": "msg_a19823516d27431db89282056cde2423",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01UQ3HL2KFKUULkfMKr4XcM8",
+      "name": "Bash",
+      "input": {
+       "command": "sleep 25 && echo done",
+       "description": "Sleep 25 seconds then echo done"
+      }
+     }
+    ],
+    "model": "claude-haiku-5.5:free",
+    "stop_reason": null,
+    "stop_sequence": null,
+    "usage": {
+     "input_tokens": 23276,
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "output_tokens": 0
+    },
+    "context_management": null
+   },
+   "parent_tool_use_id": "toolu_01CfQgSSQrV9nLuHCyeUHE2C",
+   "agent_id": "a7b459b0398d7556e",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+   "uuid": "dee46545-d828-4284-960b-4f05f2cd2325",
+   "timestamp": "2026-10-10T13:46:24.268Z",
+   "subagent_type": "general-purpose",
+   "task_description": "Slow two"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "system",
+   "subtype": "task_progress",
+   "task_id": "a5554ac036beb00ec",
+   "run_id": "0mv2g6qcj-3aecc370",
+   "tool_use_id": "toolu_01KRgoRriHj3ofw6Jx3UCn9x",
+   "description": "Running Sleep 25 seconds then echo done",
+   "subagent_type": "general-purpose",
+   "usage": {
+    "total_tokens": 23277,
+    "tool_uses": 1,
+    "duration_ms": 1523
+   },
+   "last_tool_name": "Bash",
+   "uuid": "5897033e-543c-411d-877e-81ba234ad5e1",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "assistant",
+   "message": {
+    "id": "msg_700e3b2e802a4da7a661771335e5ca61",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01SzNNzpMKRDnmdyPNLgNB18",
+      "name": "Bash",
+      "input": {
+       "command": "sleep 25 && echo done",
+       "description": "Sleep 25 seconds then echo done"
+      }
+     }
+    ],
+    "model": "claude-haiku-5.5:free",
+    "stop_reason": null,
+    "stop_sequence": null,
+    "usage": {
+     "input_tokens": 23276,
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "output_tokens": 0
+    },
+    "context_management": null
+   },
+   "parent_tool_use_id": "toolu_01KRgoRriHj3ofw6Jx3UCn9x",
+   "agent_id": "a5554ac036beb00ec",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+   "uuid": "f3fd5c52-defc-4b8c-a680-d8fdffbf38d1",
+   "timestamp": "2026-10-10T13:46:24.337Z",
+   "subagent_type": "general-purpose",
+   "task_description": "Slow one"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "system",
+   "subtype": "task_started",
+   "task_id": "b7p8kxjf2",
+   "run_id": "0mv2g6ttg-a702e27f",
+   "owned_by_subagent": true,
+   "tool_use_id": "toolu_01UQ3HL2KFKUULkfMKr4XcM8",
+   "description": "Sleep 25 seconds then echo done",
+   "is_backgrounded": false,
+   "parent_task_id": "a7b459b0398d7556e",
+   "task_type": "local_bash",
+   "uuid": "4b629183-e2e1-4213-a4e7-68f4d7906103",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "system",
+   "subtype": "task_started",
+   "task_id": "bw9f7hdio",
+   "run_id": "0mv2g6tti-4caa0d25",
+   "owned_by_subagent": true,
+   "tool_use_id": "toolu_01SzNNzpMKRDnmdyPNLgNB18",
+   "description": "Sleep 25 seconds then echo done",
+   "is_backgrounded": false,
+   "parent_task_id": "a5554ac036beb00ec",
+   "task_type": "local_bash",
+   "uuid": "32cf41ef-3a0b-4945-809b-5614c6ac9fa6",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "system",
+   "subtype": "task_updated",
+   "task_id": "a5554ac036beb00ec",
+   "run_id": "0mv2g6qcj-3aecc370",
+   "patch": {
+    "status": "killed",
+    "end_time": 1791639988827
+   },
+   "uuid": "8d6fb5f3-6736-44f3-9a84-dc1cb9b4450b",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "system",
+   "subtype": "task_notification",
+   "task_id": "a5554ac036beb00ec",
+   "run_id": "0mv2g6qcj-3aecc370",
+   "tool_use_id": "toolu_01KRgoRriHj3ofw6Jx3UCn9x",
+   "status": "stopped",
+   "output_file": "/tmp/claude-1000/-tmp-ccw-sub-vFqiaV-work/c8b506ca-d817-4eae-b2d5-201ce51243ac/tasks/a5554ac036beb00ec.output",
+   "summary": "Slow one",
+   "uuid": "f0221e74-5f09-4150-b841-2027b448091e",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "system",
+   "subtype": "task_notification",
+   "task_id": "bw9f7hdio",
+   "run_id": "0mv2g6tti-4caa0d25",
+   "tool_use_id": "toolu_01SzNNzpMKRDnmdyPNLgNB18",
+   "status": "stopped",
+   "output_file": "",
+   "summary": "Sleep 25 seconds then echo done",
+   "uuid": "465c8279-5ca4-4d1b-8f16-7e8e0fbcb89f",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "type": "tool_result",
+      "content": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.",
+      "is_error": true,
+      "tool_use_id": "toolu_01SzNNzpMKRDnmdyPNLgNB18"
+     }
+    ]
+   },
+   "parent_tool_use_id": "toolu_01KRgoRriHj3ofw6Jx3UCn9x",
+   "agent_id": "a5554ac036beb00ec",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+   "uuid": "96847e2a-53ba-40e7-b3d9-e1db91ef934d",
+   "timestamp": "2026-10-10T13:46:28.834Z",
+   "tool_use_result": "User rejected tool use",
+   "subagent_type": "general-purpose",
+   "task_description": "Slow one"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "[Request interrupted by user for tool use]"
+     }
+    ]
+   },
+   "parent_tool_use_id": "toolu_01KRgoRriHj3ofw6Jx3UCn9x",
+   "agent_id": "a5554ac036beb00ec",
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+   "uuid": "8320c727-5f31-48a5-9cba-346134eaa455",
+   "timestamp": "2026-10-10T13:46:28.836Z",
+   "subagent_type": "general-purpose",
+   "task_description": "Slow one"
+  }
+ },
+ {
+  "type": "sdk",
+  "sessionId": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+  "message": {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "type": "tool_result",
+      "content": "[Request interrupted by user for tool use]",
+      "is_error": true,
+      "tool_use_id": "toolu_01KRgoRriHj3ofw6Jx3UCn9x"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "c8b506ca-d817-4eae-b2d5-201ce51243ac",
+   "uuid": "fd940fb3-b018-451e-b102-c166936b6793",
+   "timestamp": "2026-10-10T13:46:28.839Z",
+   "tool_use_result": "Error: [Request interrupted by user for tool use]",
+   "tool_result_meta": [
+    {
+     "id": "toolu_01KRgoRriHj3ofw6Jx3UCn9x",
+     "non_execution_kind": "interrupted",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  }
+ }
+]

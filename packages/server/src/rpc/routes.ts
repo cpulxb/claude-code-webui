@@ -4,7 +4,7 @@ import { browseDirectory } from '../files/browse.ts'
 import { listEntries, readFilePreview, writeTextFile } from '../files/explorer.ts'
 import { registerRoot, resolveInWorkspace } from '../files/roots.ts'
 import { suggestFiles } from '../files/suggest.ts'
-import { listProjects, readMessages, readPermissionMode } from '../history/sessions.ts'
+import { listProjects, listSubagentMeta, readMessages, readPermissionMode, readSubagentMessages } from '../history/sessions.ts'
 import { scmDiff, scmDiscard, scmStatus, shadowBaseline } from '../scm/git.ts'
 import type { SessionManager } from '../session/manager.ts'
 
@@ -79,6 +79,15 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
       rewind: await manager.require(sessionId).rewindFiles(userMessageId, dryRun ?? false),
     }),
 
+    'session.stopTask': async ({ sessionId, taskId }) => {
+      await manager.require(sessionId).stopTask(taskId)
+      return {}
+    },
+
+    'session.backgroundTask': async ({ sessionId, toolUseId }) => ({
+      backgrounded: await manager.require(sessionId).backgroundTask(toolUseId),
+    }),
+
     'permission.respond': async ({ sessionId, requestId, decision }) => {
       // A stale click after the request was aborted is not an error.
       manager.require(sessionId).respondToPermission(requestId, decision)
@@ -96,6 +105,12 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
       ])
       return { messages, ...(permissionMode ? { permissionMode } : {}) }
     },
+
+    'history.subagents': async ({ sessionId }) => ({ agents: await listSubagentMeta(sessionId) }),
+
+    'history.subagent': async ({ sessionId, agentId }) => ({
+      messages: await readSubagentMessages(sessionId, agentId),
+    }),
 
     'files.suggest': async ({ cwd, query }) => ({
       suggestions: await suggestFiles(await resolveInWorkspace(cwd), query),

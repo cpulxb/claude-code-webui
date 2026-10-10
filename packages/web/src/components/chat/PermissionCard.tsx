@@ -1,6 +1,7 @@
 import type { PermissionRequest } from '@ccw/shared'
 
-import { useStore } from '../../store/session.ts'
+import { findAgentById } from '../../render/nodes.ts'
+import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import styles from './PermissionCard.module.css'
 
 /**
@@ -16,9 +17,13 @@ import styles from './PermissionCard.module.css'
 export function PermissionCard({ request }: { request: PermissionRequest }): JSX.Element {
   const respond = useStore((state) => state.respondToPermission)
   const detail = summarize(request)
+  const agent = useActiveSessionValue((session) =>
+    request.agentId ? (findAgentById(session.transcript, request.agentId)?.description ?? '子代理') : null,
+  )
 
   return (
     <div className={styles.card}>
+      {agent && <div className={styles.reason}>来自子代理：{agent}</div>}
       <div className={styles.title}>{request.title ?? `Claude 想要使用 ${request.toolName}`}</div>
       {request.description && <div className={styles.description}>{request.description}</div>}
       {detail && <div className={styles.detail}>{detail}</div>}

@@ -2,11 +2,14 @@ import type { RewindFilesResult } from '@ccw/shared'
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import type { AssistantBlock, ChatNode, StreamingBlock } from '../../render/nodes.ts'
+import { AGENT_TOOLS, findAgent } from '../../render/nodes.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import { HistoryIcon } from '../Icons.tsx'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 import styles from './ChatView.module.css'
 import { PermissionCard } from './PermissionCard.tsx'
+import { AgentCard } from './AgentCard.tsx'
+import { AgentNav } from './AgentNav.tsx'
 import { ToolCard } from './ToolCard.tsx'
 
 /** Pixels from the bottom within which we keep following new output. */
@@ -29,8 +32,19 @@ export function ChatView(): JSX.Element | null {
   // row; only the newest request may write state.
   const rewindSeq = useRef(0)
 
-  const transcript = useActiveSessionValue((session) => session.transcript)
-  const pendingPermissions = useActiveSessionValue((session) => session.pendingPermissions)
+  // Inside a subagent the pane shows that agent's own transcript; every other
+  // part of the view (scroll following, permission cards) works the same.
+  const viewAgent = useActiveSessionValue((session) => session.viewAgent) ?? null
+  const transcript = useActiveSessionValue((session) =>
+    session.viewAgent ? (findAgent(session.transcript, session.viewAgent)?.transcript ?? session.transcript) : session.transcript,
+  )
+  const agentId = useActiveSessionValue((session) =>
+    session.viewAgent ? findAgent(session.transcript, session.viewAgent)?.agentId : undefined,
+  )
+  const allPermissions = useActiveSessionValue((session) => session.pendingPermissions)
+  // The main thread shows every prompt so none is ever missed; a subagent
+  // view shows only the ones its own tool calls raised.
+  const pendingPermissions = viewAgent ? allPermissions?.filter((request) => request.agentId === agentId) : allPermissions
   const error = useActiveSessionValue((session) => session.error)
 
   const startRewind = useCallback(
@@ -100,13 +114,14 @@ export function ChatView(): JSX.Element | null {
   useLayoutEffect(() => {
     const count = nodes?.length ?? 0
     const seen = seenRef.current
-    const switched = seen.id !== activeId
+    const viewKey = `${activeId}/${viewAgent ?? ''}`
+    const switched = seen.id !== viewKey
     // Per-token deltas mutate a node in place or append one; a bigger jump is
     // a replacement — or a multi-tool assistant message, which is just as
     // cheap to place synchronously because it lands once per turn, not once
     // per token.
     const swapped = switched || count > seen.count + 1
-    seenRef.current = { id: activeId, count }
+    seenRef.current = { id: viewKey, count }
     // A freshly opened session opens at the bottom, whatever the reader was
     // doing in the session they came from.
     if (switched) followRef.current = true
@@ -126,7 +141,7 @@ export function ChatView(): JSX.Element | null {
       frameRef.current = undefined
       if (followRef.current) element.scrollTop = element.scrollHeight
     })
-  }, [nodes, streaming, pendingPermissions, activeId])
+  }, [nodes, streaming, pendingPermissions, activeId, viewAgent])
 
   useEffect(
     () => () => {
@@ -140,6 +155,7 @@ export function ChatView(): JSX.Element | null {
 
   return (
     <div className={styles.scroll} ref={scrollRef}>
+      <AgentNav />
       {empty ? (
         <div className={styles.empty}>
           <span className={styles.emptyMark}>✳</span>
@@ -148,7 +164,14 @@ export function ChatView(): JSX.Element | null {
       ) : (
         <div className={styles.stream}>
           {nodes.map((node) =>
-            node.kind === 'user' ? (
+            node.kind === 'user' && viewAgent ? (
+              // A subagent's prompt came from the parent model, not from a
+              // checkpointed user message, so it has nothing to rewind to.
+              <div key={node.id} className={styles.userTurn}>
+                <div className={styles.agentPromptLabel}>主代理下达的任务</div>
+                {node.text}
+              </div>
+            ) : node.kind === 'user' ? (
               <UserTurn
                 key={node.id}
                 node={node}
@@ -250,7 +273,7 @@ const NodeView = memo(function NodeView({ node }: { node: Exclude<ChatNode, { ki
             .filter(Boolean)
             .join(' ')}
         >
-          <ToolCard node={node} />
+          {AGENT_TOOLS.has(node.name) ? <AgentCard node={node} /> : <ToolCard node={node} />}
         </div>
       )
 

@@ -41,8 +41,43 @@ export type StreamingBlock = { type: 'text' | 'thinking'; text: string }
 /** One Anthropic Messages API streaming event, as the SDK forwards it. */
 type StreamEvent = Extract<SDKMessage, { type: 'stream_event' }>['event']
 
+export type AgentStatus = 'running' | 'completed' | 'failed' | 'stopped'
+
+/**
+ * One subagent spawned by an `Agent` (formerly `Task`) tool call, keyed by
+ * that tool_use id — the id every message the subagent emits carries as its
+ * `parent_tool_use_id`, and the one `task_*` system events point back at.
+ */
+export type AgentRun = {
+  toolUseId: string
+  /** The CLI's task id, which is also the subagent transcript's file name. */
+  agentId?: string
+  description: string
+  subagentType?: string
+  prompt: string
+  status: AgentStatus
+  backgrounded: boolean
+  /** Latest `task_progress` description, e.g. "Reading alpha.txt". */
+  activity?: string
+  lastTool?: string
+  toolUses: number
+  totalTokens: number
+  durationMs: number
+  /** The report the subagent handed back to its parent. */
+  summary?: string
+  model?: string
+  /** Its own conversation, rendered when the user opens the subagent. */
+  transcript: Transcript
+  /** Whether the on-disk subagent transcript has been folded in. */
+  historyLoaded: boolean
+}
+
 export type Transcript = {
   nodes: ChatNode[]
+  /** Subagents spawned from this transcript's tool calls. */
+  agents: Record<string, AgentRun>
+  /** toolUseIds in spawn order, for the agent strip. */
+  agentOrder: string[]
   streaming: StreamingBlock | null
   /** toolUseId → index into `nodes`, so tool results land on the right card. */
   toolIndex: Record<string, number>
@@ -55,7 +90,7 @@ export type Transcript = {
 }
 
 export function emptyTranscript(): Transcript {
-  return { nodes: [], streaming: null, toolIndex: {}, seen: {} }
+  return { nodes: [], agents: {}, agentOrder: [], streaming: null, toolIndex: {}, seen: {} }
 }
 
 /**
@@ -72,6 +107,25 @@ export function emptyTranscript(): Transcript {
  * thrown on, or a newer CLI would break the transcript.
  */
 export function applyMessage(transcript: Transcript, message: SDKMessage): void {
+  // Subagent output carries the spawning tool_use id. Folding it into the
+  // parent's node list (as this renderer once did) shows a subagent's Read as
+  // if the main thread made it, and the cards vanish on reload because the
+  // main JSONL never contains them — so route it into the subagent's own
+  // transcript instead.
+  if (message.type === 'system') {
+    if (transcript.seen[message.uuid]) return
+    applyTaskEvent(transcript, message)
+  }
+  const parent = (message as { parent_tool_use_id?: string | null }).parent_tool_use_id
+  if (parent && message.type !== 'system' && message.type !== 'result') {
+    const agent = findAgent(transcript, parent) ?? placeholderAgent(transcript, parent)
+    applyLocal(agent.transcript, message, true)
+    return
+  }
+  applyLocal(transcript, message, false)
+}
+
+function applyLocal(transcript: Transcript, message: SDKMessage, inAgent: boolean): void {
   // stream_event and tool_progress are exempt from dedup: both fire at high
   // frequency with per-event uuids, reapplying them is harmless, and recording
   // each one would only bloat the seen map.
@@ -105,6 +159,7 @@ export function applyMessage(transcript: Transcript, message: SDKMessage): void 
             input: (block.input ?? {}) as Record<string, unknown>,
             status: 'running',
           })
+          if (AGENT_TOOLS.has(block.name)) registerAgent(transcript, block.id, (block.input ?? {}) as Record<string, unknown>)
         }
       }
       return
@@ -112,9 +167,23 @@ export function applyMessage(transcript: Transcript, message: SDKMessage): void 
 
     case 'user': {
       const content = message.message.content
+      // The parent's prompt arrives as the subagent's first user message; it
+      // is the only place the conversation is told what it was asked to do.
+      if (inAgent) {
+        const text =
+          typeof content === 'string'
+            ? content
+            : content
+                .filter((block) => block.type === 'text')
+                .map((block) => (block as { text: string }).text)
+                .join('\n')
+        if (text) transcript.nodes.push({ kind: 'user', id: message.uuid ?? `u${transcript.nodes.length}`, text, attachments: 0 })
+      }
       if (typeof content === 'string') return
       for (const block of content) {
         if (block.type !== 'tool_result') continue
+        const agent = transcript.agents[block.tool_use_id]
+        if (agent) settleAgent(agent, block.is_error === true, flattenToolResult(block.content), message.tool_use_result)
         const node = toolNode(transcript, block.tool_use_id)
         if (!node) continue
         node.status = block.is_error ? 'error' : 'done'
@@ -132,6 +201,11 @@ export function applyMessage(transcript: Transcript, message: SDKMessage): void 
 
     case 'result':
       transcript.streaming = null
+      // A finished turn leaves no foreground subagent running; a stale badge
+      // would otherwise outlive a missed task_notification.
+      for (const agent of Object.values(transcript.agents)) {
+        if (agent.status === 'running' && !agent.backgrounded) agent.status = 'completed'
+      }
       transcript.nodes.push({
         kind: 'result',
         id: message.uuid,
@@ -253,4 +327,183 @@ function flattenToolResult(content: unknown): string {
       return ''
     })
     .join('')
+}
+
+/** Tool names that spawn a subagent: `Agent` today, `Task` on older CLIs. */
+export const AGENT_TOOLS = new Set(['Agent', 'Task'])
+
+/** Finds a subagent anywhere in the tree — subagents can spawn subagents. */
+export function findAgent(transcript: Transcript, toolUseId: string): AgentRun | null {
+  const direct = transcript.agents[toolUseId]
+  if (direct) return direct
+  for (const id of transcript.agentOrder) {
+    const nested = transcript.agents[id] && findAgent(transcript.agents[id]!.transcript, toolUseId)
+    if (nested) return nested
+  }
+  return null
+}
+
+/** Every subagent in the tree, parents before their children. */
+export function listAgents(transcript: Transcript): AgentRun[] {
+  const out: AgentRun[] = []
+  for (const id of transcript.agentOrder) {
+    const agent = transcript.agents[id]
+    if (!agent) continue
+    out.push(agent, ...listAgents(agent.transcript))
+  }
+  return out
+}
+
+export function findAgentById(transcript: Transcript, agentId: string): AgentRun | null {
+  return listAgents(transcript).find((agent) => agent.agentId === agentId) ?? null
+}
+
+function registerAgent(transcript: Transcript, toolUseId: string, input: Record<string, unknown>): AgentRun {
+  const existing = transcript.agents[toolUseId]
+  const description = typeof input['description'] === 'string' ? input['description'] : ''
+  const prompt = typeof input['prompt'] === 'string' ? input['prompt'] : ''
+  const subagentType = typeof input['subagent_type'] === 'string' ? input['subagent_type'] : undefined
+  if (existing) {
+    if (description) existing.description = description
+    if (prompt) existing.prompt = prompt
+    if (subagentType) existing.subagentType = subagentType
+    return existing
+  }
+  const agent: AgentRun = {
+    toolUseId,
+    description,
+    prompt,
+    ...(subagentType ? { subagentType } : {}),
+    status: 'running',
+    backgrounded: input['run_in_background'] === true,
+    toolUses: 0,
+    totalTokens: 0,
+    durationMs: 0,
+    transcript: emptyTranscript(),
+    historyLoaded: false,
+  }
+  transcript.agents[toolUseId] = agent
+  transcript.agentOrder.push(toolUseId)
+  return agent
+}
+
+/**
+ * Output for a subagent whose Agent call this transcript never saw — a reload
+ * that replays the backlog of a turn whose spawning message the history read
+ * did not include yet. Kept rather than dropped, so nothing it did is lost.
+ */
+function placeholderAgent(transcript: Transcript, toolUseId: string): AgentRun {
+  return registerAgent(transcript, toolUseId, { description: '子代理' })
+}
+
+type SystemMessage = Extract<SDKMessage, { type: 'system' }>
+
+/** `task_started` / `task_progress` / `task_updated` / `task_notification`. */
+function applyTaskEvent(transcript: Transcript, message: SystemMessage): void {
+  const event = message as unknown as {
+    subtype: string
+    task_id?: string
+    tool_use_id?: string
+    task_type?: string
+    description?: string
+    subagent_type?: string
+    is_backgrounded?: boolean
+    last_tool_name?: string
+    summary?: string
+    status?: string
+    usage?: { total_tokens: number; tool_uses: number; duration_ms: number }
+    patch?: { status?: string; is_backgrounded?: boolean }
+  }
+  if (!event.subtype?.startsWith('task_') || !event.task_id) return
+  let agent = event.tool_use_id ? findAgent(transcript, event.tool_use_id) : null
+  agent ??= findAgentById(transcript, event.task_id)
+  if (!agent) {
+    // Shell tasks and workflows share the event family; only subagents get a card.
+    if (event.subtype !== 'task_started' || event.task_type !== 'local_agent' || !event.tool_use_id) return
+    agent = registerAgent(transcript, event.tool_use_id, { description: event.description ?? '子代理' })
+  }
+  agent.agentId = event.task_id
+  if (event.subagent_type) agent.subagentType = event.subagent_type
+  if (event.usage) {
+    agent.totalTokens = event.usage.total_tokens
+    agent.toolUses = event.usage.tool_uses
+    agent.durationMs = event.usage.duration_ms
+  }
+  switch (event.subtype) {
+    case 'task_started':
+      if (!agent.description && event.description) agent.description = event.description
+      agent.backgrounded = event.is_backgrounded === true
+      if (agent.status !== 'running' && !agent.summary) agent.status = 'running'
+      return
+    case 'task_progress':
+      if (event.description) agent.activity = event.description
+      if (event.last_tool_name) agent.lastTool = event.last_tool_name
+      if (event.summary) agent.activity = event.summary
+      return
+    case 'task_updated':
+      if (event.patch?.is_backgrounded !== undefined) agent.backgrounded = event.patch.is_backgrounded
+      if (event.patch?.status && isAgentStatus(event.patch.status)) agent.status = event.patch.status
+      return
+    case 'task_notification':
+      if (event.status && isAgentStatus(event.status)) agent.status = event.status
+      if (event.summary && !agent.summary) agent.summary = event.summary
+      agent.activity = undefined
+      return
+  }
+}
+
+function isAgentStatus(value: string): value is AgentStatus {
+  return value === 'running' || value === 'completed' || value === 'failed' || value === 'stopped'
+}
+
+/** The Agent call's tool_result: the hand-back report plus its run totals. */
+function settleAgent(agent: AgentRun, isError: boolean, output: string, structured: unknown): void {
+  const result = (structured ?? {}) as {
+    status?: string
+    agentId?: string
+    content?: { type: string; text?: string }[]
+    totalTokens?: number
+    totalToolUseCount?: number
+    totalDurationMs?: number
+    resolvedModel?: string
+  }
+  // A backgrounded agent's call returns at once with a launch receipt; the
+  // run itself is settled later by task_notification.
+  const launched = result.status === 'async_launched' || /running in the background/i.test(output.slice(0, 400))
+  if (launched) {
+    agent.backgrounded = true
+  } else {
+    // A stop lands as task_notification first and an error tool_result
+    // after it; the user asked for the stop, so it is not a failure.
+    agent.status = agent.status === 'stopped' ? 'stopped' : isError ? 'failed' : 'completed'
+    agent.activity = undefined
+  }
+  if (result.agentId) agent.agentId = result.agentId
+  if (result.totalTokens !== undefined) agent.totalTokens = result.totalTokens
+  if (result.totalToolUseCount !== undefined) agent.toolUses = result.totalToolUseCount
+  if (result.totalDurationMs !== undefined) agent.durationMs = result.totalDurationMs
+  if (result.resolvedModel) agent.model = result.resolvedModel
+  const text = result.content?.filter((block) => block.type === 'text').map((block) => block.text ?? '').join('\n')
+  if (!launched) {
+    const report = text || parseHandBack(output)
+    if (report) agent.summary = report
+  }
+  agent.agentId ??= /\bagentId: ([\w-]+)/.exec(output)?.[1]
+}
+
+/**
+ * History carries only the model-facing text of the Agent result: a framing
+ * paragraph, the indented report, then an `agentId:` trailer.
+ */
+export function parseHandBack(output: string): string {
+  const marker = output.indexOf('The report follows:\n')
+  if (marker < 0) return output.trim()
+  let body = output.slice(marker + 'The report follows:\n'.length)
+  const trailer = body.search(/\nagentId: /)
+  if (trailer >= 0) body = body.slice(0, trailer)
+  return body
+    .split('\n')
+    .map((line) => line.replace(/^  /, ''))
+    .join('\n')
+    .trim()
 }

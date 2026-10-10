@@ -1,0 +1,230 @@
+.card {
+  padding: var(--ccw-space-3) var(--ccw-space-4);
+  background: var(--ccw-bg-raised);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-md);
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ccw-space-2);
+  align-items: center;
+}
+
+.badge {
+  padding: 1px var(--ccw-space-2);
+  font-size: var(--ccw-text-xs);
+  font-weight: 600;
+  color: var(--ccw-accent);
+  background: var(--ccw-accent-soft);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.type {
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+}
+
+.status {
+  margin-left: auto;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+}
+
+.running {
+  color: var(--ccw-accent);
+}
+
+.completed {
+  color: var(--ccw-success);
+}
+
+.failed,
+.stopped {
+  color: var(--ccw-danger);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ccw-space-3);
+  margin-top: var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-secondary);
+}
+
+.activity {
+  color: var(--ccw-text-primary);
+}
+
+.stats {
+  color: var(--ccw-text-muted);
+}
+
+.summary {
+  padding: var(--ccw-space-1) var(--ccw-space-3);
+  margin-top: var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  overflow-wrap: anywhere;
+  background: var(--ccw-bg-base);
+  border-left: 2px solid var(--ccw-border-strong);
+}
+
+.actions {
+  display: flex;
+  gap: var(--ccw-space-2);
+  margin-top: var(--ccw-space-3);
+}
+
+.button,
+.primary {
+  padding: 3px var(--ccw-space-3);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-primary);
+  cursor: pointer;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.primary {
+  color: var(--ccw-accent);
+  border-color: var(--ccw-accent);
+}
+
+.button:hover,
+.primary:hover {
+  background: var(--ccw-bg-hover);
+}
+
+.button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* --- navigation bar --------------------------------------------------- */
+
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  padding: var(--ccw-space-2) var(--ccw-space-5);
+  font-size: var(--ccw-text-sm);
+  background: var(--ccw-bg-base);
+  border-bottom: 1px solid var(--ccw-border-l2);
+}
+
+.crumb {
+  padding: 2px var(--ccw-space-2);
+  color: var(--ccw-text-secondary);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: var(--ccw-radius-sm);
+}
+
+.crumb:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.crumbCurrent {
+  font-weight: 600;
+  color: var(--ccw-text-primary);
+}
+
+.sep {
+  color: var(--ccw-text-faint);
+}
+
+.navLabel {
+  color: var(--ccw-text-muted);
+}
+
+.chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px var(--ccw-space-3);
+  color: var(--ccw-text-primary);
+  cursor: pointer;
+  background: var(--ccw-bg-raised);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.chip:hover {
+  background: var(--ccw-bg-hover);
+}
+
+.chipActive {
+  color: var(--ccw-accent);
+  border-color: var(--ccw-accent);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  background: var(--ccw-gray-300);
+  border-radius: 50%;
+}
+
+.dot.running {
+  background: var(--ccw-accent);
+  animation: pulse 1.4s var(--ccw-ease) infinite;
+}
+
+.dot.completed {
+  background: var(--ccw-success);
+}
+
+.dot.failed,
+.dot.stopped {
+  background: var(--ccw-danger);
+}
+
+.readonly {
+  margin-left: auto;
+  color: var(--ccw-text-faint);
+}
+
+.prompt {
+  margin-bottom: var(--ccw-space-4);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.summaryClamped {
+  max-height: 8em;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+
+.more {
+  padding: 0;
+  margin-top: var(--ccw-space-1);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.more:hover {
+  color: var(--ccw-text-primary);
+}
