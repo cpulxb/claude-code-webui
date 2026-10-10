@@ -5,18 +5,20 @@ import { useShallow } from 'zustand/shallow'
 import { call } from '../../api/client.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import { fileToAttachment, isSupportedAttachment } from '../../utils/attachments.ts'
+import { findModel } from '../../utils/models.ts'
 import { buildPaletteEntries, CommandPalette, type PaletteEntry } from './CommandPalette.tsx'
 import styles from './Composer.module.css'
 import { ContextMeter } from './ContextMeter.tsx'
 import { effortChoices } from './EffortSlider.tsx'
 import { ModeIcon } from './ModeIcon.tsx'
-import { findModel, ModelPicker } from './ModelPicker.tsx'
+import { ModelPicker } from './ModelPicker.tsx'
 import { MODE_META, ModesPopover } from './ModesPopover.tsx'
 import { applyTrigger, detectTrigger, type Trigger } from './trigger.ts'
 import { TriggerMenu, type MenuItem } from './TriggerMenu.tsx'
 import { TurnStatus } from './TurnStatus.tsx'
 
 const FILE_SUGGEST_DEBOUNCE_MS = 90
+const MODEL_REFRESH_MS = 2000
 /** Per-file cap, kept below what the API accepts after base64 inflation. */
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 const MAX_ATTACHMENTS = 10
@@ -41,6 +43,8 @@ export function Composer(): JSX.Element | null {
   const setPermissionMode = useStore((state) => state.setPermissionMode)
   const setEffort = useStore((state) => state.setEffort)
   const setModel = useStore((state) => state.setModel)
+  const refreshModels = useStore((state) => state.refreshModels)
+  const activeId = useStore((state) => state.activeId)
 
   // Slices rather than the session object: immer replaces that object on every
   // streamed token, which would re-render the palette, the model picker and the
@@ -102,6 +106,37 @@ export function Composer(): JSX.Element | null {
 
   const menuLength = trigger?.kind === '/' ? entries.length : trigger?.kind === '@' ? fileItems.length : 0
   const efforts = effortChoices(models, model)
+
+  useEffect(() => {
+    if (attached && (modelsOpen || modesOpen || trigger?.kind === '/')) void refreshModels()
+  }, [activeId, attached, modelsOpen, modesOpen, trigger?.kind, refreshModels])
+
+  useEffect(() => {
+    if (!attached || closed || running) return
+    let pending = false
+    const refresh = (): void => {
+      if (document.visibilityState !== 'visible' || pending) return
+      pending = true
+      void refreshModels().finally(() => { pending = false })
+    }
+    refresh()
+    // CC Switch writes settings outside this app. Catch changes while the
+    // menu stays open, and immediately on returning from the switcher.
+    const timer = window.setInterval(refresh, MODEL_REFRESH_MS)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [activeId, attached, closed, running, refreshModels])
+
+  useEffect(() => {
+    if (!modelsOpen) return
+    const current = findModel(models, model)
+    setModelIndex(Math.max(0, current ? models.indexOf(current) : 0))
+  }, [models, model, modelsOpen])
 
   useEffect(() => setActiveIndex(0), [trigger?.kind, trigger?.query])
 

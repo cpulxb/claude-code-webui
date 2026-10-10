@@ -28,7 +28,7 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
     },
 
     'session.send': async ({ sessionId, text, attachments }) => {
-      manager.require(sessionId).send(text, attachments)
+      await manager.require(sessionId).send(text, attachments)
       return {}
     },
 
@@ -69,9 +69,7 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
       commands: await manager.require(sessionId).commands(),
     }),
 
-    'session.models': async ({ sessionId }) => ({
-      models: await manager.require(sessionId).models(),
-    }),
+    'session.models': async ({ sessionId }) => manager.require(sessionId).models(),
 
     'session.contextUsage': async ({ sessionId }) => ({
       usage: await manager.require(sessionId).contextUsage(),
@@ -88,7 +86,7 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
     },
 
     'history.projects': async () => ({
-      projects: await listProjects(new Set(manager.liveIds())),
+      projects: await listProjects(manager.liveSummaries()),
     }),
 
     'history.messages': async ({ sessionId, cwd }) => {

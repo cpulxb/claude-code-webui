@@ -122,7 +122,7 @@ async function rescanHistoryProjects(target: string): Promise<void> {
   scannedMisses.add(target)
   rescanning = (async () => {
     try {
-      for (const project of await listProjects(new Set())) registerRoot(project.cwd)
+      for (const project of await listProjects()) registerRoot(project.cwd)
     } finally {
       lastRescan = Date.now()
       rescanning = null

@@ -1,22 +1,8 @@
 import type { ModelInfo } from '@ccw/shared'
 import { useEffect, useRef } from 'react'
 
+import { findModel, modelLabel } from '../../utils/models.ts'
 import styles from './Composer.module.css'
-
-/** Resolves the session's model string against the SDK's model rows. */
-export function findModel(models: ModelInfo[], model: string | null): ModelInfo | undefined {
-  return models.find((row) => row.value === model || row.resolvedModel === model)
-}
-
-/**
- * A channel can point two aliases at the same underlying model, which leaves
- * the SDK reporting one `displayName` twice — appending the alias keeps the
- * rows tellable apart.
- */
-export function modelLabel(model: ModelInfo, all: ModelInfo[]): string {
-  const ambiguous = all.filter((other) => other.displayName === model.displayName).length > 1
-  return ambiguous ? `${model.displayName}（${model.value}）` : model.displayName
-}
 
 /**
  * VS Code's "Select a model" popup: bold name, grey description underneath,

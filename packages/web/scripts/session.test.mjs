@@ -69,6 +69,7 @@ async function fixture(t) {
       case 'session.models': return { models: [] }
       case 'session.contextUsage': return { usage: null }
       case 'session.send':
+      case 'session.setModel':
       case 'session.close':
       case 'permission.respond': return {}
       default: throw new Error(`Unexpected RPC: ${method}`)
@@ -212,4 +213,152 @@ test('a snapshot from a removed session cannot mutate a new local instance with 
   assert.equal(f.state().attached, true)
   assert.equal(f.state().closed, false)
   assert.deepEqual(f.state().pendingPermissions, [])
+})
+
+test('model refresh adopts the CLI current selection before the first message', async (t) => {
+  const f = await fixture(t)
+  const previous = rpc
+  const models = [{ value: 'haiku', resolvedModel: 'claude-haiku-4-5', displayName: 'claude-haiku-4-5' }]
+  rpc = (method, params) => method === 'session.models'
+    ? { models, model: 'claude-haiku-4-5' }
+    : previous(method, params)
+  await useStore.getState().refreshModels()
+  assert.deepEqual(f.state().models, models)
+  assert.equal(f.state().model, 'claude-haiku-4-5')
+})
+
+test('a delayed model list cannot replace a more recent refresh', async (t) => {
+  const f = await fixture(t)
+  const previous = rpc
+  const older = deferred()
+  const newer = deferred()
+  const pending = [older, newer]
+  rpc = (method, params) => method === 'session.models' ? pending.shift().promise : previous(method, params)
+  const first = useStore.getState().refreshModels()
+  const second = useStore.getState().refreshModels()
+  const models = [{ value: 'opus', resolvedModel: 'claude-fable-5-1[1M]', displayName: 'claude-fable-5-1' }]
+  newer.resolve({ models, model: 'opus' })
+  await second
+  older.resolve({ models: [], model: 'old-model' })
+  await first
+  assert.deepEqual(f.state().models, models)
+  assert.equal(f.state().model, 'opus')
+})
+
+test('an in-flight model refresh cannot undo a subsequent user selection', async (t) => {
+  const f = await fixture(t)
+  const previous = rpc
+  const response = deferred()
+  rpc = (method, params) => method === 'session.models' ? response.promise : previous(method, params)
+  const refreshing = useStore.getState().refreshModels()
+  await useStore.getState().setModel('sonnet')
+  response.resolve({ models: [], model: 'opus' })
+  await refreshing
+  assert.equal(f.state().model, 'sonnet')
+})
+
+test('a newly created session appears in its project before the first message', async (t) => {
+  const f = await fixture(t)
+  const project = useStore.getState().projects.find((project) => project.cwd === '/fixture')
+  assert.equal(project.sessions[0].sessionId, f.sessionId)
+  assert.equal(project.sessions[0].live, true)
+  assert.equal(project.sessions[0].summary, '')
+  assert.equal(f.state().status, 'idle')
+})
+
+test('live sidebar updates add sessions from another tab and replace empty titles', async (t) => {
+  const f = await fixture(t)
+  const summary = { sessionId: 'other-tab', cwd: '/tmp', lastModified: Date.now() + 1000, summary: '', live: true }
+  f.receive({ type: 'session_updated', sessionId: summary.sessionId, summary })
+  assert.equal(useStore.getState().sessions[summary.sessionId], undefined)
+  assert.equal(useStore.getState().projects[0].cwd, '/tmp')
+  f.receive({ type: 'session_updated', sessionId: summary.sessionId, summary: { ...summary, summary: 'First prompt', firstPrompt: 'First prompt' } })
+  const project = useStore.getState().projects[0]
+  assert.equal(project.sessions.length, 1)
+  assert.equal(project.sessions[0].summary, 'First prompt')
+})
+
+test('a delayed history read cannot hide a newly announced session', async (t) => {
+  const f = await fixture(t)
+  const previous = rpc
+  const response = deferred()
+  rpc = (method, params) => method === 'history.projects' ? response.promise : previous(method, params)
+  const refreshing = useStore.getState().refreshProjects()
+  const summary = { sessionId: 'new-session', cwd: '/tmp', lastModified: Date.now(), summary: 'Hello', live: true }
+  f.receive({ type: 'session_updated', sessionId: summary.sessionId, summary })
+  response.resolve({ projects: [] })
+  await refreshing
+  assert.equal(useStore.getState().projects[0].sessions[0].sessionId, summary.sessionId)
+  assert.equal(useStore.getState().projects[0].sessions[0].summary, 'Hello')
+})
+
+test('an older history refresh cannot replace a newer sidebar snapshot', async (t) => {
+  await fixture(t)
+  const previous = rpc
+  const older = deferred()
+  const newer = deferred()
+  const pending = [older, newer]
+  rpc = (method, params) => method === 'history.projects' ? pending.shift().promise : previous(method, params)
+  const first = useStore.getState().refreshProjects()
+  const second = useStore.getState().refreshProjects()
+  newer.resolve({ projects: [{ cwd: '/tmp', sessions: [{ sessionId: 'latest', summary: 'Latest', lastModified: 10 }] }] })
+  await second
+  older.resolve({ projects: [] })
+  await first
+  assert.equal(useStore.getState().projects[0].sessions[0].sessionId, 'latest')
+})
+
+test('a failed creation removes its optimistic sidebar row', async (t) => {
+  const f = await fixture(t)
+  const previous = rpc
+  rpc = (method, params) => {
+    if (method === 'session.create') throw new Error('creation failed')
+    return previous(method, params)
+  }
+  await assert.rejects(useStore.getState().createSession('/tmp'), /creation failed/)
+  assert.equal(useStore.getState().projects.some((project) => project.cwd === '/tmp'), false)
+  assert.equal(useStore.getState().projects[0].sessions[0].sessionId, f.sessionId)
+})
+
+test('turn completion refreshes saved sidebar titles without needing a page reload', async (t) => {
+  const f = await fixture(t)
+  const previous = rpc
+  let refreshed = false
+  rpc = (method, params) => {
+    if (method === 'history.projects') {
+      refreshed = true
+      return { projects: [{ cwd: '/fixture', sessions: [{ sessionId: f.sessionId, summary: 'Saved title', lastModified: Date.now(), live: true }] }] }
+    }
+    return previous(method, params)
+  }
+  f.receive(result(f.sessionId))
+  await settle()
+  assert.equal(refreshed, true)
+  assert.equal(useStore.getState().projects[0].sessions[0].summary, 'Saved title')
+})
+
+test('provider model events update the active session and invalidate older model responses', async (t) => {
+  const f = await fixture(t)
+  const previous = rpc
+  const response = deferred()
+  rpc = (method, params) => method === 'session.models' ? response.promise : previous(method, params)
+  const refreshing = useStore.getState().refreshModels()
+  const models = [{ value: 'haiku', resolvedModel: 'claude-haiku-4-5', displayName: 'claude-haiku-4-5' }]
+  f.receive({ type: 'session_models', model: 'haiku', models })
+  response.resolve({ model: 'claude-haiku-5-5', models: [] })
+  await refreshing
+  assert.equal(f.state().model, 'haiku')
+  assert.deepEqual(f.state().models, models)
+})
+
+test('unchanged background model refreshes preserve menu row references', async (t) => {
+  const f = await fixture(t)
+  const previous = rpc
+  rpc = (method, params) => method === 'session.models'
+    ? { model: 'haiku', models: [{ value: 'haiku', resolvedModel: 'claude-haiku-4-5', displayName: 'Haiku' }] }
+    : previous(method, params)
+  await useStore.getState().refreshModels()
+  const rows = f.state().models
+  await useStore.getState().refreshModels()
+  assert.equal(f.state().models, rows)
 })

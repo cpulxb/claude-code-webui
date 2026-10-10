@@ -73,6 +73,8 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
 
   const startSession = (cwd: string): void => {
     setPicking(false)
+    setQuery('')
+    setCollapsedGroups((current) => ({ ...current, [cwd]: false }))
     run(createSession(cwd), '新建会话失败')
   }
 
@@ -223,7 +225,7 @@ function SearchResults(props: {
           <button className={styles.hitOpen} onClick={() => props.onOpen(hit)} type="button" title={hit.summary}>
             <span className={styles.hitTitleLine}>
               {hit.live && <span className={styles.liveDot} />}
-              <span className={styles.itemTitle}>{hit.summary || '(无标题)'}</span>
+              <span className={styles.itemTitle}>{hit.summary || '新会话'}</span>
               <span className={styles.itemAge}>{age(hit.lastModified)}</span>
             </span>
             <span className={styles.hitMeta}>
@@ -257,6 +259,12 @@ function ProjectRow(props: {
   onOpen: (sessionId: string) => void
   onClose: (sessionId: string) => void
 }): JSX.Element {
+  const activeRef = useRef<HTMLDivElement>(null)
+  const containsActive = props.project.sessions.some((session) => session.sessionId === props.activeId)
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [props.activeId, props.collapsed, containsActive])
+
   return (
     <>
       <div className={styles.groupHead}>
@@ -280,16 +288,18 @@ function ProjectRow(props: {
         props.project.sessions.map((session) => (
           <div
             key={session.sessionId}
+            ref={session.sessionId === props.activeId ? activeRef : null}
             className={`${styles.item} ${session.sessionId === props.activeId ? styles.itemActive : ''}`}
           >
             <button
               className={styles.itemOpen}
               onClick={() => props.onOpen(session.sessionId)}
               type="button"
-              title={session.summary}
+              title={session.summary || '新会话'}
+              aria-current={session.sessionId === props.activeId ? 'page' : undefined}
             >
               {session.live && <span className={styles.liveDot} />}
-              <span className={styles.itemTitle}>{session.summary || '(无标题)'}</span>
+              <span className={styles.itemTitle}>{session.summary || '新会话'}</span>
               <span className={styles.itemAge}>{age(session.lastModified)}</span>
             </button>
             {session.live && (

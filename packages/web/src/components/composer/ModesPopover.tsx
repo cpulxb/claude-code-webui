@@ -1,9 +1,9 @@
 import { PERMISSION_MODES, type EffortLevel, type ModelInfo, type PermissionMode } from '@ccw/shared'
 
+import { findModel, modelLabel } from '../../utils/models.ts'
 import styles from './Composer.module.css'
 import { EFFORT_LABEL, EffortSlider, effortChoices } from './EffortSlider.tsx'
 import { ModeIcon } from './ModeIcon.tsx'
-import { findModel, modelLabel } from './ModelPicker.tsx'
 
 type ModeMeta = { label: string; hint: string; danger?: boolean }
 

@@ -1,8 +1,8 @@
 import { EFFORT_LEVELS, type EffortLevel, type ModelInfo } from '@ccw/shared'
 import { useRef } from 'react'
 
+import { findModel } from '../../utils/models.ts'
 import styles from './Composer.module.css'
-import { findModel } from './ModelPicker.tsx'
 
 export const EFFORT_LABEL: Record<EffortLevel, string> = {
   low: '低',

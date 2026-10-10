@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 
 import {
   query,
-  type ModelInfo,
   type Query,
   type RewindFilesResult,
   type SDKMessage,
@@ -19,10 +18,12 @@ import type {
   ServerEvent,
   SessionConfig,
   SessionStatus,
+  SessionSummary,
 } from '@ccw/shared'
 
 import { resolveClaudeExecutable } from '../config.ts'
 import { InputQueue } from './input-queue.ts'
+import { SessionModels } from './models.ts'
 import { PermissionBroker } from './permission.ts'
 
 type MessageParam = SDKUserMessage['message']
@@ -49,11 +50,13 @@ export class SessionRunner {
   })
   readonly #emit: EmitEvent
   readonly #query: Query
+  readonly #models: SessionModels
   #done = false
   #status: SessionStatus = 'idle'
   /** Set by {@link interrupt} so the aborted turn's trailing frames cannot revive `running`. */
   #interrupted = false
   readonly #backlog: SDKMessage[] = []
+  readonly #summary: SessionSummary
 
   constructor(config: SessionConfig, emit: EmitEvent) {
     this.config = config
@@ -62,6 +65,14 @@ export class SessionRunner {
     // session first and never miss the `init` event. Resuming reuses the
     // existing transcript's id.
     this.sessionId = config.resume ?? config.sessionId ?? randomUUID()
+    this.#summary = {
+      sessionId: this.sessionId,
+      cwd: config.cwd,
+      summary: '',
+      // Merely reopening history must not promote it above newer messages.
+      lastModified: config.resume ? 0 : Date.now(),
+      live: true,
+    }
 
     this.#query = query({
       prompt: this.#input,
@@ -105,6 +116,10 @@ export class SessionRunner {
       },
     })
 
+    this.#models = new SessionModels(this.#query, config.cwd, config.model, {
+      canRefresh: () => !this.#done && this.#status === 'idle' && this.pendingPermissions.length === 0,
+      onChange: (snapshot) => this.#emit({ type: 'session_models', sessionId: this.sessionId, ...snapshot }),
+    })
     void this.#pump()
     // Failure here means the CLI died before the flag landed; #pump already
     // reports that, and an escaped rejection would crash the whole server.
@@ -200,18 +215,30 @@ export class SessionRunner {
     return [...this.#backlog]
   }
 
-  send(text: string, attachments?: Attachment[]): void {
+  get summary(): SessionSummary {
+    return { ...this.#summary }
+  }
+
+  async send(text: string, attachments?: Attachment[]): Promise<void> {
     // Build before the status flips: `buildContent` validates the attachments
     // and throws, which would otherwise leave `running` set with no turn to
     // ever clear it — the browser would show Stop for a turn that never began.
     const content = buildContent(text, attachments)
-    this.#status = 'running'
-    this.#interrupted = false
-    this.#input.push({
-      type: 'user',
-      message: { role: 'user', content },
-      parent_tool_use_id: null,
-      session_id: this.sessionId,
+    await this.#models.withCurrentSettings(() => {
+      this.#input.push({
+        type: 'user',
+        message: { role: 'user', content },
+        parent_tool_use_id: null,
+        session_id: this.sessionId,
+      })
+      this.#status = 'running'
+      this.#interrupted = false
+      this.#summary.lastModified = Date.now()
+      if (!this.config.resume && !this.#summary.firstPrompt) {
+        this.#summary.firstPrompt = text.trim().slice(0, 2000) || '附件消息'
+        this.#summary.summary = this.#summary.firstPrompt.replace(/\s+/g, ' ').slice(0, 160)
+      }
+      this.#emit({ type: 'session_updated', sessionId: this.sessionId, summary: this.summary })
     })
   }
 
@@ -235,7 +262,7 @@ export class SessionRunner {
   }
 
   async setModel(model?: string): Promise<void> {
-    await this.#query.setModel(model)
+    await this.#models.select(model)
   }
 
   async setEffort(effort: EffortLevel): Promise<void> {
@@ -246,8 +273,8 @@ export class SessionRunner {
     return this.#query.supportedCommands()
   }
 
-  async models(): Promise<ModelInfo[]> {
-    return this.#query.supportedModels()
+  models(): ReturnType<SessionModels['list']> {
+    return this.#models.list()
   }
 
   /** The same breakdown the terminal's `/context` command renders. */

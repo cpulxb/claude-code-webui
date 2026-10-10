@@ -1,10 +1,10 @@
 import { fuzzyFilter, type EffortLevel, type ModelInfo, type SlashCommand } from '@ccw/shared'
 import { Fragment, useEffect, useRef } from 'react'
 
+import { findModel } from '../../utils/models.ts'
 import { DumbbellIcon } from '../Icons.tsx'
 import styles from './Composer.module.css'
 import { EFFORT_LABEL, EffortSlider } from './EffortSlider.tsx'
-import { findModel } from './ModelPicker.tsx'
 
 export type PaletteAction = 'attach' | 'mention' | 'switch-model'
 

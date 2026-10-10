@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { getSessionMessages, listSessions, type SDKSessionInfo } from '@anthropic-ai/claude-agent-sdk'
 import type { PermissionMode, ProjectGroup, SessionMessage, SessionSummary } from '@ccw/shared'
+import { mergeProjectSessions } from '@ccw/shared'
 
 /**
  * Reads the same on-disk transcripts the terminal's `/resume` picker reads
@@ -14,23 +15,11 @@ import type { PermissionMode, ProjectGroup, SessionMessage, SessionSummary } fro
  * so filtering them out would hide the app's own conversations from its own
  * sidebar.
  */
-export async function listProjects(liveIds: Set<string>): Promise<ProjectGroup[]> {
+export async function listProjects(liveSessions: SessionSummary[] = []): Promise<ProjectGroup[]> {
   const sessions = await listSessions({ includeProgrammatic: true })
-
-  const byCwd = new Map<string, SessionSummary[]>()
-  for (const info of sessions) {
-    const cwd = info.cwd ?? UNKNOWN_CWD
-    const group = byCwd.get(cwd) ?? []
-    group.push(toSummary(info, liveIds.has(info.sessionId)))
-    byCwd.set(cwd, group)
-  }
-
-  return [...byCwd.entries()]
-    .map(([cwd, group]) => ({
-      cwd,
-      sessions: group.sort((a, b) => b.lastModified - a.lastModified),
-    }))
-    .sort((a, b) => (b.sessions[0]?.lastModified ?? 0) - (a.sessions[0]?.lastModified ?? 0))
+  // The SDK omits a new session until its transcript contains a user prompt.
+  // Merge runner metadata so an empty or still-streaming session is visible.
+  return mergeProjectSessions([], [...sessions.map(toSummary), ...liveSessions])
 }
 
 export async function readMessages(sessionId: string, cwd?: string): Promise<SessionMessage[]> {
@@ -41,8 +30,6 @@ export async function readMessages(sessionId: string, cwd?: string): Promise<Ses
     includeSystemMessages: true,
   })
 }
-
-const UNKNOWN_CWD = '(unknown)'
 
 /**
  * The permission mode a session was left in.
@@ -137,7 +124,7 @@ async function findTranscript(sessionId: string): Promise<string | null> {
   return null
 }
 
-function toSummary(info: SDKSessionInfo, live: boolean): SessionSummary {
+function toSummary(info: SDKSessionInfo): SessionSummary {
   return {
     sessionId: info.sessionId,
     summary: info.customTitle ?? info.summary,
@@ -146,6 +133,5 @@ function toSummary(info: SDKSessionInfo, live: boolean): SessionSummary {
     ...(info.gitBranch ? { gitBranch: info.gitBranch } : {}),
     ...(info.customTitle ? { customTitle: info.customTitle } : {}),
     ...(info.firstPrompt ? { firstPrompt: info.firstPrompt } : {}),
-    ...(live ? { live: true } : {}),
   }
 }

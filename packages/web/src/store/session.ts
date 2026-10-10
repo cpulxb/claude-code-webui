@@ -10,9 +10,10 @@ import type {
   RewindFilesResult,
   ServerEvent,
   SessionStatus,
+  SessionSummary,
   SlashCommand,
 } from '@ccw/shared'
-import { PERMISSION_MODES } from '@ccw/shared'
+import { mergeProjectSessions, PERMISSION_MODES } from '@ccw/shared'
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 
@@ -101,6 +102,7 @@ type Store = {
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   setEffort: (effort: EffortLevel) => Promise<void>
   setModel: (model: string) => Promise<void>
+  refreshModels: () => Promise<void>
   respondToPermission: (requestId: string, decision: PermissionDecision) => Promise<void>
   /** dryRun previews; a real run bumps `fsVersion` and posts a notice node. */
   rewindFiles: (nodeId: string, dryRun: boolean) => Promise<RewindFilesResult>
@@ -160,6 +162,26 @@ const starting = new Set<string>()
  * only forwards a level that was really chosen.
  */
 const effortPicked = new Set<string>()
+const modelRequests = new Map<string, object>()
+
+// A history read can finish after a new session or prompt arrives. Replay only
+// those newer sidebar updates on top of it, and ignore older overlapping reads.
+const projectReads = new Set<Map<string, SessionSummary | null>>()
+let projectReadVersion = 0
+
+function updateProjectSession(set: Setter, summary: SessionSummary): void {
+  for (const changes of projectReads) changes.set(summary.sessionId, summary)
+  set((state) => { state.projects = mergeProjectSessions(state.projects, [summary]) })
+}
+
+function removeProjectSession(set: Setter, sessionId: string): void {
+  for (const changes of projectReads) changes.set(sessionId, null)
+  set((state) => {
+    state.projects = state.projects.map((project) => ({
+      ...project, sessions: project.sessions.filter((session) => session.sessionId !== sessionId),
+    })).filter((project) => project.sessions.length > 0)
+  })
+}
 
 /**
  * Bumped every time a `session_closed` event lands for a session. `attach`
@@ -212,6 +234,7 @@ function recordPermissionChange(sessionId: string, requestId: string, request: P
 function forgetSession(sessionId: string): void {
   starting.delete(sessionId)
   effortPicked.delete(sessionId)
+  modelRequests.delete(sessionId)
   closedEpoch.delete(sessionId)
   snapshotVersions.delete(sessionId)
 }
@@ -273,6 +296,7 @@ export const useStore = create<Store>()(
         state.sessions[sessionId] = newSession(sessionId, cwd, true)
         state.activeId = sessionId
       })
+      updateProjectSession(set, { sessionId, cwd, summary: '', lastModified: Date.now(), live: true })
       starting.add(sessionId)
       try {
         // The runner starts in `default` unless told otherwise, which would
@@ -284,6 +308,7 @@ export const useStore = create<Store>()(
           delete state.sessions[sessionId]
           if (state.activeId === sessionId) state.activeId = null
         })
+        removeProjectSession(set, sessionId)
         forgetSession(sessionId)
         throw error
       } finally {
@@ -358,11 +383,7 @@ export const useStore = create<Store>()(
     },
 
     refreshProjects: async () => {
-      const { projects } = await call('history.projects', {})
-      set((state) => {
-        state.projects = projects
-        if (!state.defaultCwd && projects[0]) state.defaultCwd = projects[0].cwd
-      })
+      await loadProjects(set)
     },
 
     send: async (text, attachments) => {
@@ -438,11 +459,25 @@ export const useStore = create<Store>()(
     setModel: async (model) => {
       const sessionId = get().activeId
       if (!sessionId) return
+      modelRequests.delete(sessionId)
       if (get().sessions[sessionId]?.attached) await call('session.setModel', { sessionId, model })
       set((state) => {
         const session = state.sessions[sessionId]
         if (session) session.model = model
       })
+    },
+
+    refreshModels: async () => {
+      const sessionId = get().activeId
+      if (!sessionId || !get().sessions[sessionId]?.attached) return
+      try {
+        await loadSessionModels(set, get, sessionId)
+      } catch (error) {
+        set((state) => {
+          const session = state.sessions[sessionId]
+          if (session) session.error = `读取模型列表失败：${String(error)}`
+        })
+      }
     },
 
     respondToPermission: async (requestId, decision) => {
@@ -603,6 +638,10 @@ async function adoptRunner(set: Setter, get: () => Store, sessionId: string): Pr
 }
 
 function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
+  if (event.type === 'session_updated') {
+    updateProjectSession(set, event.summary)
+    return
+  }
   let sawInit = false
   let sawResult = false
 
@@ -617,6 +656,11 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
     if (!session) return
 
     switch (event.type) {
+      case 'session_models':
+        modelRequests.delete(event.sessionId)
+        if (JSON.stringify(session.models) !== JSON.stringify(event.models)) session.models = event.models
+        session.model = event.model
+        return
       case 'sdk': {
         const message = event.message
         applyMessage(session.transcript, message)
@@ -715,6 +759,11 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
   // Context only moves when a turn completes, so that is the cheapest moment
   // to re-read it rather than polling.
   if (sawResult) void loadContextUsage(set, get, event.sessionId)
+  if (event.type === 'session_closed' || (event.type === 'sdk' && event.message.type === 'result')) {
+    // Also refresh for sessions opened in another tab. Their saved titles and
+    // live indicators belong in this sidebar even without a local transcript.
+    void get().refreshProjects().catch(() => {})
+  }
 }
 
 /**
@@ -782,12 +831,11 @@ function eagerAttach(set: Setter, get: () => Store, sessionId: string): void {
  * transcript stays readable and the sidebar can reopen it.
  */
 async function reconcileSessions(set: Setter, get: () => Store): Promise<void> {
-  const { projects } = await call('history.projects', {})
+  const projects = await loadProjects(set)
+  if (!projects) return
   const live = new Set(projects.flatMap((project) => project.sessions.filter((s) => s.live).map((s) => s.sessionId)))
   const resync: string[] = []
   set((state) => {
-    state.projects = projects
-    if (!state.defaultCwd && projects[0]) state.defaultCwd = projects[0].cwd
     for (const session of Object.values(state.sessions)) {
       // A detached session has no runner by design, and one mid-creation does
       // not have one yet — neither is evidence the server dropped anything.
@@ -812,6 +860,27 @@ async function reconcileSessions(set: Setter, get: () => Store): Promise<void> {
     adoptRunner(set, get, sessionId).catch((error: unknown) => {
       console.error('[ccw] session resync failed', sessionId, error)
     })
+  }
+}
+
+async function loadProjects(set: Setter): Promise<ProjectGroup[] | undefined> {
+  const version = ++projectReadVersion
+  const changes = new Map<string, SessionSummary | null>()
+  projectReads.add(changes)
+  try {
+    const { projects } = await call('history.projects', {})
+    if (version !== projectReadVersion) return
+    const merged = mergeProjectSessions(projects, [...changes.values()].filter((value): value is SessionSummary => value !== null))
+      .map((project) => ({
+        ...project, sessions: project.sessions.filter((session) => changes.get(session.sessionId) !== null),
+      })).filter((project) => project.sessions.length > 0)
+    set((state) => {
+      state.projects = merged
+      if (!state.defaultCwd && merged[0]) state.defaultCwd = merged[0].cwd
+    })
+    return merged
+  } finally {
+    projectReads.delete(changes)
   }
 }
 
@@ -862,17 +931,37 @@ async function loadContextUsage(set: Setter, get: () => Store, sessionId: string
 }
 
 async function loadSessionMeta(set: Setter, get: () => Store, sessionId: string): Promise<void> {
-  const [commands, models] = await Promise.allSettled([
+  const [commands] = await Promise.allSettled([
     call('session.commands', { sessionId }),
-    call('session.models', { sessionId }),
+    loadSessionModels(set, get, sessionId),
   ])
   if (!get().sessions[sessionId]) return
   set((state) => {
     const session = state.sessions[sessionId]
     if (!session) return
     if (commands.status === 'fulfilled') session.commands = commands.value.commands
-    if (models.status === 'fulfilled') session.models = models.value.models
   })
+}
+
+async function loadSessionModels(set: Setter, get: () => Store, sessionId: string): Promise<void> {
+  const request = {}
+  const selected = get().sessions[sessionId]?.model
+  const lifetime = snapshotVersions.get(sessionId)
+  modelRequests.set(sessionId, request)
+  try {
+    const { models, model } = await call('session.models', { sessionId })
+    if (modelRequests.get(sessionId) !== request || snapshotVersions.get(sessionId) !== lifetime) return
+    set((state) => {
+      const session = state.sessions[sessionId]
+      if (!session) return
+      // Background configuration checks must not reset a keyboard selection
+      // or rerender the menu when its rows have not changed.
+      if (JSON.stringify(session.models) !== JSON.stringify(models)) session.models = models
+      if (model !== undefined && session.model === selected) session.model = model
+    })
+  } finally {
+    if (modelRequests.get(sessionId) === request) modelRequests.delete(sessionId)
+  }
 }
 
 /**

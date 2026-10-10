@@ -25,6 +25,7 @@ export type {
 export type ContextUsage = SDKControlGetContextUsageResponse
 
 export { fuzzyFilter, fuzzyScore } from './fuzzy.ts'
+export { mergeProjectSessions } from './projects.ts'
 
 /** Every permission mode the CLI accepts, in the order the Modes popover lists them. */
 export const PERMISSION_MODES = [
@@ -92,7 +93,7 @@ export type SessionConfig = {
   sessionId?: string
 }
 
-/** Session metadata for the sidebar, derived from the on-disk JSONL transcripts. */
+/** Sidebar metadata from saved transcripts and sessions that have not been flushed yet. */
 export type SessionSummary = {
   sessionId: string
   summary: string
@@ -201,7 +202,7 @@ export type RpcMap = {
   'session.setModel': { params: { sessionId: string; model?: string }; result: Record<string, never> }
   'session.setEffort': { params: { sessionId: string; effort: EffortLevel }; result: Record<string, never> }
   'session.commands': { params: { sessionId: string }; result: { commands: SlashCommand[] } }
-  'session.models': { params: { sessionId: string }; result: { models: ModelInfo[] } }
+  'session.models': { params: { sessionId: string }; result: { models: ModelInfo[]; model?: string } }
   'session.contextUsage': { params: { sessionId: string }; result: { usage: ContextUsage } }
   /**
    * Restores checkpointed files to their state just before a user message.
@@ -281,6 +282,8 @@ export type RpcResponse<M extends RpcMethod = RpcMethod> = RpcSuccess<M> | RpcFa
  */
 export type ServerEvent =
   | { type: 'sdk'; sessionId: string; message: SDKMessage }
+  | { type: 'session_updated'; sessionId: string; summary: SessionSummary }
+  | { type: 'session_models'; sessionId: string; models: ModelInfo[]; model: string }
   | { type: 'permission_request'; sessionId: string; request: PermissionRequest }
   | { type: 'permission_resolved'; sessionId: string; requestId: string }
   | { type: 'session_error'; sessionId: string; error: string }

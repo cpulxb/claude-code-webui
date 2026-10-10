@@ -1,4 +1,4 @@
-import type { ServerEvent, SessionConfig } from '@ccw/shared'
+import type { ServerEvent, SessionConfig, SessionSummary } from '@ccw/shared'
 
 import { SessionRunner } from './runner.ts'
 
@@ -33,6 +33,7 @@ export class SessionManager {
     self = runner
     this.#runners.set(runner.sessionId, runner)
     this.#owners.set(runner.sessionId, runner)
+    this.#broadcast(runner, { type: 'session_updated', sessionId: runner.sessionId, summary: runner.summary })
     return runner
   }
 
@@ -49,6 +50,10 @@ export class SessionManager {
 
   liveIds(): string[] {
     return [...this.#runners.keys()]
+  }
+
+  liveSummaries(): SessionSummary[] {
+    return [...this.#runners.values()].map((runner) => runner.summary)
   }
 
   close(sessionId: string): void {
