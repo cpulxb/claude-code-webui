@@ -86,11 +86,27 @@ export type Attachment = {
   filename?: string
 }
 
+/**
+ * Runtime-resolved effort and ultracode, as `get_settings` reports them.
+ * `effort` is null when no effort parameter will be sent. CLIs that predate
+ * ultracode report neither ultracode field, which reads as unavailable.
+ */
+export type SessionFlags = {
+  effort: EffortLevel | null
+  ultracode: boolean
+  ultracodeAvailable: boolean
+}
+
 export type SessionConfig = {
   cwd: string
   model?: string
   permissionMode?: PermissionMode
   effort?: EffortLevel
+  /**
+   * Ultracode (CLI ≥ 2.1.29x): standing dynamic-workflow orchestration at
+   * whatever effort is selected. Session-only, so it is replayed on attach.
+   */
+  ultracode?: boolean
   /** Existing Claude session UUID to resume; omit to start fresh. */
   resume?: string
   /**
@@ -210,6 +226,9 @@ export type RpcMap = {
   }
   'session.setModel': { params: { sessionId: string; model?: string }; result: Record<string, never> }
   'session.setEffort': { params: { sessionId: string; effort: EffortLevel }; result: Record<string, never> }
+  'session.setUltracode': { params: { sessionId: string; on: boolean }; result: SessionFlags }
+  /** What the CLI will actually send next turn — `get_settings`' `applied` block. */
+  'session.flags': { params: { sessionId: string }; result: SessionFlags }
   'session.commands': { params: { sessionId: string }; result: { commands: SlashCommand[] } }
   'session.models': { params: { sessionId: string }; result: { models: ModelInfo[]; model?: string } }
   'session.contextUsage': { params: { sessionId: string }; result: { usage: ContextUsage } }
@@ -313,6 +332,7 @@ export type ServerEvent =
   | { type: 'sdk'; sessionId: string; message: SDKMessage }
   | { type: 'session_updated'; sessionId: string; summary: SessionSummary }
   | { type: 'session_models'; sessionId: string; models: ModelInfo[]; model: string }
+  | ({ type: 'session_flags'; sessionId: string } & SessionFlags)
   | { type: 'permission_request'; sessionId: string; request: PermissionRequest }
   | { type: 'permission_resolved'; sessionId: string; requestId: string }
   | { type: 'session_error'; sessionId: string; error: string }

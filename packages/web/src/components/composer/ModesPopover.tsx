@@ -1,9 +1,8 @@
 import { PERMISSION_MODES, type EffortLevel, type ModelInfo, type PermissionMode } from '@ccw/shared'
 
-import { findModel, modelLabel } from '../../utils/models.ts'
 import styles from './Composer.module.css'
-import { EFFORT_LABEL, EffortSlider, effortChoices } from './EffortSlider.tsx'
-import { ModeIcon } from './ModeIcon.tsx'
+import { EFFORT_LABEL, EffortSlider, effortChoices, nextEffort } from './EffortSlider.tsx'
+import { EffortIcon, ModeIcon, UltracodeIcon } from './ModeIcon.tsx'
 
 type ModeMeta = { label: string; hint: string; danger?: boolean }
 
@@ -18,20 +17,22 @@ export const MODE_META: Record<PermissionMode, ModeMeta> = {
 }
 
 /**
- * Permission mode, reasoning effort, and model. All three are live control
- * requests, so a change applies to the next turn without restarting the CLI.
+ * Permission mode, reasoning effort, and ultracode — the VS Code extension's
+ * Modes menu. All are live control requests, so a change applies to the next
+ * turn without restarting the CLI. The model moved to the composer's pill.
  */
 export function ModesPopover(props: {
   mode: PermissionMode
   effort: EffortLevel
   model: string | null
   models: ModelInfo[]
+  ultracode: boolean
+  ultracodeAvailable: boolean
   rootRef?: React.Ref<HTMLDivElement>
   onMode: (mode: PermissionMode) => void
   onEffort: (effort: EffortLevel) => void
-  onModel: (model: string) => void
+  onUltracode: (on: boolean) => void
 }): JSX.Element {
-  const selected = findModel(props.models, props.model)
   const efforts = effortChoices(props.models, props.model)
 
   return (
@@ -49,7 +50,7 @@ export function ModesPopover(props: {
             aria-checked={mode === props.mode}
           >
             <span className={`${styles.modeIcon} ${meta.danger ? styles.modeDanger : ''}`}>
-              <ModeIcon mode={mode} size={17} />
+              <ModeIcon mode={mode} size={18} />
             </span>
             <span className={styles.modeText}>
               <span className={`${styles.modeTitle} ${meta.danger ? styles.modeDanger : ''}`}>{meta.label}</span>
@@ -62,32 +63,47 @@ export function ModesPopover(props: {
         )
       })}
 
+      {(efforts.length > 0 || props.ultracodeAvailable) && <div className={styles.divider} />}
+
       {efforts.length > 0 && (
-        <>
-          <div className={styles.divider} />
-          <div className={styles.effortRow}>
-            <span className={styles.effortLabel}>思考强度（{EFFORT_LABEL[props.effort]}）</span>
-            <EffortSlider levels={efforts} value={props.effort} onChange={props.onEffort} />
-          </div>
-        </>
+        <div
+          className={styles.settingRow}
+          role="button"
+          tabIndex={-1}
+          title="点击切换思考强度"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            const next = nextEffort(efforts, props.effort)
+            if (next) props.onEffort(next)
+          }}
+        >
+          <span className={styles.settingLabel}>
+            <EffortIcon size={18} />
+            思考强度
+            <span className={styles.settingValue}>（{EFFORT_LABEL[props.effort]}）</span>
+          </span>
+          <EffortSlider levels={efforts} value={props.effort} onChange={props.onEffort} />
+        </div>
       )}
 
-      {props.models.length > 0 && (
-        <>
-          <div className={styles.divider} />
-          <div className={styles.sectionTitle}>模型</div>
-          <select
-            className={styles.select}
-            value={selected?.value ?? props.model ?? ''}
-            onChange={(event) => props.onModel(event.target.value)}
-          >
-            {props.models.map((model) => (
-              <option key={model.value} value={model.value}>
-                {modelLabel(model, props.models)}
-              </option>
-            ))}
-          </select>
-        </>
+      {props.ultracodeAvailable && (
+        <button
+          type="button"
+          role="switch"
+          aria-checked={props.ultracode}
+          className={styles.settingRow}
+          title="每个任务都运行动态工作流（仅本会话）"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => props.onUltracode(!props.ultracode)}
+        >
+          <span className={styles.settingLabel}>
+            <UltracodeIcon size={18} />
+            Ultracode
+          </span>
+          <span className={`${styles.switchTrack} ${props.ultracode ? styles.switchOn : ''}`}>
+            <span className={styles.switchThumb} />
+          </span>
+        </button>
       )}
     </div>
   )

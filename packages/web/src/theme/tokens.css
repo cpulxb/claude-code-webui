@@ -20,6 +20,8 @@
 
   --ccw-accent: #c96442;
   --ccw-accent-soft: #f6e9e3;
+  /* Ultracode's purple, as in the VS Code extension's switch and pill. */
+  --ccw-ultracode: #7c4dcc;
   --ccw-danger: #b4342a;
   --ccw-success: #2f7d4f;
   --ccw-warning: #9a6b16;
@@ -88,6 +90,7 @@
 
   --ccw-accent: #d97757;
   --ccw-accent-soft: #3a251d;
+  --ccw-ultracode: #a281e8;
 }
 
 * {

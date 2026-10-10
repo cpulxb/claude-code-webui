@@ -17,6 +17,7 @@ import type {
   PermissionRequest,
   ServerEvent,
   SessionConfig,
+  SessionFlags,
   SessionStatus,
   SessionSummary,
 } from '@ccw/shared'
@@ -126,8 +127,20 @@ export class SessionRunner {
     void this.#pump()
     // Failure here means the CLI died before the flag landed; #pump already
     // reports that, and an escaped rejection would crash the whole server.
-    if (config.effort) this.setEffort(config.effort).catch(() => {})
+    const initial: { effortLevel?: EffortLevel; ultracode?: boolean } = {}
+    if (config.effort) initial.effortLevel = config.effort
+    if (config.ultracode !== undefined) initial.ultracode = config.ultracode
+    if (Object.keys(initial).length > 0) {
+      this.#ultracode = config.ultracode ?? false
+      this.#query
+        .applyFlagSettings(initial)
+        .then(() => this.#publishFlags())
+        .catch(() => {})
+    }
   }
+
+  /** Last ultracode state the CLI reported, so an effort change can carry it. */
+  #ultracode = false
 
   /** Drains the SDK's message stream onto the downlink until the CLI exits. */
   async #pump(): Promise<void> {
@@ -266,10 +279,47 @@ export class SessionRunner {
 
   async setModel(model?: string): Promise<void> {
     await this.#models.select(model)
+    // Availability follows the model (ultracode needs one that supports it).
+    await this.#publishFlags().catch(() => {})
   }
 
+  /**
+   * On CLI 2.1.29x an `effortLevel` sent without an `ultracode` key also turns
+   * ultracode off, so the current state rides along: the two are independent
+   * controls in the UI.
+   */
   async setEffort(effort: EffortLevel): Promise<void> {
-    await this.#query.applyFlagSettings({ effortLevel: effort })
+    await this.#query.applyFlagSettings({ effortLevel: effort, ...(this.#ultracode ? { ultracode: true } : {}) })
+    await this.#publishFlags()
+  }
+
+  async setUltracode(on: boolean): Promise<SessionFlags> {
+    await this.#query.applyFlagSettings({ ultracode: on })
+    return this.#publishFlags()
+  }
+
+  /**
+   * `getSettings` exists on the SDK's Query at runtime but is not in its
+   * 0.3.238 typings; `applied` is what the next request will really carry.
+   */
+  async flags(): Promise<SessionFlags> {
+    const settings = (await (this.#query as unknown as { getSettings(): Promise<unknown> }).getSettings()) as {
+      applied?: { effort?: EffortLevel | null; ultracode?: boolean; ultracodeAvailable?: boolean }
+    }
+    const applied = settings.applied ?? {}
+    const flags: SessionFlags = {
+      effort: applied.effort ?? null,
+      ultracode: applied.ultracode === true,
+      ultracodeAvailable: applied.ultracodeAvailable === true,
+    }
+    this.#ultracode = flags.ultracode
+    return flags
+  }
+
+  async #publishFlags(): Promise<SessionFlags> {
+    const flags = await this.flags()
+    this.#emit({ type: 'session_flags', sessionId: this.sessionId, ...flags })
+    return flags
   }
 
   async commands(): Promise<SlashCommand[]> {

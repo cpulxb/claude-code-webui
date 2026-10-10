@@ -65,6 +65,10 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
       return {}
     },
 
+    'session.setUltracode': async ({ sessionId, on }) => manager.require(sessionId).setUltracode(on),
+
+    'session.flags': async ({ sessionId }) => manager.require(sessionId).flags(),
+
     'session.commands': async ({ sessionId }) => ({
       commands: await manager.require(sessionId).commands(),
     }),

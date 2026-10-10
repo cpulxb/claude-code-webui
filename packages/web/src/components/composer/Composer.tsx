@@ -5,11 +5,11 @@ import { useShallow } from 'zustand/shallow'
 import { call } from '../../api/client.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import { fileToAttachment, isSupportedAttachment } from '../../utils/attachments.ts'
-import { findModel } from '../../utils/models.ts'
+import { findModel, modelLabel } from '../../utils/models.ts'
 import { buildPaletteEntries, CommandPalette, type PaletteEntry } from './CommandPalette.tsx'
 import styles from './Composer.module.css'
 import { ContextMeter } from './ContextMeter.tsx'
-import { effortChoices } from './EffortSlider.tsx'
+import { EFFORT_LABEL, effortChoices } from './EffortSlider.tsx'
 import { ModeIcon } from './ModeIcon.tsx'
 import { ModelPicker } from './ModelPicker.tsx'
 import { MODE_META, ModesPopover } from './ModesPopover.tsx'
@@ -43,6 +43,7 @@ export function Composer(): JSX.Element | null {
   const setPermissionMode = useStore((state) => state.setPermissionMode)
   const setEffort = useStore((state) => state.setEffort)
   const setModel = useStore((state) => state.setModel)
+  const setUltracode = useStore((state) => state.setUltracode)
   const refreshModels = useStore((state) => state.refreshModels)
   const activeId = useStore((state) => state.activeId)
 
@@ -59,6 +60,8 @@ export function Composer(): JSX.Element | null {
   const permissionMode = useActiveSessionValue((session) => session.permissionMode) ?? 'default'
   const effort = useActiveSessionValue((session) => session.effort) ?? 'high'
   const model = useActiveSessionValue((session) => session.model) ?? null
+  const ultracode = useActiveSessionValue((session) => session.ultracode) ?? false
+  const ultracodeAvailable = useActiveSessionValue((session) => session.ultracodeAvailable) ?? false
   const contextUsage = useActiveSessionValue((session) => session.contextUsage) ?? null
   const allCommands = useActiveSessionValue(useShallow((session) => session.commands)) ?? []
   const models = useActiveSessionValue(useShallow((session) => session.models)) ?? []
@@ -81,6 +84,7 @@ export function Composer(): JSX.Element | null {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const modesRef = useRef<HTMLDivElement>(null)
   const modeButtonRef = useRef<HTMLButtonElement>(null)
+  const modelPillRef = useRef<HTMLButtonElement>(null)
   const modelsRef = useRef<HTMLDivElement>(null)
   const fileSeqRef = useRef(0)
 
@@ -106,6 +110,7 @@ export function Composer(): JSX.Element | null {
 
   const menuLength = trigger?.kind === '/' ? entries.length : trigger?.kind === '@' ? fileItems.length : 0
   const efforts = effortChoices(models, model)
+  const pillEfforts = efforts
 
   useEffect(() => {
     if (attached && (modelsOpen || modesOpen || trigger?.kind === '/')) void refreshModels()
@@ -183,7 +188,8 @@ export function Composer(): JSX.Element | null {
   useEffect(() => {
     if (!modelsOpen) return
     const onPointerDown = (event: PointerEvent): void => {
-      if (modelsRef.current?.contains(event.target as Node)) return
+      const target = event.target as Node
+      if (modelsRef.current?.contains(target) || modelPillRef.current?.contains(target)) return
       setModelsOpen(false)
     }
     document.addEventListener('pointerdown', onPointerDown)
@@ -437,13 +443,15 @@ export function Composer(): JSX.Element | null {
               effort={effort}
               model={model}
               models={models}
+              ultracode={ultracode}
+              ultracodeAvailable={ultracodeAvailable}
               rootRef={modesRef}
               onMode={(next) => {
                 void setPermissionMode(next)
                 setModesOpen(false)
               }}
               onEffort={(next) => void setEffort(next)}
-              onModel={(next) => void setModel(next)}
+              onUltracode={(next) => void setUltracode(next)}
             />
           )}
 
@@ -498,6 +506,31 @@ export function Composer(): JSX.Element | null {
             <button className={styles.iconButton} onClick={openCommands} type="button" title="斜杠命令">
               /
             </button>
+
+            {(models.length > 0 || model) && (
+              <button
+                ref={modelPillRef}
+                className={styles.modelPill}
+                type="button"
+                title="切换模型"
+                aria-haspopup="listbox"
+                aria-expanded={modelsOpen}
+                onClick={() => {
+                  if (modelsOpen) {
+                    setModelsOpen(false)
+                    return
+                  }
+                  setModesOpen(false)
+                  const current = findModel(models, model)
+                  setModelIndex(Math.max(0, current ? models.indexOf(current) : 0))
+                  setModelsOpen(true)
+                }}
+              >
+                <span>{pillModelName(models, model)}</span>
+                {pillEfforts.length > 0 && <span className={styles.modelPillEffort}>{EFFORT_LABEL[effort]}</span>}
+                {ultracode && ultracodeAvailable && <span className={styles.modelPillUltra}>· Ultracode</span>}
+              </button>
+            )}
 
             <span className={styles.spacer} />
 
@@ -556,4 +589,15 @@ export function Composer(): JSX.Element | null {
       </div>
     </div>
   )
+}
+
+/**
+ * The pill's model name. "Default" is spelled as the model it resolves to,
+ * the way VS Code's pill reads `claude-haiku-5.5[1m]` rather than "Default".
+ */
+function pillModelName(models: ModelInfo[], model: string | null): string {
+  const selected = findModel(models, model)
+  if (!selected) return model ?? '模型'
+  if (selected.value === 'default' && selected.resolvedModel) return selected.resolvedModel
+  return modelLabel(selected, models)
 }

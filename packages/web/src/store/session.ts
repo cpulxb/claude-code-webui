@@ -10,6 +10,7 @@ import type {
   RewindFilesResult,
   ServerEvent,
   SessionStatus,
+  SessionFlags,
   SessionSummary,
   SlashCommand,
 } from '@ccw/shared'
@@ -63,6 +64,10 @@ export type SessionState = {
   models: ModelInfo[]
   permissionMode: PermissionMode
   effort: EffortLevel
+  /** Ultracode on for this session (dynamic workflows at the picked effort). */
+  ultracode: boolean
+  /** The CLI says ultracode can be turned on: workflows enabled and the model supports it. */
+  ultracodeAvailable: boolean
   model: string | null
   pendingPermissions: PermissionRequest[]
   /** `/context` breakdown, refreshed after each turn. Null until the first one. */
@@ -106,6 +111,7 @@ type Store = {
   interrupt: () => Promise<void>
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   setEffort: (effort: EffortLevel) => Promise<void>
+  setUltracode: (on: boolean) => Promise<void>
   setModel: (model: string) => Promise<void>
   refreshModels: () => Promise<void>
   respondToPermission: (requestId: string, decision: PermissionDecision) => Promise<void>
@@ -134,6 +140,8 @@ function newSession(sessionId: string, cwd: string, attached: boolean): SessionS
     models: [],
     permissionMode: rememberedMode(),
     effort: 'high',
+    ultracode: false,
+    ultracodeAvailable: false,
     model: null,
     pendingPermissions: [],
     contextUsage: null,
@@ -172,6 +180,11 @@ const starting = new Set<string>()
  * only forwards a level that was really chosen.
  */
 const effortPicked = new Set<string>()
+/** Same for ultracode: session-only, so a resume must replay a choice made here. */
+const ultracodePicked = new Set<string>()
+/** Latest effort request per session; older ones still in their delay are dropped. */
+const effortSeq = new Map<string, number>()
+const EFFORT_SEND_DELAY_MS = 120
 const modelRequests = new Map<string, object>()
 
 // A history read can finish after a new session or prompt arrives. Replay only
@@ -244,6 +257,7 @@ function recordPermissionChange(sessionId: string, requestId: string, request: P
 function forgetSession(sessionId: string): void {
   starting.delete(sessionId)
   effortPicked.delete(sessionId)
+  ultracodePicked.delete(sessionId)
   modelRequests.delete(sessionId)
   closedEpoch.delete(sessionId)
   snapshotVersions.delete(sessionId)
@@ -459,12 +473,42 @@ export const useStore = create<Store>()(
     setEffort: async (effort) => {
       const sessionId = get().activeId
       if (!sessionId) return
-      if (get().sessions[sessionId]?.attached) await call('session.setEffort', { sessionId, effort })
+      // Optimistic: the slider must move under the pointer, not one CLI
+      // round-trip later. Rapid drags send only the newest level.
       effortPicked.add(sessionId)
       set((state) => {
         const session = state.sessions[sessionId]
         if (session) session.effort = effort
       })
+      if (!get().sessions[sessionId]?.attached) return
+      const seq = (effortSeq.get(sessionId) ?? 0) + 1
+      effortSeq.set(sessionId, seq)
+      await new Promise((resolve) => setTimeout(resolve, EFFORT_SEND_DELAY_MS))
+      if (effortSeq.get(sessionId) !== seq) return
+      await call('session.setEffort', { sessionId, effort })
+    },
+
+    setUltracode: async (on) => {
+      const sessionId = get().activeId
+      if (!sessionId) return
+      ultracodePicked.add(sessionId)
+      // Flip first so the switch animates on click rather than after the round-trip.
+      set((state) => {
+        const session = state.sessions[sessionId]
+        if (session) session.ultracode = on
+      })
+      if (!get().sessions[sessionId]?.attached) return
+      try {
+        const flags = await call('session.setUltracode', { sessionId, on })
+        set((state) => applyFlags(state.sessions[sessionId], flags))
+      } catch (error) {
+        set((state) => {
+          const session = state.sessions[sessionId]
+          if (!session) return
+          session.ultracode = !on
+          session.error = `切换 Ultracode 失败：${String(error)}`
+        })
+      }
     },
 
     setModel: async (model) => {
@@ -699,6 +743,9 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
     if (!session) return
 
     switch (event.type) {
+      case 'session_flags':
+        applyFlags(session, event)
+        return
       case 'session_models':
         modelRequests.delete(event.sessionId)
         if (JSON.stringify(session.models) !== JSON.stringify(event.models)) session.models = event.models
@@ -830,6 +877,7 @@ async function attach(set: Setter, get: () => Store, sessionId: string): Promise
       // Only when it was really chosen here: forwarding the store's default
       // would silently reset whatever the resumed session was running on.
       ...(effortPicked.has(sessionId) ? { effort: session.effort } : {}),
+      ...(ultracodePicked.has(sessionId) ? { ultracode: session.ultracode } : {}),
       ...(session.model ? { model: session.model } : {}),
     })
   } finally {
@@ -998,7 +1046,28 @@ async function loadSessionMeta(set: Setter, get: () => Store, sessionId: string)
   })
 }
 
+/**
+ * Takes the CLI's own reading of effort and ultracode. A null effort (no
+ * effort parameter will be sent) keeps the slider where it was.
+ */
+function applyFlags(session: SessionState | undefined, flags: SessionFlags): void {
+  if (!session) return
+  if (flags.effort !== null && session.effort !== flags.effort) session.effort = flags.effort
+  if (session.ultracode !== flags.ultracode) session.ultracode = flags.ultracode
+  if (session.ultracodeAvailable !== flags.ultracodeAvailable) session.ultracodeAvailable = flags.ultracodeAvailable
+}
+
+async function loadSessionFlags(set: Setter, sessionId: string): Promise<void> {
+  try {
+    const flags = await call('session.flags', { sessionId })
+    set((state) => applyFlags(state.sessions[sessionId], flags))
+  } catch {
+    // An older CLI without get_settings: the Ultracode row just stays hidden.
+  }
+}
+
 async function loadSessionModels(set: Setter, get: () => Store, sessionId: string): Promise<void> {
+  void loadSessionFlags(set, sessionId)
   const request = {}
   const selected = get().sessions[sessionId]?.model
   const lifetime = snapshotVersions.get(sessionId)
