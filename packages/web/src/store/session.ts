@@ -21,6 +21,7 @@ import { immer } from 'zustand/middleware/immer'
 import { call, connectEvents, type ConnectionStatus } from '../api/client.ts'
 import { applyHistoryMessage, listUserPromptUuids } from '../render/history.ts'
 import { applyMessage, emptyTranscript, findAgent, type AgentRun, type Transcript } from '../render/nodes.ts'
+import { applyWorkflowRecord } from '../render/workflows.ts'
 
 /** Facts the CLI reports once per turn in its `init` message. */
 export type SessionInit = {
@@ -123,6 +124,10 @@ type Store = {
   openAgent: (toolUseId: string | null) => Promise<void>
   stopAgent: (toolUseId: string) => Promise<void>
   backgroundAgent: (toolUseId: string) => Promise<void>
+  /** Re-reads a running workflow agent's transcript, which the stream never carries. */
+  refreshAgent: (toolUseId: string) => Promise<void>
+  /** Stops a whole dynamic workflow run (its background task). */
+  stopWorkflow: (toolUseId: string) => Promise<void>
 }
 
 function newSession(sessionId: string, cwd: string, attached: boolean): SessionState {
@@ -602,6 +607,19 @@ export const useStore = create<Store>()(
       if (!sessionId || !get().sessions[sessionId]?.attached) return
       await call('session.backgroundTask', { sessionId, toolUseId })
     },
+
+    refreshAgent: async (toolUseId) => {
+      const sessionId = get().activeId
+      if (sessionId) await loadAgentHistory(set, get, sessionId, toolUseId, true)
+    },
+
+    stopWorkflow: async (toolUseId) => {
+      const sessionId = get().activeId
+      const session = sessionId ? get().sessions[sessionId] : undefined
+      const run = session?.transcript.workflows[toolUseId]
+      if (!sessionId || !session?.attached || !run?.taskId) return
+      await call('session.stopTask', { sessionId, taskId: run.taskId })
+    },
   })),
 )
 
@@ -993,6 +1011,14 @@ async function loadHistory(set: Setter, get: () => Store, sessionId: string, cwd
     if (!get().sessions[sessionId]) return
     const transcript = emptyTranscript()
     for (const entry of messages) applyHistoryMessage(transcript, entry)
+    // Workflow cards: the saved run record has the phases and every agent.
+    await Promise.all(
+      Object.values(transcript.workflows).map(async (run) => {
+        if (!run.runId) return
+        const { run: record } = await call('history.workflow', { sessionId, runId: run.runId }).catch(() => ({ run: null }))
+        if (record) applyWorkflowRecord(transcript, run, record)
+      }),
+    )
     for (const meta of subagents.agents) {
       const agent = meta.toolUseId ? findAgent(transcript, meta.toolUseId) : null
       if (!agent) continue
@@ -1105,11 +1131,24 @@ export function useActiveSessionValue<T>(select: (session: SessionState) => T): 
  * opened. A subagent still streaming into a live view is left alone: its
  * events already built the view, and the JSONL may lag behind them.
  */
-async function loadAgentHistory(set: Setter, get: () => Store, sessionId: string, toolUseId: string): Promise<void> {
+async function loadAgentHistory(
+  set: Setter,
+  get: () => Store,
+  sessionId: string,
+  toolUseId: string,
+  refresh = false,
+): Promise<void> {
   const session = get().sessions[sessionId]
   const agent: AgentRun | null = session ? findAgent(session.transcript, toolUseId) : null
-  if (!session || !agent || agent.historyLoaded) return
-  if (agent.status === 'running' && agent.transcript.nodes.length > 0) return
+  if (!session || !agent) return
+  // A workflow agent's output never streams, so its file is the only view:
+  // always read it, and re-read it while the agent runs.
+  if (!agent.workflow) {
+    if (agent.historyLoaded) return
+    if (agent.status === 'running' && agent.transcript.nodes.length > 0) return
+  } else if (agent.historyLoaded && !refresh && agent.status !== 'running') {
+    return
+  }
   let agentId = agent.agentId
   if (!agentId) {
     const { agents } = await call('history.subagents', { sessionId })
@@ -1127,6 +1166,14 @@ async function loadAgentHistory(set: Setter, get: () => Store, sessionId: string
     draft.historyLoaded = true
     // Nothing on disk yet (still spawning) — keep whatever streamed live.
     if (rebuilt.nodes.length === 0) return
+    // A poll that found nothing new must not churn the view.
+    const before = draft.transcript.nodes
+    if (
+      before.length === rebuilt.nodes.length &&
+      JSON.stringify(before.at(-1)) === JSON.stringify(rebuilt.nodes.at(-1))
+    ) {
+      return
+    }
     // History is the complete record; live-only nodes it does not know of
     // would be newer output, which `seen` lets the stream re-add on arrival.
     rebuilt.agents = { ...rebuilt.agents, ...draft.transcript.agents }

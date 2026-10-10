@@ -1,5 +1,14 @@
 import type { SDKMessage } from '@ccw/shared'
 
+import {
+  applyWorkflowEvent,
+  registerWorkflow,
+  settleWorkflowLaunch,
+  unframeWorkflowPrompt,
+  WORKFLOW_TOOL,
+  type WorkflowRun,
+} from './workflows.ts'
+
 /** A finalized piece of assistant output. Tool calls become their own node. */
 export type AssistantBlock = { type: 'text' | 'thinking'; text: string }
 
@@ -70,6 +79,8 @@ export type AgentRun = {
   transcript: Transcript
   /** Whether the on-disk subagent transcript has been folded in. */
   historyLoaded: boolean
+  /** Set when this is one agent of a dynamic workflow: that run's toolUseId. */
+  workflow?: string
 }
 
 export type Transcript = {
@@ -78,6 +89,8 @@ export type Transcript = {
   agents: Record<string, AgentRun>
   /** toolUseIds in spawn order, for the agent strip. */
   agentOrder: string[]
+  /** Dynamic workflows launched from this transcript, keyed by Workflow tool_use id. */
+  workflows: Record<string, WorkflowRun>
   streaming: StreamingBlock | null
   /** toolUseId → index into `nodes`, so tool results land on the right card. */
   toolIndex: Record<string, number>
@@ -90,7 +103,7 @@ export type Transcript = {
 }
 
 export function emptyTranscript(): Transcript {
-  return { nodes: [], agents: {}, agentOrder: [], streaming: null, toolIndex: {}, seen: {} }
+  return { nodes: [], agents: {}, agentOrder: [], workflows: {}, streaming: null, toolIndex: {}, seen: {} }
 }
 
 /**
@@ -160,6 +173,7 @@ function applyLocal(transcript: Transcript, message: SDKMessage, inAgent: boolea
             status: 'running',
           })
           if (AGENT_TOOLS.has(block.name)) registerAgent(transcript, block.id, (block.input ?? {}) as Record<string, unknown>)
+          if (block.name === WORKFLOW_TOOL) registerWorkflow(transcript, block.id, (block.input ?? {}) as Record<string, unknown>)
         }
       }
       return
@@ -177,13 +191,22 @@ function applyLocal(transcript: Transcript, message: SDKMessage, inAgent: boolea
                 .filter((block) => block.type === 'text')
                 .map((block) => (block as { text: string }).text)
                 .join('\n')
-        if (text) transcript.nodes.push({ kind: 'user', id: message.uuid ?? `u${transcript.nodes.length}`, text, attachments: 0 })
+        if (text) {
+          transcript.nodes.push({
+            kind: 'user',
+            id: message.uuid ?? `u${transcript.nodes.length}`,
+            text: unframeWorkflowPrompt(text),
+            attachments: 0,
+          })
+        }
       }
       if (typeof content === 'string') return
       for (const block of content) {
         if (block.type !== 'tool_result') continue
         const agent = transcript.agents[block.tool_use_id]
         if (agent) settleAgent(agent, block.is_error === true, flattenToolResult(block.content), message.tool_use_result)
+        const workflow = transcript.workflows[block.tool_use_id]
+        if (workflow) settleWorkflowLaunch(workflow, block.is_error === true, flattenToolResult(block.content))
         const node = toolNode(transcript, block.tool_use_id)
         if (!node) continue
         node.status = block.is_error ? 'error' : 'done'
@@ -415,6 +438,7 @@ function applyTaskEvent(transcript: Transcript, message: SystemMessage): void {
     patch?: { status?: string; is_backgrounded?: boolean }
   }
   if (!event.subtype?.startsWith('task_') || !event.task_id) return
+  if (applyWorkflowEvent(transcript, message as never)) return
   let agent = event.tool_use_id ? findAgent(transcript, event.tool_use_id) : null
   agent ??= findAgentById(transcript, event.task_id)
   if (!agent) {

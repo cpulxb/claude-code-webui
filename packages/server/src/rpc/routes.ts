@@ -4,7 +4,7 @@ import { browseDirectory } from '../files/browse.ts'
 import { listEntries, readFilePreview, writeTextFile } from '../files/explorer.ts'
 import { registerRoot, resolveInWorkspace } from '../files/roots.ts'
 import { suggestFiles } from '../files/suggest.ts'
-import { listProjects, listSubagentMeta, readMessages, readPermissionMode, readSubagentMessages } from '../history/sessions.ts'
+import { listProjects, listSubagentMeta, readMessages, readPermissionMode, readSubagentMessages, readWorkflowRun } from '../history/sessions.ts'
 import { scmDiff, scmDiscard, scmStatus, shadowBaseline } from '../scm/git.ts'
 import type { SessionManager } from '../session/manager.ts'
 
@@ -111,6 +111,8 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
     },
 
     'history.subagents': async ({ sessionId }) => ({ agents: await listSubagentMeta(sessionId) }),
+
+    'history.workflow': async ({ sessionId, runId }) => ({ run: await readWorkflowRun(sessionId, runId) }),
 
     'history.subagent': async ({ sessionId, agentId }) => ({
       messages: await readSubagentMessages(sessionId, agentId),

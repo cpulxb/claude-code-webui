@@ -63,6 +63,26 @@ export type PermissionRequest = {
   agentId?: string
 }
 
+/**
+ * A dynamic workflow run as saved under `<session>/workflows/<runId>.json`,
+ * or rebuilt from its journal while it has not finished yet.
+ */
+export type WorkflowRecord = {
+  runId: string
+  taskId?: string
+  workflowName?: string
+  summary?: string
+  status?: string
+  script?: string
+  scriptPath?: string
+  phases?: { title: string; detail?: string }[]
+  /** The same items `task_progress.workflow_progress` carries live. */
+  workflowProgress?: unknown[]
+  totalTokens?: number
+  totalToolCalls?: number
+  durationMs?: number
+}
+
 /** A subagent transcript found next to a session's JSONL. */
 export type SubagentMeta = {
   agentId: string
@@ -268,6 +288,8 @@ export type RpcMap = {
   }
   /** Subagents a session spawned, read from `<session>/subagents/*.meta.json`. */
   'history.subagents': { params: { sessionId: string }; result: { agents: SubagentMeta[] } }
+  /** One dynamic workflow run, for a reloaded session's workflow card. */
+  'history.workflow': { params: { sessionId: string; runId: string }; result: { run: WorkflowRecord | null } }
   /**
    * One subagent's own conversation, from `<session>/subagents/agent-<id>.jsonl`.
    * Shaped like `history.messages` so the same renderer replays it.

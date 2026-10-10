@@ -1,6 +1,7 @@
 import type { SDKMessage, SessionMessage } from '@ccw/shared'
 
-import { applyMessage, type Transcript } from './nodes.ts'
+import { applyMessage, findAgent, findAgentById, type Transcript } from './nodes.ts'
+import { applyWorkflowEvent, parseTaskNotification, unframeWorkflowPrompt } from './workflows.ts'
 
 /**
  * Folds one on-disk transcript message into the transcript.
@@ -62,6 +63,12 @@ function applyUserText(transcript: Transcript, uuid: string, raw: string, attach
   transcript.seen[uuid] = true
   const trimmed = raw.trim()
 
+  const notification = parseTaskNotification(trimmed)
+  if (notification) {
+    applyNotification(transcript, notification)
+    return
+  }
+
   const output = LOCAL_OUTPUT.exec(trimmed)
   if (output) {
     transcript.nodes.push({ kind: 'localOutput', id: uuid, content: output[1] ?? '' })
@@ -82,7 +89,8 @@ function applyUserText(transcript: Transcript, uuid: string, raw: string, attach
     return
   }
 
-  transcript.nodes.push({ kind: 'user', id: uuid, text: raw, attachments })
+  // A workflow agent's task arrives wrapped in the harness's provenance frame.
+  transcript.nodes.push({ kind: 'user', id: uuid, text: unframeWorkflowPrompt(raw), attachments })
 }
 
 /**
@@ -115,7 +123,26 @@ export function listUserPromptUuids(messages: SessionMessage[]): string[] {
     }
 
     if (LOCAL_OUTPUT.test(text.trim())) continue
+    if (parseTaskNotification(text)) continue
     uuids.push(entry.uuid)
   }
   return uuids
+}
+
+/** A background task settled; history has no task_* events, only this message. */
+function applyNotification(transcript: Transcript, notification: NonNullable<ReturnType<typeof parseTaskNotification>>): void {
+  const { taskId, toolUseId, status, summary } = notification
+  if (!taskId) return
+  const event = {
+    subtype: 'task_notification',
+    task_id: taskId,
+    ...(toolUseId ? { tool_use_id: toolUseId } : {}),
+    ...(status ? { status } : {}),
+    ...(summary ? { summary } : {}),
+  }
+  if (applyWorkflowEvent(transcript, event)) return
+  const agent = (toolUseId && findAgent(transcript, toolUseId)) || findAgentById(transcript, taskId)
+  if (!agent) return
+  if (status === 'completed' || status === 'failed') agent.status = status
+  else if (status === 'killed' || status === 'stopped') agent.status = 'stopped'
 }

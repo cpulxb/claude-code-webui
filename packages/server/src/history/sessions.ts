@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import { getSessionMessages, listSessions, type SDKSessionInfo } from '@anthropic-ai/claude-agent-sdk'
-import type { PermissionMode, ProjectGroup, SessionMessage, SessionSummary, SubagentMeta } from '@ccw/shared'
+import type { PermissionMode, ProjectGroup, SessionMessage, SessionSummary, SubagentMeta, WorkflowRecord } from '@ccw/shared'
 import { mergeProjectSessions } from '@ccw/shared'
 
 /**
@@ -186,12 +186,8 @@ export async function readSubagentMessages(sessionId: string, agentId: string): 
   if (!AGENT_ID.test(agentId)) throw new Error('invalid agent id')
   const dir = await subagentDir(sessionId)
   if (!dir) return []
-  let raw: string
-  try {
-    raw = await readFile(join(dir, `agent-${agentId}.jsonl`), 'utf8')
-  } catch {
-    return []
-  }
+  const raw = await readAgentTranscript(dir, agentId)
+  if (raw === null) return []
   const messages: SessionMessage[] = []
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue
@@ -211,6 +207,136 @@ export async function readSubagentMessages(sessionId: string, agentId: string): 
     } as SessionMessage)
   }
   return messages
+}
+
+/**
+ * A subagent's JSONL sits directly in `subagents/`; a workflow agent's sits
+ * in `subagents/workflows/<runId>/`. The id is unique across both.
+ */
+async function readAgentTranscript(dir: string, agentId: string): Promise<string | null> {
+  const name = `agent-${agentId}.jsonl`
+  try {
+    return await readFile(join(dir, name), 'utf8')
+  } catch {
+    // fall through to workflow runs
+  }
+  let runs: string[]
+  try {
+    runs = await readdir(join(dir, 'workflows'))
+  } catch {
+    return null
+  }
+  for (const run of runs) {
+    try {
+      return await readFile(join(dir, 'workflows', run, name), 'utf8')
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+const RUN_ID = /^wf_[\w-]+$/
+
+/**
+ * One dynamic workflow run. A finished run is saved whole as
+ * `<session>/workflows/<runId>.json`, including the last progress snapshot.
+ * A run still going (or cut off by a crash) has only its journal and each
+ * agent's meta file, which are enough for labels, phases and done-or-not.
+ */
+export async function readWorkflowRun(sessionId: string, runId: string): Promise<WorkflowRecord | null> {
+  if (!RUN_ID.test(runId)) throw new Error('invalid run id')
+  const transcript = await findTranscript(sessionId)
+  if (!transcript) return null
+  const sessionDir = transcript.slice(0, -'.jsonl'.length)
+  try {
+    const saved = JSON.parse(await readFile(join(sessionDir, 'workflows', `${runId}.json`), 'utf8')) as Record<string, unknown>
+    return pickWorkflowRecord(runId, saved)
+  } catch {
+    // not finished yet — rebuild from the journal
+  }
+  const runDir = join(sessionDir, 'subagents', 'workflows', runId)
+  let journal: string
+  try {
+    journal = await readFile(join(runDir, 'journal.jsonl'), 'utf8')
+  } catch {
+    return null
+  }
+  type Entry = { label: string; phase?: string; agentId: string; done: boolean; result?: unknown }
+  const byAgent = new Map<string, Entry>()
+  const phases: string[] = []
+  for (const line of journal.split('\n')) {
+    let event: { type?: string; agentId?: string; label?: string; phase?: string; result?: unknown }
+    try {
+      event = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (!event.agentId) continue
+    if (event.type === 'started') {
+      if (event.phase && !phases.includes(event.phase)) phases.push(event.phase)
+      byAgent.set(event.agentId, {
+        label: event.label ?? event.agentId,
+        ...(event.phase ? { phase: event.phase } : {}),
+        agentId: event.agentId,
+        done: false,
+      })
+    } else if (event.type === 'result') {
+      const entry = byAgent.get(event.agentId)
+      if (entry) {
+        entry.done = true
+        entry.result = event.result
+      }
+    }
+  }
+  const progress: unknown[] = phases.map((title, at) => ({ type: 'workflow_phase', index: at + 1, title }))
+  let index = 0
+  for (const entry of byAgent.values()) {
+    index += 1
+    const phaseIndex = entry.phase ? phases.indexOf(entry.phase) + 1 : undefined
+    progress.push({
+      type: 'workflow_agent',
+      index,
+      label: entry.label,
+      agentId: entry.agentId,
+      ...(entry.phase ? { phaseTitle: entry.phase, phaseIndex } : {}),
+      state: entry.done ? 'done' : 'progress',
+      ...(entry.done ? { resultPreview: preview(entry.result) } : {}),
+    })
+  }
+  return { runId, workflowProgress: progress }
+}
+
+function pickWorkflowRecord(runId: string, saved: Record<string, unknown>): WorkflowRecord {
+  const record: WorkflowRecord = { runId }
+  const text = (key: string): string | undefined => (typeof saved[key] === 'string' ? (saved[key] as string) : undefined)
+  const count = (key: string): number | undefined => (typeof saved[key] === 'number' ? (saved[key] as number) : undefined)
+  const taskId = text('taskId')
+  if (taskId) record.taskId = taskId
+  const workflowName = text('workflowName')
+  if (workflowName) record.workflowName = workflowName
+  const summary = text('summary')
+  if (summary) record.summary = summary
+  const status = text('status')
+  if (status) record.status = status
+  const script = text('script')
+  if (script) record.script = script
+  const scriptPath = text('scriptPath')
+  if (scriptPath) record.scriptPath = scriptPath
+  if (Array.isArray(saved['phases'])) record.phases = saved['phases'] as { title: string; detail?: string }[]
+  if (Array.isArray(saved['workflowProgress'])) record.workflowProgress = saved['workflowProgress'] as unknown[]
+  const totalTokens = count('totalTokens')
+  if (totalTokens !== undefined) record.totalTokens = totalTokens
+  const totalToolCalls = count('totalToolCalls')
+  if (totalToolCalls !== undefined) record.totalToolCalls = totalToolCalls
+  const durationMs = count('durationMs')
+  if (durationMs !== undefined) record.durationMs = durationMs
+  return record
+}
+
+function preview(value: unknown): string {
+  const text = typeof value === 'string' ? value : JSON.stringify(value) ?? ''
+  return text.length > 400 ? `${text.slice(0, 400)}…` : text
 }
 
 function toSummary(info: SDKSessionInfo): SessionSummary {

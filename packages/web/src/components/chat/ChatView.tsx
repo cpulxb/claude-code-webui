@@ -3,12 +3,14 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 
 
 import type { AssistantBlock, ChatNode, StreamingBlock } from '../../render/nodes.ts'
 import { AGENT_TOOLS, findAgent } from '../../render/nodes.ts'
+import { WORKFLOW_TOOL } from '../../render/workflows.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import { HistoryIcon } from '../Icons.tsx'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 import styles from './ChatView.module.css'
 import { PermissionCard } from './PermissionCard.tsx'
 import { AgentCard } from './AgentCard.tsx'
+import { WorkflowCard } from './WorkflowCard.tsx'
 import { AgentNav } from './AgentNav.tsx'
 import { ToolCard } from './ToolCard.tsx'
 
@@ -273,7 +275,13 @@ const NodeView = memo(function NodeView({ node }: { node: Exclude<ChatNode, { ki
             .filter(Boolean)
             .join(' ')}
         >
-          {AGENT_TOOLS.has(node.name) ? <AgentCard node={node} /> : <ToolCard node={node} />}
+          {AGENT_TOOLS.has(node.name) ? (
+            <AgentCard node={node} />
+          ) : node.name === WORKFLOW_TOOL ? (
+            <WorkflowCard node={node} />
+          ) : (
+            <ToolCard node={node} />
+          )}
         </div>
       )
 
