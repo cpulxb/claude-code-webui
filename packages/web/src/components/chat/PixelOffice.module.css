@@ -1,0 +1,193 @@
+.room {
+  position: relative;
+  overflow: hidden;
+  margin: var(--ccw-space-2) var(--ccw-space-5) var(--ccw-space-3);
+  font-family: var(--ccw-font-mono);
+  /* Checkered wooden floor. */
+  background-color: #d8b98c;
+  background-image:
+    linear-gradient(45deg, #cfae7f 25%, transparent 25%, transparent 75%, #cfae7f 75%),
+    linear-gradient(45deg, #cfae7f 25%, transparent 25%, transparent 75%, #cfae7f 75%);
+  background-position:
+    0 0,
+    12px 12px;
+  background-size: 24px 24px;
+  border: 3px solid #5c4130;
+  border-radius: var(--ccw-radius-sm);
+  image-rendering: pixelated;
+}
+
+.wall {
+  position: absolute;
+  inset: 0 0 auto;
+  background: repeating-linear-gradient(90deg, #efe6d4 0 22px, #e6dbc6 22px 24px);
+  border-bottom: 4px solid #a8774d;
+}
+
+.furniture,
+.desk {
+  position: absolute;
+  transform: translateX(-50%);
+}
+
+.furniture {
+  bottom: 2px;
+}
+
+.furniture svg,
+.desk svg,
+.sprite,
+.spriteWalk svg {
+  display: block;
+}
+
+.worker {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  cursor: pointer;
+  background: none;
+  border: none;
+  transform: translate(-50%, -100%);
+  transition:
+    left 1.4s linear,
+    top 1.4s linear;
+}
+
+.worker:hover .name,
+.worker:focus-visible .name {
+  opacity: 1;
+}
+
+.worker:focus-visible {
+  outline: 2px dashed var(--ccw-accent);
+  outline-offset: 2px;
+}
+
+.bubble {
+  max-width: 150px;
+  margin-bottom: 3px;
+  padding: 1px 5px;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--ccw-gray-900);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: #fff;
+  border: 2px solid var(--ccw-gray-900);
+  border-radius: 0;
+  box-shadow: 2px 2px 0 rgb(0 0 0 / 0.2);
+}
+
+.bubble.running {
+  border-color: var(--ccw-accent);
+}
+
+.bubble.completed {
+  border-color: var(--ccw-success);
+}
+
+.bubble.failed,
+.bubble.stopped {
+  color: var(--ccw-danger);
+  border-color: var(--ccw-danger);
+}
+
+.name {
+  position: absolute;
+  top: 100%;
+  max-width: 110px;
+  margin-top: 1px;
+  padding: 0 4px;
+  overflow: hidden;
+  font-size: 10px;
+  color: #fff;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: rgb(26 26 23 / 0.7);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+/* Walking: two frames swapped in steps, and a little bounce. */
+.spriteWalk {
+  position: relative;
+  display: block;
+  animation: bob 0.3s steps(2) infinite;
+}
+
+.frameB {
+  position: absolute;
+  inset: 0;
+}
+
+.frameA {
+  animation: frameA 0.3s steps(1) infinite;
+}
+
+.frameB {
+  animation: frameB 0.3s steps(1) infinite;
+}
+
+.walking .bubble {
+  opacity: 0.85;
+}
+
+/* Typing at the desk: a small jiggle. */
+.typing .sprite {
+  animation: type 0.5s steps(2) infinite;
+}
+
+@keyframes frameA {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes frameB {
+  0% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes bob {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes type {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .worker {
+    transition: none;
+  }
+  .spriteWalk,
+  .frameA,
+  .frameB,
+  .typing .sprite {
+    animation: none;
+  }
+  .frameB {
+    opacity: 0;
+  }
+}

@@ -11,7 +11,7 @@
     "dev": "pnpm -r --parallel dev",
     "start": "pnpm -r --parallel start",
     "build": "pnpm -r build",
-    "test": "pnpm --filter @ccw/server exec tsx --test scripts/scm.test.ts scripts/models.test.ts scripts/projects.test.ts scripts/subagents.test.ts ../web/scripts/session.test.mjs ../web/scripts/agents.test.mjs ../web/scripts/models.test.mjs ../web/scripts/workflows.test.mjs",
+    "test": "pnpm --filter @ccw/server exec tsx --test scripts/scm.test.ts scripts/models.test.ts scripts/projects.test.ts scripts/subagents.test.ts ../web/scripts/session.test.mjs ../web/scripts/agents.test.mjs ../web/scripts/models.test.mjs ../web/scripts/workflows.test.mjs ../web/scripts/office.test.mjs",
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {

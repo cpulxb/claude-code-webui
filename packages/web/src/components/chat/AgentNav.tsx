@@ -1,9 +1,12 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { emptyTranscript, findAgent, listAgents } from '../../render/nodes.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import { AgentStats, STATUS_LABEL } from './AgentCard.tsx'
 import styles from './AgentCard.module.css'
+import { PixelOffice } from './PixelOffice.tsx'
+
+const OFFICE_KEY = 'ccw.pixelOffice'
 
 /**
  * The bar over the chat pane. On the main thread it lists the session's
@@ -28,6 +31,15 @@ export function AgentNav(): JSX.Element | null {
     current?.workflow ? (session.transcript.workflows[current.workflow] ?? null) : null,
   )
   const openAgent = useStore((state) => state.openAgent)
+  const [office, setOffice] = useState(() => readOfficePref())
+  const toggleOffice = (): void => {
+    setOffice(!office)
+    try {
+      localStorage.setItem(OFFICE_KEY, office ? '0' : '1')
+    } catch {
+      // Private mode: the toggle just won't persist.
+    }
+  }
   const refreshAgent = useStore((state) => state.refreshAgent)
 
   // A workflow agent's conversation never streams; poll its file while it runs.
@@ -49,44 +61,65 @@ export function AgentNav(): JSX.Element | null {
   const running = chips.filter((agent) => agent.status === 'running').length
 
   return (
-    <div className={styles.nav}>
-      {current ? (
-        <>
-          <button className={styles.crumb} onClick={() => void openAgent(null)} type="button">
-            ← 主会话
+    <>
+      <div className={styles.nav}>
+        {current ? (
+          <>
+            <button className={styles.crumb} onClick={() => void openAgent(null)} type="button">
+              ← 主会话
+            </button>
+            <span className={styles.sep}>›</span>
+            {workflow && (
+              <>
+                <span className={styles.navLabel}>工作流 {workflow.name}</span>
+                <span className={styles.sep}>›</span>
+              </>
+            )}
+            <span className={styles.crumbCurrent}>{current.description || '子代理'}</span>
+            <span className={styles.navLabel}>{STATUS_LABEL[current.status]}</span>
+            <AgentStats agent={current} />
+            <span className={styles.sep}>|</span>
+          </>
+        ) : (
+          <span className={styles.navLabel}>
+            {chips.length > 0 ? `子代理 ${chips.length} 个${running > 0 ? `，${running} 个运行中` : ''}` : ''}
+            {chips.length > 0 && workflowCount > 0 ? '；' : ''}
+            {workflowCount > 0 ? `工作流 ${workflowCount} 个` : ''}
+          </span>
+        )}
+        {chips.map((agent) => (
+          <button
+            key={agent.toolUseId}
+            className={`${styles.chip} ${agent.toolUseId === viewAgent ? styles.chipActive : ''}`}
+            onClick={() => void openAgent(agent.toolUseId)}
+            type="button"
+            title={agent.prompt || agent.description}
+          >
+            <span className={`${styles.dot} ${styles[agent.status]}`} />
+            {agent.description || '子代理'}
           </button>
-          <span className={styles.sep}>›</span>
-          {workflow && (
-            <>
-              <span className={styles.navLabel}>工作流 {workflow.name}</span>
-              <span className={styles.sep}>›</span>
-            </>
-          )}
-          <span className={styles.crumbCurrent}>{current.description || '子代理'}</span>
-          <span className={styles.navLabel}>{STATUS_LABEL[current.status]}</span>
-          <AgentStats agent={current} />
-          <span className={styles.sep}>|</span>
-        </>
-      ) : (
-        <span className={styles.navLabel}>
-          {chips.length > 0 ? `子代理 ${chips.length} 个${running > 0 ? `，${running} 个运行中` : ''}` : ''}
-          {chips.length > 0 && workflowCount > 0 ? '；' : ''}
-          {workflowCount > 0 ? `工作流 ${workflowCount} 个` : ''}
-        </span>
-      )}
-      {chips.map((agent) => (
-        <button
-          key={agent.toolUseId}
-          className={`${styles.chip} ${agent.toolUseId === viewAgent ? styles.chipActive : ''}`}
-          onClick={() => void openAgent(agent.toolUseId)}
-          type="button"
-          title={agent.prompt || agent.description}
-        >
-          <span className={`${styles.dot} ${styles[agent.status]}`} />
-          {agent.description || '子代理'}
-        </button>
-      ))}
-      {current && <span className={styles.readonly}>只读 · 输入框仍发给主会话</span>}
-    </div>
+        ))}
+        {current && <span className={styles.readonly}>只读 · 输入框仍发给主会话</span>}
+        {!current && chips.length > 0 && (
+          <button
+            className={`${styles.chip} ${styles.officeToggle} ${office ? styles.chipActive : ''}`}
+            onClick={toggleOffice}
+            type="button"
+            title="把子代理画成像素办公室里的小人"
+          >
+            {office ? '收起办公室' : '像素办公室'}
+          </button>
+        )}
+      </div>
+      {office && !current && chips.length > 0 && <PixelOffice agents={chips} />}
+    </>
   )
+}
+
+function readOfficePref(): boolean {
+  try {
+    return localStorage.getItem(OFFICE_KEY) === '1'
+  } catch {
+    return false
+  }
 }

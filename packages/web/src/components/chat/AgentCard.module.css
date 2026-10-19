@@ -228,3 +228,7 @@
 .more:hover {
   color: var(--ccw-text-primary);
 }
+
+.officeToggle {
+  margin-left: auto;
+}
