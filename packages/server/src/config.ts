@@ -18,8 +18,8 @@ export function resolveAccessToken(host: string): string | undefined {
       `CCW_HOST=${host} is not loopback, so CCW_TOKEN is required. Set CCW_TOKEN to a non-empty secret ` +
         `(e.g. CCW_TOKEN=$(openssl rand -hex 32)) and append ?token=<secret> to the URL you load the UI ` +
         `from — the UI reads the token off its own page URL and forwards it only while it is served from ` +
-        `the same origin as /api. That URL is not this port: this port answers /api/rpc and /api/events ` +
-        `only, everything else 404s. The UI's own dev server binds loopback, so exposing it to the ` +
+        `the same origin as /api. That URL is not this port: this port answers /api/rpc, /api/events and ` +
+        `/api/term only, everything else 404s. The UI's own dev server binds loopback, so exposing it to the ` +
         `network is a separate step. Or drop CCW_HOST to bind loopback only.`,
     )
   }

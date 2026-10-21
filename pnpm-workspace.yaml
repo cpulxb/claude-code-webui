@@ -2,6 +2,8 @@ packages:
   - packages/*
 allowBuilds:
   esbuild: true
+  # The terminal tab's PTY is a native addon, compiled on install.
+  node-pty: true
 minimumReleaseAgeExclude:
   # The SDK and its per-platform CLI binaries ship in lockstep with Claude Code
   # releases; pinning them to "a day old" would block every CLI upgrade.

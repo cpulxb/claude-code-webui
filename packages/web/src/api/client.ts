@@ -1,6 +1,7 @@
 import {
   API_EVENTS_PATH,
   API_RPC_PATH,
+  API_TERM_PATH,
   type RpcMethod,
   type RpcParams,
   type RpcResponse,
@@ -27,6 +28,17 @@ export async function call<M extends RpcMethod>(method: M, params: RpcParams<M>)
   const body = (await response.json()) as RpcResponse<M>
   if (!body.ok) throw new Error(body.error)
   return body.result
+}
+
+/** The socket for one terminal tab: a fresh shell in `cwd`, sized up front. */
+export function terminalUrl(params: { cwd: string; cols: number; rows: number }): string {
+  const url = new URL(API_TERM_PATH, window.location.href)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  url.searchParams.set('cwd', params.cwd)
+  url.searchParams.set('cols', String(params.cols))
+  url.searchParams.set('rows', String(params.rows))
+  if (accessToken) url.searchParams.set('token', accessToken)
+  return url.toString()
 }
 
 export type ConnectionStatus = 'connecting' | 'open' | 'closed'

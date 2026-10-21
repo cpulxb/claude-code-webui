@@ -360,6 +360,25 @@ export type ServerEvent =
   | { type: 'session_error'; sessionId: string; error: string }
   | { type: 'session_closed'; sessionId: string }
 
+/**
+ * Browser → server frames on a terminal socket (`/api/term`). Unlike
+ * `/api/events` this socket is two-way, and each one is a single PTY.
+ */
+export type TerminalClientMessage =
+  | { type: 'input'; data: string }
+  | { type: 'resize'; cols: number; rows: number }
+  /** Characters the browser has finished rendering — the flow-control credit. */
+  | { type: 'ack'; chars: number }
+
+/** Server → browser frames on a terminal socket. */
+export type TerminalServerMessage =
+  /** The PTY is up; `shell` is the program's basename, used as the tab title. */
+  | { type: 'ready'; shell: string }
+  | { type: 'output'; data: string }
+  | { type: 'exit'; code: number }
+
 export const API_RPC_PATH = '/api/rpc'
 export const API_EVENTS_PATH = '/api/events'
+/** Query: `cwd` (absolute, must be a known workspace), `cols`, `rows`, plus `token` when required. */
+export const API_TERM_PATH = '/api/term'
 export const DEFAULT_PORT = 3090

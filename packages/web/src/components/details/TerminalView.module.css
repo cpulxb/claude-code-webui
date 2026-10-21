@@ -1,0 +1,6 @@
+/* The fit addon measures this box minus its padding, so the inset here is
+   the gap between the panel edge and the first column. */
+.host {
+  height: 100%;
+  padding: var(--ccw-space-2) var(--ccw-space-1) var(--ccw-space-1) var(--ccw-space-3);
+}

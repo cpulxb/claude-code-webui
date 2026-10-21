@@ -202,3 +202,12 @@ export function CopyIcon(props: { size?: number }): JSX.Element {
     </Icon>
   )
 }
+
+export function TerminalIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="m4 17 6-6-6-6" />
+      <path d="M12 19h8" />
+    </Icon>
+  )
+}

@@ -3,26 +3,47 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type WheelEve
 import { useShallow } from 'zustand/shallow'
 
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
-import { CompassIcon, InfoIcon, MaximizeIcon, MinimizeIcon, PanelRightIcon, PlusIcon, XIcon } from '../Icons.tsx'
+import {
+  CompassIcon,
+  InfoIcon,
+  MaximizeIcon,
+  MinimizeIcon,
+  PanelRightIcon,
+  PlusIcon,
+  TerminalIcon,
+  XIcon,
+} from '../Icons.tsx'
 import styles from './DetailsPanel.module.css'
 import { ExplorerTree } from './ExplorerTree.tsx'
 import { FileTypeIcon, WorkspaceFolderIcon } from './FileTypeIcon.tsx'
 import { FileView } from './FileView.tsx'
 import { ScmSection } from './ScmPanel.tsx'
 import { StartPage } from './StartPage.tsx'
+import { TerminalView } from './TerminalView.tsx'
 
-/** One panel tab. Editor tabs are keyed by absolute path; the rest are singletons. */
-type Tab = { kind: 'start' } | { kind: 'files' } | { kind: 'info' } | { kind: 'file'; path: string; name: string }
+/**
+ * One panel tab. Editor tabs are keyed by absolute path and terminals by a
+ * generated id; the rest are singletons.
+ */
+type Tab =
+  | { kind: 'start' }
+  | { kind: 'files' }
+  | { kind: 'info' }
+  | { kind: 'file'; path: string; name: string }
+  /** `cwd` is where the shell started; `title` is the shell's name once it is up. */
+  | { kind: 'terminal'; id: string; cwd: string; title: string }
 
 type TabSet = { tabs: Tab[]; active: string }
 
 /** A workspace seen for the first time, or whose last tab was just closed. */
 const INITIAL: TabSet = { tabs: [{ kind: 'start' }], active: 'start' }
 
-/** Paths are absolute, so they can never collide with the singleton ids. */
+/** Paths are absolute and terminal ids prefixed, so neither collides with a singleton id. */
 function tabId(tab: Tab): string {
-  return tab.kind === 'file' ? tab.path : tab.kind
+  return tab.kind === 'file' ? tab.path : tab.kind === 'terminal' ? tab.id : tab.kind
 }
+
+let terminalCount = 0
 
 /**
  * Focuses `tab`, adding it if needed. The start page behaves like a browser's
@@ -94,19 +115,43 @@ export function DetailsPanel({
     [cwd],
   )
 
-  // Ctrl+P opens the tree from anywhere on the page. It does take the
-  // browser's print dialog away, which this UI has no use for.
+  const openTerminal = useCallback((): void => {
+    if (cwd === undefined) return
+    // Minted outside the updater, which StrictMode runs twice.
+    const id = `terminal-${++terminalCount}`
+    update((set) => openTab(set, { kind: 'terminal', id, cwd: initCwd ?? cwd, title: '终端' }))
+  }, [cwd, initCwd, update])
+
+  /** Names a terminal after its shell, in whichever workspace's set it lives. */
+  const retitle = (scope: string, id: string, title: string): void => {
+    setTabsByCwd((prev) => {
+      const set = prev[scope]
+      if (!set) return prev
+      const tabs = set.tabs.map((tab) => (tab.kind === 'terminal' && tab.id === id ? { ...tab, title } : tab))
+      return { ...prev, [scope]: { ...set, tabs } }
+    })
+  }
+
+  // Ctrl+P opens the tree and Ctrl+` a terminal, from anywhere on the page.
+  // Ctrl+P does take the browser's print dialog away, which this UI has no use
+  // for; inside a terminal both keys reach the shell's own handling first
+  // (see TerminalView), so readline's Ctrl+P still works there.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return
-      if (event.key.toLowerCase() !== 'p') return
-      event.preventDefault()
-      onReveal()
-      update((set) => openTab(set, { kind: 'files' }))
+      if (event.key.toLowerCase() === 'p') {
+        event.preventDefault()
+        onReveal()
+        update((set) => openTab(set, { kind: 'files' }))
+      } else if (event.code === 'Backquote' && event.ctrlKey) {
+        event.preventDefault()
+        onReveal()
+        openTerminal()
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onReveal, update])
+  }, [onReveal, update, openTerminal])
 
   useEffect(() => {
     stripRef.current?.querySelector('[data-active]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -192,6 +237,7 @@ export function DetailsPanel({
                   <div key={id} className={styles.fill} hidden={hidden}>
                     <StartPage
                       onOpenFiles={() => update((set) => openTab(set, { kind: 'files' }))}
+                      onNewTerminal={openTerminal}
                       onOpenInfo={() => update((set) => openTab(set, { kind: 'info' }))}
                     />
                   </div>
@@ -227,8 +273,26 @@ export function DetailsPanel({
                     />
                   </div>
                 )
+              case 'terminal':
+                // Rendered below, outside this list.
+                return null
             }
           })
+        )}
+
+        {/* Terminals of every workspace, in one list that never unmounts:
+            unmounting kills the shell, so they stay running (hidden) while
+            another workspace — or no session at all — is in front. */}
+        {Object.entries(tabsByCwd).flatMap(([scope, set]) =>
+          set.tabs.map((tab) => {
+            if (tab.kind !== 'terminal') return null
+            const shown = scope === cwd && sessionId !== null && set.active === tab.id
+            return (
+              <div key={tab.id} className={styles.fill} hidden={!shown}>
+                <TerminalView cwd={tab.cwd} active={shown} onReady={(shell) => retitle(scope, tab.id, shell)} />
+              </div>
+            )
+          }),
         )}
       </div>
     </div>
@@ -245,6 +309,8 @@ function tabLabel(tab: Tab): string {
       return '详情'
     case 'file':
       return tab.name
+    case 'terminal':
+      return tab.title
   }
 }
 
@@ -258,6 +324,8 @@ function tabIcon(tab: Tab): ReactNode {
       return <InfoIcon size={14} />
     case 'file':
       return <FileTypeIcon name={tab.name} size={14} />
+    case 'terminal':
+      return <TerminalIcon size={14} />
   }
 }
 

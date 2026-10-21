@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import { CompassIcon, InfoIcon } from '../Icons.tsx'
+import { CompassIcon, InfoIcon, TerminalIcon } from '../Icons.tsx'
 import { WorkspaceFolderIcon } from './FileTypeIcon.tsx'
 import styles from './StartPage.module.css'
 
@@ -9,7 +9,15 @@ import styles from './StartPage.module.css'
  * hold. The panel swaps this tab for whatever gets picked, the way a browser's
  * new-tab page navigates in place.
  */
-export function StartPage({ onOpenFiles, onOpenInfo }: { onOpenFiles: () => void; onOpenInfo: () => void }): JSX.Element {
+export function StartPage({
+  onOpenFiles,
+  onNewTerminal,
+  onOpenInfo,
+}: {
+  onOpenFiles: () => void
+  onNewTerminal: () => void
+  onOpenInfo: () => void
+}): JSX.Element {
   return (
     <div className={styles.root}>
       {/* Auto margins rather than justify-content: a short panel then scrolls
@@ -28,7 +36,18 @@ export function StartPage({ onOpenFiles, onOpenInfo }: { onOpenFiles: () => void
           />
           <Card
             icon={
-              <span className={styles.infoIcon}>
+              <span className={styles.blueIcon}>
+                <TerminalIcon size={20} />
+              </span>
+            }
+            title="新建终端"
+            subtitle="在会话工作区运行命令"
+            shortcut="Ctrl + `"
+            onClick={onNewTerminal}
+          />
+          <Card
+            icon={
+              <span className={styles.blueIcon}>
                 <InfoIcon size={20} />
               </span>
             }

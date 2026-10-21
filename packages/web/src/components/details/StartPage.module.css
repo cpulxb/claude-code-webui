@@ -54,7 +54,7 @@
 }
 
 /* dsh paints its terminal and browser glyphs this blue. */
-.infoIcon {
+.blueIcon {
   display: flex;
   color: #4a7cf7;
 }

@@ -1,10 +1,20 @@
 import { timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import type { Duplex } from 'node:stream'
 
-import { API_EVENTS_PATH, API_RPC_PATH, type RpcMethod, type RpcResponse, type ServerEvent } from '@ccw/shared'
+import {
+  API_EVENTS_PATH,
+  API_RPC_PATH,
+  API_TERM_PATH,
+  type RpcMethod,
+  type RpcResponse,
+  type ServerEvent,
+} from '@ccw/shared'
 import { WebSocketServer, type WebSocket } from 'ws'
 
+import { resolveInWorkspace } from '../files/roots.ts'
 import type { SessionManager } from '../session/manager.ts'
+import { attachTerminal, resolveShell, terminalSize } from '../terminal/pty.ts'
 import { createRpcHandlers } from './routes.ts'
 
 const MAX_BODY_BYTES = 32 * 1024 * 1024 // headroom for base64 attachments
@@ -36,31 +46,67 @@ export function startServer(options: { host: string; port: number; manager: Sess
   })
 
   const wss = new WebSocketServer({ noServer: true })
+  // Event sockets get every broadcast; terminal sockets each carry one PTY and
+  // must never see an event. Both are pinged.
   const sockets = new Set<WebSocket>()
+  const terminals = new Set<WebSocket>()
   const alive = new Set<WebSocket>()
 
-  http.on('upgrade', (req, socket, head) => {
-    if (pathOf(req.url) !== API_EVENTS_PATH || denyReason(req, token)) {
+  const track = (ws: WebSocket, set: Set<WebSocket>): void => {
+    set.add(ws)
+    alive.add(ws)
+    ws.on('pong', () => alive.add(ws))
+    ws.on('close', () => {
+      set.delete(ws)
+      alive.delete(ws)
+    })
+    ws.on('error', () => ws.close())
+  }
+
+  const upgradeTerminal = async (req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> => {
+    const query = parseTarget(req.url)?.searchParams
+    const shell = await resolveShell()
+    // Same containment as the file RPCs: a shell only opens inside a known
+    // workspace, and the error stays vague for the same reason. A missing cwd
+    // must not fall through to `resolve('')`, which is this process's own.
+    const requested = query?.get('cwd')
+    const cwd = requested ? await resolveInWorkspace(requested).catch(() => null) : null
+    if (cwd === null) {
       socket.destroy()
       return
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
-      sockets.add(ws)
-      alive.add(ws)
-      ws.on('pong', () => alive.add(ws))
-      ws.on('close', () => {
-        sockets.delete(ws)
-        alive.delete(ws)
-      })
-      // Downlink only: anything the browser writes here is ignored by design.
-      ws.on('error', () => ws.close())
+      track(ws, terminals)
+      attachTerminal(ws, { shell, cwd, cols: terminalSize(query?.get('cols')), rows: terminalSize(query?.get('rows')) })
     })
+  }
+
+  http.on('upgrade', (req, socket, head) => {
+    const path = pathOf(req.url)
+    if ((path !== API_EVENTS_PATH && path !== API_TERM_PATH) || denyReason(req, token)) {
+      socket.destroy()
+      return
+    }
+    if (path === API_TERM_PATH) {
+      if (!sameOrigin(req)) {
+        socket.destroy()
+        return
+      }
+      void upgradeTerminal(req, socket, head).catch((error) => {
+        console.error('[ccw] terminal upgrade failed', error)
+        socket.destroy()
+      })
+      return
+    }
+    // Downlink only: anything the browser writes here is ignored by design.
+    wss.handleUpgrade(req, socket, head, (ws) => track(ws, sockets))
   })
 
   // A socket whose peer vanished stays OPEN for minutes; ping/pong evicts it so
-  // events are not written into a dead pipe.
+  // events are not written into a dead pipe, and a terminal's shell does not
+  // outlive the tab that was driving it.
   const heartbeat = setInterval(() => {
-    for (const ws of sockets) {
+    for (const ws of [...sockets, ...terminals]) {
       if (!alive.delete(ws)) {
         ws.terminate()
         continue
@@ -85,6 +131,8 @@ export function startServer(options: { host: string; port: number; manager: Sess
           unsubscribe()
           clearInterval(heartbeat)
           for (const ws of sockets) ws.terminate()
+          // Each terminal socket's close handler kills its shell.
+          for (const ws of terminals) ws.terminate()
           manager.closeAll()
           // close() alone waits forever on a half-dead or headerless
           // connection, since Node tears down its idle sweeper on preclose.
@@ -122,6 +170,24 @@ function denyReason(req: IncomingMessage, token: string | undefined): string | n
   }
   if (token && !hasToken(req, token)) return 'unauthorized'
   return null
+}
+
+/**
+ * A WebSocket handshake is exempt from CORS, so on the token-less loopback
+ * default any page the user visits could otherwise open a shell here — and
+ * denyReason's Sec-Fetch-Site check is best-effort only. Browsers always send
+ * Origin on a handshake and page scripts cannot set it, so requiring it to
+ * name the very host the request was sent to keeps terminals to the UI's own
+ * origin. A reverse proxy in front must therefore pass Host through unchanged.
+ */
+function sameOrigin(req: IncomingMessage): boolean {
+  const origin = req.headers.origin
+  if (!origin || !req.headers.host) return false
+  try {
+    return new URL(origin).host === req.headers.host
+  } catch {
+    return false
+  }
 }
 
 function hasToken(req: IncomingMessage, token: string): boolean {
