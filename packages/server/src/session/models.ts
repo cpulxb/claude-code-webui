@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto'
 
 import { resolveSettings, type ModelInfo, type Query, type Settings } from '@anthropic-ai/claude-agent-sdk'
 
-type ModelQuery = Pick<Query, 'applyFlagSettings' | 'getContextUsage' | 'reinitialize' | 'setModel' | 'supportedModels'>
+type ModelQuery = Pick<Query, 'applyFlagSettings' | 'getContextUsage' | 'reinitialize' | 'setModel' | 'supportedModels'> & {
+  /** Present at runtime on 2.1.29x CLIs, not in every SDK's typings. */
+  getSettings?: () => Promise<unknown>
+}
 type ReadSettings = () => Promise<Settings>
 type ModelSnapshot = { models: ModelInfo[]; model: string }
 type Options = {
@@ -99,7 +102,7 @@ export class SessionModels {
   async #refresh(): Promise<ModelSnapshot> {
     this.#models ??= await this.#query.supportedModels()
     if (this.#selected === undefined) {
-      const current = (await this.#query.getContextUsage()).model
+      const current = await this.#currentModel()
       // Recover a role from the original CLI menu, before replacing channel A's
       // mappings with B's. An explicitly selected full model id is kept as-is.
       // Ambiguous mappings are also kept explicit instead of guessing a role.
@@ -141,6 +144,25 @@ export class SessionModels {
       this.#onChange(snapshot())
     }
     return snapshot()
+  }
+
+  /**
+   * The model the next request will use. get_settings answers from memory in
+   * ~10 ms; get_context_usage tokenizes the whole transcript (0.4-2.4 s on an
+   * empty session, more on a long resumed one), so it is only the fallback for
+   * CLIs without get_settings.
+   */
+  async #currentModel(): Promise<string> {
+    const getSettings = (this.#query as { getSettings?: () => Promise<unknown> }).getSettings
+    if (typeof getSettings === 'function') {
+      try {
+        const settings = (await getSettings.call(this.#query)) as { applied?: { model?: unknown } }
+        if (typeof settings.applied?.model === 'string' && settings.applied.model) return settings.applied.model
+      } catch {
+        // Older CLI: fall through.
+      }
+    }
+    return (await this.#query.getContextUsage()).model
   }
 
   #run<T>(operation: () => Promise<T>): Promise<T> {

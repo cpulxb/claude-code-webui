@@ -344,10 +344,11 @@ export const useStore = create<Store>()(
       } finally {
         starting.delete(sessionId)
       }
-      void loadSessionMeta(set, get, sessionId)
       // The boot cost (system prompt, tools, memory files) is context already
-      // spent — read it now so the ring shows during the first turn, not after.
-      void loadContextUsage(set, get, sessionId)
+      // spent — read it so the ring shows during the first turn, not after.
+      // The CLI answers control requests one at a time and context usage
+      // tokenizes the transcript, so it goes after the model menu, not beside it.
+      void loadSessionMeta(set, get, sessionId).finally(() => loadContextUsage(set, get, sessionId))
       return sessionId
     },
 

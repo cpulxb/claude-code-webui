@@ -200,3 +200,32 @@ test('role labels follow the CLI defaults when a channel gives no name or descri
   assert.equal(haiku?.displayName, 'Haiku A')
   assert.equal(other?.displayName, 'Opus 5.5')
 })
+
+test('the current model comes from get_settings, not the transcript-tokenizing context usage', async () => {
+  let usageCalls = 0
+  const query = {
+    supportedModels: async () => cliModels,
+    getSettings: async () => ({ applied: { model: 'claude-fable-5-1' } }),
+    getContextUsage: async () => { usageCalls += 1; return { model: 'wrong' } },
+    applyFlagSettings: async () => {},
+    reinitialize: async () => ({ models: cliModels }),
+    setModel: async () => {},
+  } as unknown as ConstructorParameters<typeof SessionModels>[0]
+  const catalog = new SessionModels(query, '/fixture', undefined, { readSettings: async () => ({}) })
+  const result = await catalog.list()
+  assert.equal(result.model, 'fable')
+  assert.equal(usageCalls, 0)
+})
+
+test('a CLI without get_settings still reads the model from context usage', async () => {
+  const query = {
+    supportedModels: async () => cliModels,
+    getSettings: async () => { throw new Error('unknown subtype') },
+    getContextUsage: async () => ({ model: 'claude-haiku-4-5' }),
+    applyFlagSettings: async () => {},
+    reinitialize: async () => ({ models: cliModels }),
+    setModel: async () => {},
+  } as unknown as ConstructorParameters<typeof SessionModels>[0]
+  const catalog = new SessionModels(query, '/fixture', undefined, { readSettings: async () => ({}) })
+  assert.equal((await catalog.list()).model, 'haiku')
+})
