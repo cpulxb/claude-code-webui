@@ -1,0 +1,89 @@
+.root {
+  display: flex;
+  height: 100%;
+  padding: var(--ccw-space-5) var(--ccw-space-4);
+  overflow-y: auto;
+}
+
+.inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ccw-space-6);
+  align-items: center;
+  width: 100%;
+  margin: auto 0;
+}
+
+.mark {
+  display: flex;
+  color: var(--ccw-text-faint);
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 460px;
+}
+
+.card {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 16px 20px;
+  text-align: left;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-lg);
+  transition:
+    background var(--ccw-duration-fast) var(--ccw-ease),
+    border-color var(--ccw-duration-fast) var(--ccw-ease);
+}
+
+.card:hover {
+  background: var(--ccw-bg-raised);
+  border-color: var(--ccw-border-strong);
+}
+
+.cardIcon {
+  display: flex;
+  flex: none;
+  justify-content: center;
+  width: 26px;
+}
+
+/* dsh paints its terminal and browser glyphs this blue. */
+.infoIcon {
+  display: flex;
+  color: #4a7cf7;
+}
+
+.cardText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--ccw-text-primary);
+}
+
+.cardSubtitle {
+  overflow: hidden;
+  font-size: var(--ccw-text-sm);
+  line-height: 1.4;
+  color: var(--ccw-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut {
+  flex: none;
+  font-size: var(--ccw-text-base);
+  color: var(--ccw-text-muted);
+}

@@ -4,8 +4,9 @@ import { languages } from '@codemirror/language-data'
 import { Annotation, Compartment, EditorState } from '@codemirror/state'
 import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
 import { classHighlighter } from '@lezer/highlight'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { CheckIcon, CopyIcon, XIcon } from '../Icons.tsx'
 import styles from './CodeEditor.module.css'
 
 /**
@@ -16,6 +17,9 @@ import styles from './CodeEditor.module.css'
  * — the whole registry costs one filename match up front, and only the matched
  * grammar is ever downloaded. Highlighting uses `classHighlighter`, so colours
  * live in CSS where the `[data-theme]` switch already works.
+ *
+ * Long lines wrap, as in dsh: nothing ever scrolls sideways, so the sticky
+ * line-number gutter can never end up drawn over the code.
  */
 
 /**
@@ -46,6 +50,21 @@ export function CodeEditor({
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const compartments = useRef({ language: new Compartment(), editing: new Compartment() }).current
+  const language = useMemo(() => LanguageDescription.matchFilename(languages, basename(path)), [path])
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+
+  // Copies the buffer as typed, unsaved edits included — what is on screen.
+  const copy = (): void => {
+    const text = viewRef.current?.state.doc.toString() ?? value
+    const flash = (next: 'copied' | 'failed'): void => {
+      setCopyState(next)
+      setTimeout(() => setCopyState('idle'), 1400)
+    }
+    void navigator.clipboard.writeText(text).then(
+      () => flash('copied'),
+      () => flash('failed'),
+    )
+  }
 
   useEffect(() => {
     const view = new EditorView({
@@ -56,6 +75,7 @@ export function CodeEditor({
         doc: value,
         extensions: [
           lineNumbers(),
+          EditorView.lineWrapping,
           history(),
           bracketMatching(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
@@ -72,7 +92,6 @@ export function CodeEditor({
     })
     viewRef.current = view
 
-    const language = LanguageDescription.matchFilename(languages, basename(path))
     if (language) {
       void language.load().then((support) => {
         // The tab may have been closed while the grammar chunk was in flight.
@@ -108,7 +127,28 @@ export function CodeEditor({
     }
   }, [value, dirty])
 
-  return <div className={styles.host} ref={containerRef} />
+  return (
+    <div className={styles.frame}>
+      <div className={styles.toolbar}>
+        <span>{language?.name.toLowerCase() ?? 'text'}</span>
+        <button
+          className={copyState === 'failed' ? `${styles.copy} ${styles.copyFailed}` : styles.copy}
+          onClick={copy}
+          type="button"
+          title={copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制'}
+        >
+          {copyState === 'copied' ? (
+            <CheckIcon size={13} />
+          ) : copyState === 'failed' ? (
+            <XIcon size={13} />
+          ) : (
+            <CopyIcon size={13} />
+          )}
+        </button>
+      </div>
+      <div className={styles.host} ref={containerRef} />
+    </div>
+  )
 }
 
 /** Everything that differs between a locked preview and a live editor. */

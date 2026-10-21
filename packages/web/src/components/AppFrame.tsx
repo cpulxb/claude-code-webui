@@ -3,7 +3,9 @@ import { useCallback, useRef, useState, type ReactNode } from 'react'
 import styles from './AppFrame.module.css'
 
 const SIDEBAR_RANGE = [180, 480] as const
-const DETAILS_RANGE = [240, 640] as const
+const DETAILS_RANGE = [240, 1200] as const
+/** Dragging a column never squeezes the conversation narrower than this. */
+const MAIN_MIN = 360
 
 type Column = 'sidebar' | 'details'
 
@@ -12,7 +14,8 @@ type Column = 'sidebar' | 'details'
  *
  * Widths live on `grid-template-columns` so collapsing can animate the track
  * itself, and the handles are frame children (columns clip their overflow)
- * positioned on the column borders.
+ * positioned on the column borders. A maximized details panel takes the
+ * conversation's track as well; the sidebar keeps its own.
  */
 export function AppFrame(props: {
   sidebar: ReactNode
@@ -20,6 +23,7 @@ export function AppFrame(props: {
   details: ReactNode
   sidebarCollapsed: boolean
   detailsCollapsed: boolean
+  detailsMaximized: boolean
 }): JSX.Element {
   const [sidebarWidth, setSidebarWidth] = useState(264)
   const [detailsWidth, setDetailsWidth] = useState(340)
@@ -33,7 +37,11 @@ export function AppFrame(props: {
 
       const startX = event.clientX
       const startWidth = column === 'sidebar' ? sidebarWidth : detailsWidth
-      const [min, max] = column === 'sidebar' ? SIDEBAR_RANGE : DETAILS_RANGE
+      const [min, range] = column === 'sidebar' ? SIDEBAR_RANGE : DETAILS_RANGE
+      const otherCollapsed = column === 'sidebar' ? props.detailsCollapsed : props.sidebarCollapsed
+      const otherWidth = otherCollapsed ? 0 : column === 'sidebar' ? detailsWidth : sidebarWidth
+      const room = (frameRef.current?.clientWidth ?? Infinity) - otherWidth - MAIN_MIN
+      const max = Math.max(min, Math.min(range, room))
 
       const onMove = (moveEvent: PointerEvent): void => {
         // The details column grows leftwards, so its delta is inverted.
@@ -51,17 +59,20 @@ export function AppFrame(props: {
       window.addEventListener('pointermove', onMove)
       window.addEventListener('pointerup', onUp)
     },
-    [sidebarWidth, detailsWidth],
+    [sidebarWidth, detailsWidth, props.sidebarCollapsed, props.detailsCollapsed],
   )
 
   const left = props.sidebarCollapsed ? 0 : sidebarWidth
   const right = props.detailsCollapsed ? 0 : detailsWidth
+  const maximized = props.detailsMaximized && !props.detailsCollapsed
 
   return (
     <div
       ref={frameRef}
       className={styles.frame}
-      style={{ gridTemplateColumns: `${left}px minmax(0, 1fr) ${right}px` }}
+      style={{
+        gridTemplateColumns: maximized ? `${left}px 0px minmax(0, 1fr)` : `${left}px minmax(0, 1fr) ${right}px`,
+      }}
       {...(dragging ? { 'data-dragging': '' } : {})}
       {...(props.sidebarCollapsed ? { 'data-sidebar-collapsed': '' } : {})}
       {...(props.detailsCollapsed ? { 'data-details-collapsed': '' } : {})}
@@ -79,7 +90,7 @@ export function AppFrame(props: {
         aria-label="调整会话列表宽度"
       />
       <div
-        className={props.detailsCollapsed ? styles.hidden : styles.handle}
+        className={props.detailsCollapsed || maximized ? styles.hidden : styles.handle}
         style={{ right: `${right}px`, marginRight: '-4px', marginLeft: 0 }}
         onPointerDown={startDrag('details')}
         role="separator"

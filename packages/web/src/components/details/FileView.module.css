@@ -12,30 +12,45 @@
   overflow-y: auto;
 }
 
+/* Spans the panel edge to edge; its rule is what separates the file's
+   chrome from the content, as in dsh. */
 .head {
   display: flex;
-  gap: var(--ccw-space-2);
+  flex: none;
+  gap: var(--ccw-space-1);
   align-items: center;
-  margin-bottom: var(--ccw-space-2);
+  min-height: 34px;
+  padding: 2px var(--ccw-space-2) 4px var(--ccw-space-3);
+  border-bottom: 1px solid var(--ccw-border-l1);
 }
 
-/* dsh-style path field: looks like an input, reads like a breadcrumb. */
-.pathBox {
+.path {
+  display: flex;
   flex: 1;
   min-width: 0;
-  padding: 3px 10px;
-  overflow: hidden;
-  font-family: var(--ccw-font-mono);
-  font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-secondary);
-  text-overflow: ellipsis;
+  font-size: var(--ccw-text-sm);
   white-space: nowrap;
+}
+
+/* Gives way a thousand times faster than the name, so the name only starts
+   to shrink once the directory is gone. */
+.dir {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ccw-text-muted);
+  text-overflow: ellipsis;
   /* Long paths matter at their tail, not their head. */
   direction: rtl;
   text-align: left;
-  background: var(--ccw-bg-sunken);
-  border: 1px solid var(--ccw-border-l1);
-  border-radius: var(--ccw-radius-sm);
+}
+
+.name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ccw-text-primary);
+  text-overflow: ellipsis;
 }
 
 /* dsh's unsaved marker — a warm dot, deliberately not a themed token. */
@@ -43,6 +58,7 @@
   flex: none;
   width: 8px;
   height: 8px;
+  margin: 0 4px;
   background: #e8a33d;
   border-radius: 50%;
 }
@@ -56,9 +72,9 @@
 .modeButton,
 .modeButtonActive {
   padding: 2px 8px;
-  font-size: var(--ccw-text-xs);
+  font-size: var(--ccw-text-sm);
   color: var(--ccw-text-muted);
-  border-radius: var(--ccw-radius-pill);
+  border-radius: var(--ccw-radius-sm);
 }
 
 .modeButton:hover {
@@ -68,35 +84,42 @@
 
 .modeButtonActive {
   color: var(--ccw-text-primary);
-  background: var(--ccw-bg-active);
+  background: var(--ccw-bg-hover);
 }
 
 .error {
-  margin-bottom: var(--ccw-space-2);
+  padding: var(--ccw-space-2) var(--ccw-space-3) 0;
   font-size: var(--ccw-text-sm);
   color: var(--ccw-danger);
   overflow-wrap: anywhere;
 }
 
 .placeholder {
-  padding: var(--ccw-space-4) 0;
+  padding: var(--ccw-space-4) var(--ccw-space-3);
   font-size: var(--ccw-text-sm);
   color: var(--ccw-text-faint);
+}
+
+.imageFrame {
+  display: flex;
+  justify-content: center;
+  padding: var(--ccw-space-3);
 }
 
 .image {
   display: block;
   max-width: 100%;
-  border-radius: var(--ccw-radius-sm);
+  border-radius: var(--ccw-radius-md);
 }
 
 .mdPreview {
-  padding: var(--ccw-space-2) var(--ccw-space-1);
+  padding: var(--ccw-space-3) var(--ccw-space-4);
   font-size: var(--ccw-text-sm);
 }
 
 .note {
-  margin-top: 6px;
+  flex: none;
+  padding: 4px var(--ccw-space-3) 6px;
   font-size: var(--ccw-text-xs);
   color: var(--ccw-text-muted);
 }
@@ -104,9 +127,10 @@
 /* Sits between head and content so it reads as a state of this file, not an error. */
 .stale {
   display: flex;
+  flex: none;
   gap: var(--ccw-space-2);
   align-items: center;
-  margin-bottom: var(--ccw-space-2);
+  padding: var(--ccw-space-2) var(--ccw-space-3) 0;
   font-size: var(--ccw-text-xs);
   color: var(--ccw-warning);
 }

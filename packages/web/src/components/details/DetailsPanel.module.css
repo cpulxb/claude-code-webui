@@ -7,95 +7,136 @@
 
 .head {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--ccw-space-1);
+  flex: none;
+  gap: 2px;
   align-items: center;
-  padding: var(--ccw-space-3);
-  font-size: var(--ccw-text-base);
-  font-weight: 600;
+  justify-content: flex-end;
+  padding: var(--ccw-space-2) var(--ccw-space-2) var(--ccw-space-2) var(--ccw-space-3);
+}
+
+/* One row, browser style: tabs shrink to their minimum, then the strip
+   scrolls sideways instead of wrapping onto a second line. */
+.strip {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.strip::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
-  padding: 1px 10px;
-  font-size: var(--ccw-text-base);
-  font-weight: 500;
-  color: var(--ccw-text-muted);
-  border-radius: var(--ccw-radius-pill);
+  position: relative;
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: 100px;
+  max-width: 180px;
+  height: 30px;
+  color: var(--ccw-text-secondary);
+  border-radius: 8px;
+}
+
+/* dsh's hairline between tabs. It steps aside next to a hovered or active
+   tab, whose own background already marks the edge. */
+.tab + .tab::before {
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: 0;
+  width: 1px;
+  content: '';
+  background: var(--ccw-border-l1);
+}
+
+.tab + .tab:is(:hover, .tabActive)::before,
+.tab:is(:hover, .tabActive) + .tab::before {
+  display: none;
 }
 
 .tab:hover {
+  background: var(--ccw-bg-raised);
+}
+
+/* The tab being read keeps its full name; the others give up the width. */
+.tab.tabActive {
+  flex-shrink: 0;
   color: var(--ccw-text-primary);
   background: var(--ccw-bg-hover);
 }
 
-.tabActive {
-  padding: 1px 10px;
+.tabMain {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  padding: 0 10px;
   font-size: var(--ccw-text-base);
-  font-weight: 600;
+  color: inherit;
+}
+
+.tabActive .tabMain {
+  padding-right: 4px;
+}
+
+.tabIcon {
+  display: flex;
+  flex: none;
+}
+
+.tabLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* As in dsh, only the active tab spends width on its close button. Other
+   tabs float it over the end of their label on hover, so a shrunken tab
+   keeps its text and hovering never reflows the strip. */
+.tabClose {
+  position: absolute;
+  right: 5px;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--ccw-text-secondary);
+  visibility: hidden;
+  background: var(--ccw-bg-raised);
+  border-radius: 4px;
+}
+
+.tab:hover .tabClose {
+  visibility: visible;
+}
+
+.tabActive .tabClose {
+  position: static;
+  margin-right: 5px;
+  visibility: visible;
+  background: none;
+}
+
+.tabClose:hover {
   color: var(--ccw-text-primary);
-  background: var(--ccw-bg-sunken);
-  border-radius: var(--ccw-radius-pill);
+  background: var(--ccw-border-l1);
 }
 
 .spacer {
   flex: 1;
 }
 
-/* --- editor tabs (one per file opened from the tree) -------------------- */
-
-.fileTab {
-  display: flex;
-  align-items: center;
-  max-width: 150px;
-  color: var(--ccw-text-muted);
-  border-radius: var(--ccw-radius-pill);
-}
-
-.fileTab:hover {
-  background: var(--ccw-bg-hover);
-}
-
-.fileTabActive {
-  color: var(--ccw-text-primary);
-  background: var(--ccw-bg-sunken);
-}
-
-.fileTabName {
-  display: flex;
-  gap: 3px;
-  align-items: center;
-  min-width: 0;
-  padding: 2px 2px 2px 8px;
-  font-size: var(--ccw-text-sm);
-  font-weight: 500;
-  color: inherit;
-}
-
-.fileTabLabel {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.fileTabClose {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  height: 15px;
-  margin-right: 4px;
-  color: inherit;
-  border-radius: 50%;
-}
-
-.fileTabClose:hover {
-  color: var(--ccw-text-primary);
-  background: var(--ccw-bg-hover);
-}
-
 .iconButton {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 26px;
@@ -109,16 +150,23 @@
   background: var(--ccw-bg-hover);
 }
 
+.strip .iconButton {
+  margin-left: 4px;
+}
+
+/* Each tab brings its own insets: the tree and details pad and scroll the
+   body, while the start page and editors claim its full height. */
 .body {
   flex: 1;
   min-height: 0;
-  padding: 0 var(--ccw-space-3) var(--ccw-space-4);
   overflow-y: auto;
 }
 
-/* An open editor tab claims the body's full height (its content scrolls
-   internally), unlike the info/tree tabs which grow and scroll the body. */
-.fileHost {
+.pane {
+  padding: var(--ccw-space-1) var(--ccw-space-3) var(--ccw-space-4);
+}
+
+.fill {
   height: 100%;
 }
 
@@ -211,11 +259,13 @@
   color: var(--ccw-text-primary);
 }
 
-/* The `/context` square grid, sized to fill the panel at any width. */
+/* The `/context` square grid, sized to fill the panel — up to a cap, since
+   the panel can now be dragged wide enough to blow each square up. */
 .grid {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  max-width: 420px;
   margin: var(--ccw-space-3) 0;
 }
 

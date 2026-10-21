@@ -22,6 +22,7 @@ export function App(): JSX.Element {
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [detailsCollapsed, setDetailsCollapsed] = useState(true)
+  const [detailsMaximized, setDetailsMaximized] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
 
   useEffect(() => connect(), [connect])
@@ -32,14 +33,27 @@ export function App(): JSX.Element {
   }, [theme])
 
   const collapseSidebar = useCallback(() => setSidebarCollapsed(true), [])
-  const collapseDetails = useCallback(() => setDetailsCollapsed(true), [])
+  const collapseDetails = useCallback(() => {
+    setDetailsCollapsed(true)
+    setDetailsMaximized(false)
+  }, [])
+  const revealDetails = useCallback(() => setDetailsCollapsed(false), [])
+  const toggleMaximized = useCallback(() => setDetailsMaximized((maximized) => !maximized), [])
 
   return (
     <AppFrame
       sidebarCollapsed={sidebarCollapsed}
       detailsCollapsed={detailsCollapsed}
+      detailsMaximized={detailsMaximized}
       sidebar={<Sidebar onCollapse={collapseSidebar} />}
-      details={<DetailsPanel onCollapse={collapseDetails} />}
+      details={
+        <DetailsPanel
+          onCollapse={collapseDetails}
+          onReveal={revealDetails}
+          maximized={detailsMaximized}
+          onToggleMaximize={toggleMaximized}
+        />
+      }
       main={
         <div className={styles.main}>
           <div className={styles.header}>

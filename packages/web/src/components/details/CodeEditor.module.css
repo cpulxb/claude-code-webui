@@ -1,29 +1,69 @@
-/* Light palette follows dsh's editor (red strings, grey-slabbed template
-   strings); everything else still mirrors the chat's hljs theme. */
-.host {
-  --hl-keyword: #a626a4;
-  --hl-string: #c41a16;
-  --hl-inserted: #2f7d4f;
-  --hl-number: #b76b01;
-  --hl-definition: #3f6ec6;
-  --hl-type: #c18401;
+/* Light palette follows dsh's editor: pink-red keywords, green strings,
+   blue definitions and numbers, plain grey comments. Dark mirrors the
+   chat's hljs theme. */
+.frame {
+  --hl-keyword: #d73a49;
+  --hl-string: #22863a;
+  --hl-inserted: #22863a;
+  --hl-number: #005cc5;
+  --hl-definition: #005cc5;
+  --hl-type: #6f42c1;
+  --hl-property: #005cc5;
   --hl-string2-bg: #ececec;
 
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  overflow: hidden;
-  background: var(--ccw-bg-sunken);
-  border: 1px solid var(--ccw-border-l1);
-  border-radius: var(--ccw-radius-sm);
 }
 
-:global([data-theme='dark']) .host {
+:global([data-theme='dark']) .frame {
   --hl-keyword: #c678dd;
   --hl-string: #98c379;
   --hl-inserted: #98c379;
   --hl-number: #d19a66;
   --hl-definition: #61afef;
   --hl-type: #e5c07b;
+  --hl-property: #e5c07b;
   --hl-string2-bg: #2c313a;
+}
+
+/* dsh's strip above the code: language on the left, copy on the right. */
+.toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 10px 10px 16px;
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+}
+
+.copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--ccw-text-muted);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.copy:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.copyFailed,
+.copyFailed:hover {
+  color: var(--ccw-danger);
+}
+
+/* No box of its own: the code sits straight on the panel, as in dsh. */
+.host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* --- CodeMirror chrome, mapped onto the design tokens ------------------- */
@@ -43,26 +83,41 @@
   overflow: auto;
   font-family: var(--ccw-font-mono);
   font-size: var(--ccw-text-sm);
-  line-height: 1.55;
+  line-height: 1.6;
 }
 
 .host :global(.cm-content) {
+  padding-bottom: var(--ccw-space-4);
   caret-color: var(--ccw-text-primary);
 }
 
+/* The gutter is sticky and paints over anything scrolled beneath it, so it
+   must be opaque — a transparent one let code show through the numbers. */
 .host :global(.cm-gutters) {
   color: var(--ccw-text-faint);
-  background: transparent;
-  border-right: 1px solid var(--ccw-border-l1);
+  background: var(--ccw-bg-sidebar);
+  border-right: none;
+}
+
+.host :global(.cm-lineNumbers .cm-gutterElement) {
+  padding: 0 12px 0 14px;
+}
+
+/* Only while typing: an unfocused file reads like dsh's plain preview. */
+.host :global(.cm-focused .cm-activeLine) {
+  background: var(--ccw-bg-raised);
 }
 
 .host :global(.cm-activeLine) {
-  background: var(--ccw-bg-hover);
+  background: transparent;
 }
 
 .host :global(.cm-activeLineGutter) {
+  background: var(--ccw-bg-sidebar);
+}
+
+.host :global(.cm-focused .cm-activeLineGutter) {
   color: var(--ccw-text-secondary);
-  background: var(--ccw-bg-hover);
 }
 
 .host :global(.cm-matchingBracket) {
@@ -73,11 +128,11 @@
 
 .host :global(.tok-comment),
 .host :global(.tok-meta) {
-  font-style: italic;
-  color: var(--ccw-text-faint);
+  color: var(--ccw-text-muted);
 }
 
-.host :global(.tok-keyword) {
+.host :global(.tok-keyword),
+.host :global(.tok-operator) {
   color: var(--hl-keyword);
 }
 
@@ -89,7 +144,7 @@
   color: var(--hl-inserted);
 }
 
-/* Template strings and escapes — dsh marks them with a grey slab. */
+/* Template strings and escapes keep a grey slab. */
 .host :global(.tok-string2) {
   color: var(--ccw-text-primary);
   background: var(--hl-string2-bg);
@@ -107,9 +162,12 @@
 }
 
 .host :global(.tok-typeName),
-.host :global(.tok-className),
-.host :global(.tok-propertyName) {
+.host :global(.tok-className) {
   color: var(--hl-type);
+}
+
+.host :global(.tok-propertyName) {
+  color: var(--hl-property);
 }
 
 .host :global(.tok-deleted),

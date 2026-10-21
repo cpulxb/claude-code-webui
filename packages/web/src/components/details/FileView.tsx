@@ -182,10 +182,13 @@ export function FileView({
   return (
     <div className={styles.root}>
       <div className={styles.head}>
-        <span className={styles.pathBox} title={path}>
+        {/* dsh-style breadcrumb: the directory greys out and gives way first,
+            so a long path loses its head and the file name stays readable. */}
+        <span className={styles.path} title={path}>
           {/* The rtl ellipsis trick flips edge punctuation ("/root/…" shows a
               trailing slash); LRM marks pin both ends back to LTR. */}
-          {`\u200E${path}\u200E`}
+          <span className={styles.dir}>{`\u200E${dirname(path)}\u200E`}</span>
+          <span className={styles.name}>{basename(path)}</span>
         </span>
         {markdown && data?.kind === 'text' && (
           <div className={styles.modeSwitch}>
@@ -205,19 +208,23 @@ export function FileView({
             </button>
           </div>
         )}
-        {draft !== null && <span className={styles.dirtyDot} title="有未保存的修改" />}
-        <button
-          className={panelStyles.iconButton}
-          onClick={() => void save()}
-          // `!data` is the window where a buffer restored from `drafts` has not
-          // been compared with disk yet — writing then is the silent overwrite
-          // the baseline check exists to prevent.
-          disabled={draft === null || saving || stale || !data}
-          type="button"
-          title="保存 (Ctrl+S)"
-        >
-          <CheckIcon size={14} />
-        </button>
+        {draft !== null && (
+          <>
+            <span className={styles.dirtyDot} title="有未保存的修改" />
+            <button
+              className={panelStyles.iconButton}
+              onClick={() => void save()}
+              // `!data` is the window where a buffer restored from `drafts` has
+              // not been compared with disk yet — writing then is the silent
+              // overwrite the baseline check exists to prevent.
+              disabled={saving || stale || !data}
+              type="button"
+              title="保存 (Ctrl+S)"
+            >
+              <CheckIcon size={14} />
+            </button>
+          </>
+        )}
         <button
           className={panelStyles.iconButton}
           onClick={() => void load()}
@@ -264,7 +271,9 @@ export function FileView({
         ) : data.kind === 'binary' ? (
           <div className={styles.placeholder}>二进制文件，无法预览</div>
         ) : data.kind === 'image' ? (
-          <img className={styles.image} src={`data:${data.mediaType};base64,${data.data}`} alt={path} />
+          <div className={styles.imageFrame}>
+            <img className={styles.image} src={`data:${data.mediaType};base64,${data.data}`} alt={path} />
+          </div>
         ) : markdown && mdMode === 'preview' ? (
           // The preview renders the unsaved buffer too, so edits show up
           // without a save round-trip.
@@ -302,6 +311,15 @@ export function FileView({
       )}
     </div>
   )
+}
+
+/** Keeps the trailing slash, so the breadcrumb reads straight into the name. */
+function dirname(path: string): string {
+  return path.slice(0, path.lastIndexOf('/') + 1)
+}
+
+function basename(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1)
 }
 
 function formatSize(size: number): string {

@@ -2,14 +2,15 @@ import type { SessionStatus, TreeEntry } from '@ccw/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { call } from '../../api/client.ts'
-import { FolderIcon, FolderOpenIcon, HashIcon, RefreshIcon } from '../Icons.tsx'
+import { FolderIcon, FolderOpenIcon, RefreshIcon } from '../Icons.tsx'
 import panelStyles from './DetailsPanel.module.css'
 import styles from './ExplorerTree.module.css'
+import { FileTypeIcon } from './FileTypeIcon.tsx'
 
 /**
  * 文件 tab of the details panel: a lazy tree over `files.list` — one readdir
  * per expanded node, never a recursive walk. Clicking a file hands it to the
- * panel, which opens it as an editor tab beside 详情/文件.
+ * panel, which opens it as an editor tab beside the tree's own.
  */
 export function ExplorerTree({
   cwd,
@@ -130,7 +131,7 @@ function Rows({
               title={entry.path}
             >
               <span className={styles.icon}>
-                <HashIcon size={12} />
+                <FileTypeIcon name={entry.name} size={13} />
               </span>
               <span className={styles.name}>{entry.name}</span>
             </button>
