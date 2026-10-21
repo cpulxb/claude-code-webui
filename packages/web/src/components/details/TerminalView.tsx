@@ -2,6 +2,8 @@ import '@xterm/xterm/css/xterm.css'
 
 import type { TerminalClientMessage, TerminalServerMessage } from '@ccw/shared'
 import { FitAddon } from '@xterm/addon-fit'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
+import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal, type ITheme } from '@xterm/xterm'
 import { useEffect, useRef } from 'react'
 
@@ -10,6 +12,9 @@ import styles from './TerminalView.module.css'
 
 /** Rendered characters are acknowledged in batches of this size (the server's flow control). */
 const ACK_CHUNK = 5_000
+
+/** The @font-face in TerminalView.module.css. */
+const ICON_FONT = 'Symbols Nerd Font Mono'
 
 /**
  * xterm's stock ANSI colours are tuned for a dark background, where yellow and
@@ -78,16 +83,35 @@ export function TerminalView({
   useEffect(() => {
     const host = hostRef.current!
     const term = new Terminal({
-      fontFamily: cssVar('--ccw-font-mono'),
+      // First, yet only ever used for icons: its unicode-range admits nothing else.
+      fontFamily: `'${ICON_FONT}', ${cssVar('--ccw-font-mono')}`,
       fontSize: 13,
       lineHeight: 1.2,
       cursorBlink: true,
       scrollback: 5000,
       theme: currentTheme(),
+      // term.unicode, which the Unicode 11 addon drives, is still a proposed API.
+      allowProposedApi: true,
     })
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
+    // xterm's default Unicode 6 tables count most emoji as one cell, while the
+    // TUIs drawing them (Claude Code's status line among them) count two, so
+    // each emoji ate the space after it.
+    term.loadAddon(new Unicode11Addon())
+    term.unicode.activeVersion = '11'
     term.open(host)
+    // Only the WebGL renderer draws block and box-drawing characters itself
+    // (customGlyphs); the DOM one leaves the font's line-height gaps between
+    // rows, which slices pixel art such as Claude Code's mascot. Browsers cap
+    // WebGL contexts per page, so on a lost one the DOM renderer takes over.
+    try {
+      const webgl = new WebglAddon()
+      webgl.onContextLoss(() => webgl.dispose())
+      term.loadAddon(webgl)
+    } catch {
+      // No WebGL2: the DOM renderer stays.
+    }
     termRef.current = term
 
     // A hidden tab (or a collapsed panel) measures 0×0, and fitting to that
@@ -105,6 +129,13 @@ export function TerminalView({
     let disposed = false
     let exited = false
     let rendered = 0
+
+    // The WebGL renderer rasterises each glyph once into an atlas, so an icon
+    // drawn before the font arrived would stay a box; redraw once it is in.
+    // The sample is a folder icon: a face loads only for text in its range.
+    void document.fonts.load(`1em '${ICON_FONT}'`, '\uf07b').then(() => {
+      if (!disposed) term.clearTextureAtlas()
+    })
 
     socket.addEventListener('message', (event) => {
       const message = JSON.parse(String(event.data)) as TerminalServerMessage
@@ -167,5 +198,9 @@ export function TerminalView({
     if (active) termRef.current?.focus()
   }, [active])
 
-  return <div className={styles.host} ref={hostRef} />
+  return (
+    <div className={styles.frame}>
+      <div className={styles.host} ref={hostRef} />
+    </div>
+  )
 }
