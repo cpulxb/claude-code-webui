@@ -91,62 +91,119 @@
   overflow-y: auto;
 }
 
-.groupHead {
+/* --- project switcher -------------------------------------------------- */
+
+.switcher {
+  position: relative;
+  margin: 0 var(--ccw-space-2) var(--ccw-space-2);
+}
+
+.switcherButton {
   display: flex;
+  gap: var(--ccw-space-2);
   align-items: center;
   width: 100%;
-  padding-right: var(--ccw-space-2);
-}
-
-.groupToggle {
-  display: flex;
-  flex: 1;
-  gap: var(--ccw-space-1);
-  align-items: center;
-  min-width: 0;
-  padding: var(--ccw-space-2) 0 var(--ccw-space-1) var(--ccw-space-3);
-  font-size: var(--ccw-text-sm);
-  color: var(--ccw-text-secondary);
-  text-align: left;
-}
-
-.groupToggle:hover {
-  color: var(--ccw-text-primary);
-}
-
-/* Skips the directory picker — the group already names the cwd. */
-.groupAdd {
-  flex: none;
-  padding: 0 var(--ccw-space-1);
-  color: var(--ccw-text-faint);
-  opacity: 0;
-}
-
-.groupHead:hover .groupAdd {
-  opacity: 1;
-}
-
-.groupAdd:hover {
-  color: var(--ccw-text-primary);
-}
-
-.groupName {
-  overflow: hidden;
+  padding: 6px var(--ccw-space-3);
+  font-size: var(--ccw-text-base);
   font-weight: 500;
+  color: var(--ccw-text-primary);
+  text-align: left;
+  border-radius: var(--ccw-radius-md);
+}
+
+.switcherButton:hover,
+.switcherButton[aria-expanded='true'] {
+  background: var(--ccw-bg-hover);
+}
+
+.switcherButton > svg {
+  flex: none;
+  color: var(--ccw-text-muted);
+}
+
+.switcherName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.caret {
+.switcherCaret {
   flex: none;
-  width: 12px;
-  font-size: 9px;
+  font-size: var(--ccw-text-xs);
   color: var(--ccw-text-faint);
-  transition: transform var(--ccw-duration-fast) var(--ccw-ease);
 }
 
-.caretOpen {
-  transform: rotate(90deg);
+.switcherPopover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  max-height: min(480px, 70vh);
+  overflow: hidden;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-md);
+  box-shadow: var(--ccw-shadow-popover);
+}
+
+.switcherFilter {
+  padding: var(--ccw-space-2) var(--ccw-space-3);
+  font: inherit;
+  font-size: var(--ccw-text-sm);
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--ccw-border-l1);
+  outline: none;
+}
+
+.switcherFilter::placeholder {
+  color: var(--ccw-text-faint);
+}
+
+.switcherList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.switcherRow {
+  display: block;
+  width: 100%;
+  padding: 5px var(--ccw-space-3);
+  font-size: var(--ccw-text-base);
+  color: var(--ccw-text-secondary);
+  text-align: left;
+}
+
+.switcherCurrent {
+  font-weight: 600;
+  color: var(--ccw-text-primary);
+}
+
+.switcherBrowse {
+  padding: var(--ccw-space-2) var(--ccw-space-3);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
+  text-align: left;
+  border-top: 1px solid var(--ccw-border-l1);
+}
+
+.switcherBrowse:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+/* 今天 / 昨天 / … headings over the session list. */
+.bucket {
+  padding: var(--ccw-space-3) var(--ccw-space-3) var(--ccw-space-1);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
 }
 
 .item {
@@ -155,7 +212,7 @@
   gap: var(--ccw-space-2);
   align-items: baseline;
   width: 100%;
-  padding: 5px var(--ccw-space-3) 5px var(--ccw-space-5);
+  padding: 5px var(--ccw-space-3);
   font-size: var(--ccw-text-base);
   color: var(--ccw-text-secondary);
   text-align: left;

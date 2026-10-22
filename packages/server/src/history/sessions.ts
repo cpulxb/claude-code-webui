@@ -17,16 +17,100 @@ import { mergeProjectSessions } from '@ccw/shared'
  * Reads the same on-disk transcripts the terminal's `/resume` picker reads
  * (`~/.claude/projects/<encoded-cwd>/<uuid>.jsonl`), grouped by project.
  *
- * `includeProgrammatic` stays true even though IDE pickers pass false: every
- * session this WebUI starts goes through the SDK and is therefore programmatic,
- * so filtering them out would hide the app's own conversations from its own
- * sidebar.
+ * The list matches `/resume` plus this app's own sessions. `/resume` drops
+ * every programmatic session, and that includes everything the WebUI starts
+ * (`sdk-ts`), so `includeProgrammatic` stays true and only the headless runs
+ * — `claude -p` and the like — are filtered out here.
  */
 export async function listProjects(liveSessions: SessionSummary[] = []): Promise<ProjectGroup[]> {
-  const sessions = await listSessions({ includeProgrammatic: true })
+  const [sessions, headless] = await Promise.all([listSessions({ includeProgrammatic: true }), headlessSessionIds()])
+  const kept = sessions.filter((session) => !headless.has(session.sessionId))
   // The SDK omits a new session until its transcript contains a user prompt.
   // Merge runner metadata so an empty or still-streaming session is visible.
-  return mergeProjectSessions([], [...sessions.map(toSummary), ...liveSessions])
+  return mergeProjectSessions([], [...kept.map(toSummary), ...liveSessions])
+}
+
+/**
+ * Programmatic entrypoints the sidebar hides. The SDK's own list also has
+ * `sdk-ts`, which is left out on purpose: it is how this app's sessions are
+ * recorded.
+ */
+const HEADLESS_ENTRYPOINTS = new Set(['sdk-cli', 'sdk-py'])
+
+/** The entrypoint sits in the first record, about 2 KB in; 8 KB leaves room. */
+const HEAD_BYTES = 8 * 1024
+
+/** Transcripts read at once — the first scan touches every one of them. */
+const HEAD_BATCH = 64
+
+/**
+ * Verdict per session id. A session's entrypoint is fixed when it starts, so
+ * only transcripts that appeared since the last scan cost a read.
+ */
+const headlessVerdicts = new Map<string, boolean>()
+
+/**
+ * Sessions started by `claude -p`, the Python SDK or a daemon. The SDK's
+ * summaries do not carry the entrypoint, so each transcript's head is read.
+ */
+async function headlessSessionIds(): Promise<Set<string>> {
+  const root = join(claudeConfigDir(), 'projects')
+  let dirs
+  try {
+    dirs = await readdir(root, { withFileTypes: true })
+  } catch {
+    return new Set()
+  }
+
+  const unread: { sessionId: string; path: string }[] = []
+  for (const dir of dirs) {
+    if (!dir.isDirectory()) continue
+    let names: string[]
+    try {
+      names = await readdir(join(root, dir.name))
+    } catch {
+      continue
+    }
+    for (const name of names) {
+      if (!name.endsWith('.jsonl')) continue
+      const sessionId = name.slice(0, -'.jsonl'.length)
+      if (!headlessVerdicts.has(sessionId)) unread.push({ sessionId, path: join(root, dir.name, name) })
+    }
+  }
+
+  for (let i = 0; i < unread.length; i += HEAD_BATCH) {
+    await Promise.all(
+      unread.slice(i, i + HEAD_BATCH).map(async ({ sessionId, path }) => {
+        const verdict = await readHeadless(path)
+        if (verdict !== null) headlessVerdicts.set(sessionId, verdict)
+      }),
+    )
+  }
+  return new Set([...headlessVerdicts].filter(([, headless]) => headless).map(([sessionId]) => sessionId))
+}
+
+/**
+ * Same test as the SDK's programmatic filter, minus `sdk-ts`. Null while the
+ * head names no entrypoint yet — a transcript still being started — so it is
+ * read again next time instead of being cached as visible.
+ */
+async function readHeadless(path: string): Promise<boolean | null> {
+  let head: string
+  try {
+    const handle = await open(path, 'r')
+    try {
+      const buffer = Buffer.alloc(HEAD_BYTES)
+      const { bytesRead } = await handle.read(buffer, 0, HEAD_BYTES, 0)
+      head = buffer.toString('utf8', 0, bytesRead)
+    } finally {
+      await handle.close()
+    }
+  } catch {
+    return null
+  }
+  if (head.includes('"sessionKind":"daemon')) return true
+  const entrypoint = /"entrypoint":"([^"]*)"/.exec(head)?.[1]
+  return entrypoint === undefined ? null : HEADLESS_ENTRYPOINTS.has(entrypoint)
 }
 
 /**
