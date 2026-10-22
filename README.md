@@ -74,3 +74,7 @@ pnpm --filter @ccw/server smoke   # 冒烟测试：起一个真实会话跑一�
 ## 安全提示
 
 WebUI 能打开终端，也能以跳过权限模式运行 Claude，所以能访问它就等于拿到了这台机器的 shell。暴露到网络之前，请先读完 [docs/remote-deployment.md](docs/remote-deployment.md)。建议用专门的普通用户运行服务，不要用 root。
+
+## 许可证
+
+[MIT](LICENSE)
