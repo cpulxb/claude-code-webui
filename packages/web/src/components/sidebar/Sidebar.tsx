@@ -1,4 +1,4 @@
-import { fuzzyFilter, type ProjectGroup, type SessionSummary } from '@ccw/shared'
+import { fuzzyFilter, type ProjectGroup, type SessionSummary, type UpdateProgress } from '@ccw/shared'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useStore } from '../../store/session.ts'
@@ -6,6 +6,7 @@ import { DevicesDialog } from '../auth/DevicesDialog.tsx'
 import { FolderIcon, PanelLeftIcon } from '../Icons.tsx'
 import { DirectoryPicker } from './DirectoryPicker.tsx'
 import styles from './Sidebar.module.css'
+import { UpdateDialog } from './UpdateDialog.tsx'
 
 /** The project the list shows survives a reload, even with no session open. */
 const SELECTED_KEY = 'ccw.selectedProject'
@@ -31,6 +32,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
   const sessionError = useStore((state) => (state.activeId ? state.sessions[state.activeId]?.error : null))
 
   const connection = useStore((state) => state.connection)
+  const update = useStore((state) => state.update)
   const defaultCwd = useStore((state) => state.defaultCwd)
   const createSession = useStore((state) => state.createSession)
   const openSession = useStore((state) => state.openSession)
@@ -40,6 +42,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
   const [selectedCwd, setSelectedCwd] = useState<string | null>(() => localStorage.getItem(SELECTED_KEY))
   const [picking, setPicking] = useState(false)
   const [showDevices, setShowDevices] = useState(false)
+  const [showUpdate, setShowUpdate] = useState(false)
   const [query, setQuery] = useState('')
   const [hitIndex, setHitIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -192,6 +195,14 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
         )}
       </div>
 
+      {update?.latest && (
+        <button className={styles.update} onClick={() => setShowUpdate(true)} type="button">
+          <span className={styles.updateMark}>↑</span>
+          <span className={styles.updateText}>新版本 v{update.latest}</span>
+          <span className={styles.updateAction}>{updateAction(update.progress)}</span>
+        </button>
+      )}
+
       <div className={styles.foot}>
         <span
           className={`${styles.statusDot} ${connection === 'open' ? styles.statusOpen : ''} ${
@@ -206,8 +217,24 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
       </div>
 
       {showDevices && <DevicesDialog onClose={() => setShowDevices(false)} />}
+      {showUpdate && <UpdateDialog onClose={() => setShowUpdate(false)} />}
     </div>
   )
+}
+
+function updateAction(progress: UpdateProgress | null): string {
+  switch (progress?.state) {
+    case undefined:
+      return '更新'
+    case 'running':
+      return '更新中…'
+    case 'restarting':
+      return '重启中…'
+    case 'restartRequired':
+      return '待重启'
+    case 'failed':
+      return '失败'
+  }
 }
 
 /**

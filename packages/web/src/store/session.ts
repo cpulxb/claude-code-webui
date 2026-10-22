@@ -13,6 +13,7 @@ import type {
   SessionFlags,
   SessionSummary,
   SlashCommand,
+  UpdateStatus,
 } from '@ccw/shared'
 import { mergeProjectSessions, PERMISSION_MODES } from '@ccw/shared'
 import { create } from 'zustand'
@@ -100,6 +101,8 @@ type Store = {
   activeId: string | null
   projects: ProjectGroup[]
   defaultCwd: string
+  /** The server's release status; null until the first connect answers. */
+  update: UpdateStatus | null
 
   connect: () => () => void
   restoreActive: () => Promise<void>
@@ -136,6 +139,8 @@ type Store = {
   refreshAgent: (toolUseId: string) => Promise<void>
   /** Stops a whole dynamic workflow run (its background task). */
   stopWorkflow: (toolUseId: string) => Promise<void>
+  /** Installs the release in `update.latest`; the server restarts when it is done. */
+  applyUpdate: () => Promise<void>
 }
 
 function newSession(sessionId: string, cwd: string, attached: boolean): SessionState {
@@ -285,6 +290,7 @@ export const useStore = create<Store>()(
     // The server runs where the repos are; the browser cannot know a default,
     // so the first session inherits the server process's cwd via the sidebar.
     defaultCwd: '',
+    update: null,
 
     connect: () =>
       connectEvents({
@@ -300,6 +306,7 @@ export const useStore = create<Store>()(
             // evidence about which runners are alive, and the next reconnect
             // runs this again.
             void reconcileSessions(set, get).catch(() => {})
+            void loadUpdateStatus(set, get).catch(() => {})
           }
         },
         onEvent: (event) => handleEvent(set, get, event),
@@ -423,6 +430,13 @@ export const useStore = create<Store>()(
 
     refreshProjects: async () => {
       await loadProjects(set)
+    },
+
+    applyUpdate: async () => {
+      const status = await call('update.apply', {})
+      set((state) => {
+        state.update = status
+      })
     },
 
     send: async (text, attachments) => {
@@ -790,6 +804,12 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
     updateProjectSession(set, event.summary)
     return
   }
+  if (event.type === 'update_status') {
+    set((state) => {
+      state.update = event.status
+    })
+    return
+  }
   let sawInit = false
   let sawResult = false
 
@@ -1034,6 +1054,23 @@ function eagerAttach(set: Setter, get: () => Store, sessionId: string): void {
       const session = state.sessions[sessionId]
       if (session) session.error = `无法恢复会话：${String(error)}`
     })
+  })
+}
+
+/**
+ * Re-reads the release status on every (re)connect. A different `current`
+ * means the server came back as another version — usually after our own
+ * update — so the page reloads to match it.
+ */
+async function loadUpdateStatus(set: Setter, get: () => Store): Promise<void> {
+  const status = await call('update.status', {})
+  const previous = get().update
+  if (previous && previous.current !== status.current) {
+    window.location.reload()
+    return
+  }
+  set((state) => {
+    state.update = status
   })
 }
 

@@ -212,6 +212,37 @@ export type ScmStatus =
   | { kind: 'shadow'; files: ScmFile[] }
   | { kind: 'none' }
 
+/** What installing a release runs, in order. */
+export type UpdateStep = 'merge' | 'install' | 'build'
+
+export type UpdateProgress =
+  | { state: 'running'; step: UpdateStep }
+  | { state: 'failed'; step: UpdateStep; error: string }
+  /** Installed; the server is exiting so its supervisor starts the new version. */
+  | { state: 'restarting' }
+  /** Installed, but nothing would start the server again: the user restarts it. */
+  | { state: 'restartRequired' }
+
+/**
+ * Release updates. The server compares its own git checkout with the `vX.Y.Z`
+ * tags on `origin`, so only a pushed tag counts as a new version.
+ */
+export type UpdateStatus = {
+  /** The running version, from the root package.json. */
+  current: string
+  /** Newest release tag that HEAD does not contain yet, without its `v`. */
+  latest: string | null
+  /** Subjects of the commits `latest` brings in, newest first. */
+  changes: string[]
+  /**
+   * False under `pnpm dev`: tsx watch restarts the server as soon as the merge
+   * lands, which would cut the install off halfway.
+   */
+  canApply: boolean
+  /** Null until `update.apply` runs; from then on it describes that install. */
+  progress: UpdateProgress | null
+}
+
 /**
  * Every RPC the server answers over `POST /api/rpc`, keyed by method name.
  * The client's `call()` derives both argument and return types from this map.
@@ -362,6 +393,13 @@ export type RpcMap = {
    * (re)commits the current state as the new diff baseline.
    */
   'scm.shadowBaseline': { params: { cwd: string }; result: Record<string, never> }
+  /** The last release check's answer; `update_status` events push every change after it. */
+  'update.status': { params: Record<string, never>; result: UpdateStatus }
+  /**
+   * Starts installing `latest` and returns at once; progress arrives as
+   * `update_status` events. The restart at the end ends every live session.
+   */
+  'update.apply': { params: Record<string, never>; result: UpdateStatus }
 }
 
 export type RpcMethod = keyof RpcMap
@@ -385,6 +423,7 @@ export type ServerEvent =
   | { type: 'permission_resolved'; sessionId: string; requestId: string }
   | { type: 'session_error'; sessionId: string; error: string }
   | { type: 'session_closed'; sessionId: string }
+  | { type: 'update_status'; status: UpdateStatus }
 
 /**
  * Browser → server frames on a terminal socket (`/api/term`). Unlike

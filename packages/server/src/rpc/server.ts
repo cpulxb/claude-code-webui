@@ -18,6 +18,7 @@ import { resolveInWorkspace } from '../files/roots.ts'
 import { serveStatic } from '../http/static.ts'
 import type { SessionManager } from '../session/manager.ts'
 import { attachTerminal, resolveShell, terminalSize } from '../terminal/pty.ts'
+import { Updater } from '../update/updater.ts'
 import { createRpcHandlers } from './routes.ts'
 
 const MAX_BODY_BYTES = 32 * 1024 * 1024 // headroom for base64 attachments
@@ -38,9 +39,12 @@ export function startServer(options: {
   tls?: TlsOptions
   /** The built UI to serve next to the API; omitted, every non-API path is a 404. */
   webRoot?: string
+  /** Release checks; omitted, the server never reports an update. */
+  updater?: Updater
 }): Promise<ServerHandle> {
   const { host, port, manager, auth, tls, webRoot } = options
-  const handlers = createRpcHandlers(manager)
+  const updater = options.updater ?? Updater.none()
+  const handlers = createRpcHandlers(manager, updater)
 
   const wss = new WebSocketServer({ noServer: true })
   // Event sockets get every broadcast; terminal sockets each carry one PTY and
@@ -190,12 +194,14 @@ export function startServer(options: {
     }
   }, HEARTBEAT_MS)
 
-  const unsubscribe = manager.subscribe((event: ServerEvent) => {
+  const broadcast = (event: ServerEvent): void => {
     const frame = JSON.stringify(event)
     for (const ws of sockets) {
       if (ws.readyState === ws.OPEN) ws.send(frame)
     }
-  })
+  }
+  const unsubscribe = manager.subscribe(broadcast)
+  const unsubscribeUpdates = updater.subscribe((status) => broadcast({ type: 'update_status', status }))
 
   return new Promise((resolve, reject) => {
     http.once('error', reject)
@@ -204,6 +210,7 @@ export function startServer(options: {
       resolve({
         close: async () => {
           unsubscribe()
+          unsubscribeUpdates()
           clearInterval(heartbeat)
           for (const ws of sockets) ws.terminate()
           // Each terminal socket's close handler kills its shell.

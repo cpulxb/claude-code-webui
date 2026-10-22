@@ -340,6 +340,45 @@
   background: var(--ccw-bg-hover);
 }
 
+.update {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  width: calc(100% - var(--ccw-space-4));
+  padding: 6px var(--ccw-space-3);
+  margin: 0 var(--ccw-space-2) var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  text-align: left;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-md);
+}
+
+.update:hover {
+  background: var(--ccw-bg-hover);
+}
+
+.updateMark {
+  color: var(--ccw-accent);
+}
+
+.updateText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.updateAction {
+  flex: none;
+  padding: 1px 8px;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-accent);
+  background: var(--ccw-accent-soft);
+  border-radius: var(--ccw-radius-pill);
+}
+
 .statusDot {
   width: 6px;
   height: 6px;

@@ -51,6 +51,27 @@ server 监听非 loopback 地址时必须配置 TLS，否则拒绝启动。只�
 
 不要把 Vite dev server（5190）暴露到网络上。
 
+## 更新
+
+server 启动时检查一次，之后每小时对 `origin` 执行 `git fetch`，看有没有当前代码还不包含的 `vX.Y.Z` tag。有的话，侧栏底部会出现新版本卡片，点开可以看到这个版本带来的提交。点「立即更新」后，server 依次执行：
+
+1. `git merge --ff-only <tag>`。本地有自己的提交，或者工作区的改动和新版本冲突时，会停下来并显示原因，不会强行合并。
+2. `pnpm install --frozen-lockfile`
+3. 如果 `packages/web/dist` 存在，再执行 `pnpm --filter @ccw/web build`
+
+装完需要重启 server，正在运行的会话都会中断：
+
+- 由 systemd 管理、且 unit 里设置了 `Restart=on-failure` 或 `Restart=always` 时，server 以退出码 75 退出，由 systemd 拉起新版本，页面重连后自动刷新。
+- 以其他方式启动时，页面提示手动重启。
+- `pnpm dev` 下不提供一键更新：tsx watch 会在代码合并的那一刻就重启 server。请手动执行 `git pull --ff-only && pnpm install`。
+
+发布新版本：改根目录 `package.json` 的 `version` 并提交，然后打 tag 推送。只推提交、不打 tag，不会提示用户更新。
+
+```bash
+git tag -a v0.2.0 -m v0.2.0
+git push origin master v0.2.0
+```
+
 ## 配置
 
 | 变量 | 作用 |

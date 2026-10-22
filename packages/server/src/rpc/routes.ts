@@ -16,12 +16,13 @@ import {
 } from '../history/sessions.ts'
 import { scmDiff, scmDiscard, scmStatus, shadowBaseline } from '../scm/git.ts'
 import type { SessionManager } from '../session/manager.ts'
+import type { Updater } from '../update/updater.ts'
 
 export type RpcHandlers = {
   [M in RpcMethod]: (params: RpcParams<M>) => Promise<RpcResult<M>>
 }
 
-export function createRpcHandlers(manager: SessionManager): RpcHandlers {
+export function createRpcHandlers(manager: SessionManager, updater: Updater): RpcHandlers {
   return {
     'session.create': async (config) => {
       // The picked cwd becomes a legitimate root for the file RPCs. Trusted:
@@ -178,5 +179,9 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
       await shadowBaseline(await resolveInWorkspace(cwd))
       return {}
     },
+
+    'update.status': async () => updater.status,
+
+    'update.apply': async () => updater.apply(),
   }
 }
