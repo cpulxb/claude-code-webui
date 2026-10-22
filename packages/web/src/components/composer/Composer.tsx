@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/shallow'
 import { call } from '../../api/client.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import { fileToAttachment, isSupportedAttachment } from '../../utils/attachments.ts'
+import { LOCAL_COMMANDS, parseLocalCommand, runLocalCommand } from '../../utils/local-commands.ts'
 import { findModel, modelLabel } from '../../utils/models.ts'
 import { buildPaletteEntries, CommandPalette, type PaletteEntry } from './CommandPalette.tsx'
 import styles from './Composer.module.css'
@@ -39,6 +40,7 @@ function rawBytes(data: string): number {
 
 export function Composer(): JSX.Element | null {
   const send = useStore((state) => state.send)
+  const runShell = useStore((state) => state.runShell)
   const interrupt = useStore((state) => state.interrupt)
   const setPermissionMode = useStore((state) => state.setPermissionMode)
   const setEffort = useStore((state) => state.setEffort)
@@ -70,6 +72,8 @@ export function Composer(): JSX.Element | null {
   )
 
   const [text, setText] = useState('')
+  // The terminal's bash mode: a leading `!` runs the rest in the session's cwd.
+  const shellMode = text.trimStart().startsWith('!')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const [trigger, setTrigger] = useState<Trigger | null>(null)
@@ -95,9 +99,16 @@ export function Composer(): JSX.Element | null {
     return allCommands.filter((command) => !terminalOnly.has(command.name))
   }, [allCommands, terminalSlashCommands])
 
+  // Browser-side stand-ins go last, beside the CLI's built-ins. Submitting one
+  // always runs it here, so a same-named CLI entry is dropped, not listed twice.
+  const paletteCommands = useMemo(() => {
+    const local = new Set(LOCAL_COMMANDS.map((command) => command.name))
+    return [...commands.filter((command) => !local.has(command.name)), ...LOCAL_COMMANDS]
+  }, [commands])
+
   const entries: PaletteEntry[] = useMemo(
-    () => (trigger?.kind === '/' ? buildPaletteEntries(trigger.query, commands, models, model) : []),
-    [trigger?.kind, trigger?.query, commands, models, model],
+    () => (trigger?.kind === '/' ? buildPaletteEntries(trigger.query, paletteCommands, models, model) : []),
+    [trigger?.kind, trigger?.query, paletteCommands, models, model],
   )
 
   const fileItems: MenuItem[] = useMemo(
@@ -272,12 +283,19 @@ export function Composer(): JSX.Element | null {
   const submit = useCallback(() => {
     const trimmed = text.trim()
     if (!trimmed && attachments.length === 0) return
-    void send(trimmed, attachments)
+    // Attachments make it a prompt: neither a shell command nor a local
+    // command has anywhere to put them.
+    const command = shellMode && attachments.length === 0 ? trimmed.slice(1).trim() : null
+    if (command === '') return
+    const local = attachments.length === 0 ? parseLocalCommand(trimmed) : null
+    if (command) void runShell(command)
+    else if (local) void runLocalCommand(local)
+    else void send(trimmed, attachments)
     setText('')
     setAttachments([])
     setAttachError(null)
     setTrigger(null)
-  }, [text, attachments, send])
+  }, [text, attachments, shellMode, send, runShell])
 
   // The `/` button. A slash is only a command at the very start of the input —
   // see `detectTrigger` — so it goes there rather than at the caret.
@@ -399,7 +417,7 @@ export function Composer(): JSX.Element | null {
     <div className={styles.wrap}>
       <div className={styles.inner}>
         {running && <TurnStatus />}
-        <div className={styles.box} style={{ position: 'relative' }}>
+        <div className={`${styles.box} ${shellMode ? styles.boxShell : ''}`} style={{ position: 'relative' }}>
           {trigger?.kind === '/' && (
             <CommandPalette
               entries={entries}
@@ -485,7 +503,7 @@ export function Composer(): JSX.Element | null {
               closed
                 ? '会话已结束 — 从侧栏重新打开即可继续'
                 : attached
-                  ? '输入消息，/ 唤出命令，@ 引用文件'
+                  ? '输入消息，/ 唤出命令，@ 引用文件，! 执行 shell 命令'
                   : '正在接管会话…'
             }
             onChange={(event) => updateText(event.target.value, event.target.selectionStart)}
@@ -585,7 +603,9 @@ export function Composer(): JSX.Element | null {
             }}
           />
         </div>
-        <div className={styles.hint}>Enter 发送 · Shift+Enter 换行</div>
+        <div className={styles.hint}>
+          {shellMode ? 'Shell 模式 · Enter 在会话目录执行，输出会一并发给 Claude' : 'Enter 发送 · Shift+Enter 换行'}
+        </div>
       </div>
     </div>
   )

@@ -2,7 +2,14 @@ import { access, open, readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import { getSessionMessages, listSessions, type SDKSessionInfo } from '@anthropic-ai/claude-agent-sdk'
+import {
+  forkSession,
+  getSessionInfo,
+  getSessionMessages,
+  listSessions,
+  renameSession,
+  type SDKSessionInfo,
+} from '@anthropic-ai/claude-agent-sdk'
 import type { PermissionMode, ProjectGroup, SessionMessage, SessionSummary, SubagentMeta, WorkflowRecord } from '@ccw/shared'
 import { mergeProjectSessions } from '@ccw/shared'
 
@@ -20,6 +27,31 @@ export async function listProjects(liveSessions: SessionSummary[] = []): Promise
   // The SDK omits a new session until its transcript contains a user prompt.
   // Merge runner metadata so an empty or still-streaming session is visible.
   return mergeProjectSessions([], [...sessions.map(toSummary), ...liveSessions])
+}
+
+/**
+ * `/rename`. A live CLI keeps writing to the same file, which is fine: the
+ * title is its own appended entry and the last one wins.
+ */
+export async function renameSavedSession(sessionId: string, title: string, cwd?: string): Promise<void> {
+  const name = title.trim()
+  if (!name) throw new Error('title must not be empty')
+  await renameSession(sessionId, name, cwd ? { dir: cwd } : undefined)
+}
+
+/** `/branch`: a copy of the transcript as it is on disk now, under a fresh id. */
+export async function forkSavedSession(sessionId: string, cwd?: string, title?: string): Promise<string> {
+  const dir = cwd ? { dir: cwd } : {}
+  // Left untitled, the copy would list under the very same summary as its
+  // source; the terminal names an unnamed branch "<title> (Branch)".
+  let name = title?.trim()
+  if (!name) {
+    const source = await getSessionInfo(sessionId, dir)
+    const base = source?.customTitle ?? source?.summary
+    if (base) name = `${base} (Branch)`
+  }
+  const forked = await forkSession(sessionId, { ...dir, ...(name ? { title: name } : {}) })
+  return forked.sessionId
 }
 
 export async function readMessages(sessionId: string, cwd?: string): Promise<SessionMessage[]> {

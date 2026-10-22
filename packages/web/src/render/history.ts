@@ -1,5 +1,6 @@
 import type { SDKMessage, SessionMessage } from '@ccw/shared'
 
+import { bashEcho, parseBashInput, parseBashOutput } from './bash.ts'
 import { applyMessage, findAgent, findAgentById, type Transcript } from './nodes.ts'
 import { applyWorkflowEvent, parseTaskNotification, unframeWorkflowPrompt } from './workflows.ts'
 
@@ -75,6 +76,18 @@ function applyUserText(transcript: Transcript, uuid: string, raw: string, attach
     return
   }
 
+  // `!` mode: the command and its output may share one entry (WebUI) or come
+  // as two (terminal); see render/bash.ts.
+  const command = parseBashInput(trimmed)
+  const bashOutput = parseBashOutput(trimmed)
+  if (command !== null) {
+    transcript.nodes.push({ kind: 'user', id: uuid, text: bashEcho(command), attachments: 0 })
+  }
+  if (bashOutput !== null) {
+    transcript.nodes.push({ kind: 'localOutput', id: command !== null ? `${uuid}:out` : uuid, content: bashOutput })
+  }
+  if (command !== null || bashOutput !== null) return
+
   // A slash command is stored as its XML envelope, which is noise on screen —
   // the terminal shows the command line itself, so show that.
   const name = COMMAND_NAME.exec(trimmed)
@@ -124,6 +137,8 @@ export function listUserPromptUuids(messages: SessionMessage[]): string[] {
 
     if (LOCAL_OUTPUT.test(text.trim())) continue
     if (parseTaskNotification(text)) continue
+    // A terminal-written output entry renders as an output row, not a bubble.
+    if (parseBashInput(text.trim()) === null && parseBashOutput(text.trim()) !== null) continue
     uuids.push(entry.uuid)
   }
   return uuids

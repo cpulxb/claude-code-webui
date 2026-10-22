@@ -4,7 +4,16 @@ import { browseDirectory } from '../files/browse.ts'
 import { listEntries, readFilePreview, writeTextFile } from '../files/explorer.ts'
 import { registerRoot, resolveInWorkspace } from '../files/roots.ts'
 import { suggestFiles } from '../files/suggest.ts'
-import { listProjects, listSubagentMeta, readMessages, readPermissionMode, readSubagentMessages, readWorkflowRun } from '../history/sessions.ts'
+import {
+  forkSavedSession,
+  listProjects,
+  listSubagentMeta,
+  readMessages,
+  readPermissionMode,
+  readSubagentMessages,
+  readWorkflowRun,
+  renameSavedSession,
+} from '../history/sessions.ts'
 import { scmDiff, scmDiscard, scmStatus, shadowBaseline } from '../scm/git.ts'
 import type { SessionManager } from '../session/manager.ts'
 
@@ -91,6 +100,27 @@ export function createRpcHandlers(manager: SessionManager): RpcHandlers {
     'session.backgroundTask': async ({ sessionId, toolUseId }) => ({
       backgrounded: await manager.require(sessionId).backgroundTask(toolUseId),
     }),
+
+    'session.shell': async ({ sessionId, command }) => manager.require(sessionId).shell(command),
+
+    'session.mcpStatus': async ({ sessionId }) => ({ servers: await manager.require(sessionId).mcpStatus() }),
+
+    'session.mcpToggle': async ({ sessionId, name, enabled }) => ({
+      servers: await manager.require(sessionId).toggleMcp(name, enabled),
+    }),
+
+    'session.mcpReconnect': async ({ sessionId, name }) => ({
+      servers: await manager.require(sessionId).reconnectMcp(name),
+    }),
+
+    'session.account': async ({ sessionId }) => ({ account: await manager.require(sessionId).account() }),
+
+    'session.rename': async ({ sessionId, title, cwd }) => {
+      await renameSavedSession(sessionId, title, cwd)
+      return {}
+    },
+
+    'session.fork': async ({ sessionId, cwd, title }) => ({ sessionId: await forkSavedSession(sessionId, cwd, title) }),
 
     'permission.respond': async ({ sessionId, requestId, decision }) => {
       // A stale click after the request was aborted is not an error.

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 
 import {
   query,
+  type AccountInfo,
+  type McpServerStatus,
   type Query,
   type RewindFilesResult,
   type SDKMessage,
@@ -26,6 +28,7 @@ import { resolveClaudeExecutable } from '../config.ts'
 import { InputQueue } from './input-queue.ts'
 import { SessionModels } from './models.ts'
 import { PermissionBroker } from './permission.ts'
+import { runShellCommand } from './shell.ts'
 
 type MessageParam = SDKUserMessage['message']
 type ContentBlocks = Extract<MessageParam['content'], readonly unknown[]>
@@ -348,6 +351,30 @@ export class SessionRunner {
   /** Ctrl+B for one foreground subagent: its Agent call returns and the turn moves on. */
   async backgroundTask(toolUseId: string): Promise<boolean> {
     return this.#query.backgroundTasks(toolUseId)
+  }
+
+  /** `!` mode. Runs where the CLI runs, so relative paths mean the same thing to both. */
+  async shell(command: string): Promise<{ stdout: string; stderr: string }> {
+    return runShellCommand(command, this.config.cwd)
+  }
+
+  async mcpStatus(): Promise<McpServerStatus[]> {
+    return this.#query.mcpServerStatus()
+  }
+
+  /** Session-only, like the terminal's `/mcp` toggle; returns the updated list. */
+  async toggleMcp(name: string, enabled: boolean): Promise<McpServerStatus[]> {
+    await this.#query.toggleMcpServer(name, enabled)
+    return this.#query.mcpServerStatus()
+  }
+
+  async reconnectMcp(name: string): Promise<McpServerStatus[]> {
+    await this.#query.reconnectMcpServer(name)
+    return this.#query.mcpServerStatus()
+  }
+
+  async account(): Promise<AccountInfo> {
+    return this.#query.accountInfo()
   }
 
   respondToPermission(requestId: string, decision: PermissionDecision): boolean {

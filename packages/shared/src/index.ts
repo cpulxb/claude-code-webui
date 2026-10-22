@@ -1,5 +1,7 @@
 import type {
+  AccountInfo,
   EffortLevel,
+  McpServerStatus,
   ModelInfo,
   PermissionMode,
   PermissionUpdate,
@@ -11,7 +13,9 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk'
 
 export type {
+  AccountInfo,
   EffortLevel,
+  McpServerStatus,
   ModelInfo,
   PermissionMode,
   PermissionUpdate,
@@ -271,6 +275,28 @@ export type RpcMap = {
     params: { sessionId: string; toolUseId: string }
     result: { backgrounded: boolean }
   }
+  /**
+   * The terminal's `!` mode: runs one command in the session's cwd and returns
+   * its output. Nothing reaches the model here — the browser sends the result
+   * on as a `<bash-input>`/`<bash-stdout>` prompt, the way the CLI records it.
+   */
+  'session.shell': { params: { sessionId: string; command: string }; result: { stdout: string; stderr: string } }
+  /** `/mcp`: live status of every MCP server, which `init` only snapshots. */
+  'session.mcpStatus': { params: { sessionId: string }; result: { servers: McpServerStatus[] } }
+  'session.mcpToggle': {
+    params: { sessionId: string; name: string; enabled: boolean }
+    result: { servers: McpServerStatus[] }
+  }
+  'session.mcpReconnect': { params: { sessionId: string; name: string }; result: { servers: McpServerStatus[] } }
+  /** `/status`: who the CLI is logged in as. */
+  'session.account': { params: { sessionId: string }; result: { account: AccountInfo } }
+  /**
+   * `/rename`: appends a custom title to the transcript, the same entry the
+   * terminal writes. Works on saved sessions too, so no runner is needed.
+   */
+  'session.rename': { params: { sessionId: string; title: string; cwd?: string }; result: Record<string, never> }
+  /** `/branch`: copies the transcript under a new session id. Undo history stays behind. */
+  'session.fork': { params: { sessionId: string; cwd?: string; title?: string }; result: { sessionId: string } }
   'permission.respond': {
     params: { sessionId: string; requestId: string; decision: PermissionDecision }
     result: Record<string, never>

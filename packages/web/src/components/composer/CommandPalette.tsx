@@ -64,7 +64,7 @@ export function buildPaletteEntries(
       : []),
     ...commands.map(
       (command): Searchable => ({
-        search: command.name,
+        search: [command.name, ...(command.aliases ?? [])].join(' '),
         entry: { kind: 'command', key: `command:${command.name}`, group: GROUP_COMMANDS, command },
       }),
     ),

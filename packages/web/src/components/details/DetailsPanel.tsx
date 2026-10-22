@@ -1,8 +1,10 @@
-import type { ContextUsage, SessionStatus, TreeEntry } from '@ccw/shared'
+import type { AccountInfo, ContextUsage, SessionStatus, TreeEntry } from '@ccw/shared'
 import { useCallback, useEffect, useRef, useState, type ReactNode, type WheelEvent } from 'react'
 import { useShallow } from 'zustand/shallow'
 
+import { call } from '../../api/client.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
+import { SHOW_INFO_EVENT } from '../../utils/local-commands.ts'
 import {
   CompassIcon,
   InfoIcon,
@@ -17,6 +19,7 @@ import styles from './DetailsPanel.module.css'
 import { ExplorerTree } from './ExplorerTree.tsx'
 import { FileTypeIcon, WorkspaceFolderIcon } from './FileTypeIcon.tsx'
 import { FileView } from './FileView.tsx'
+import { McpSection } from './McpSection.tsx'
 import { ScmSection } from './ScmPanel.tsx'
 import { StartPage } from './StartPage.tsx'
 import { TerminalView } from './TerminalView.tsx'
@@ -152,6 +155,23 @@ export function DetailsPanel({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onReveal, update, openTerminal])
+
+  // `/mcp` and `/status` from the composer: bring up 详情 at that section.
+  useEffect(() => {
+    const onShow = (event: Event): void => {
+      onReveal()
+      update((set) => openTab(set, { kind: 'info' }))
+      const section = (event as CustomEvent<string>).detail
+      // Two frames: one for the tab to render, one for its layout to settle.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() =>
+          document.getElementById(`ccw-info-${section}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
+        ),
+      )
+    }
+    window.addEventListener(SHOW_INFO_EVENT, onShow)
+    return () => window.removeEventListener(SHOW_INFO_EVENT, onShow)
+  }, [onReveal, update])
 
   useEffect(() => {
     stripRef.current?.querySelector('[data-active]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -352,10 +372,26 @@ function InfoPane({
   // `model` holds whatever was selected, which is often an alias like
   // `sonnet`; the model list is what maps it back to a real wire id.
   const activeModel = models.find((entry) => entry.value === model || entry.resolvedModel === model)
+  const attached = useActiveSessionValue((session) => session.attached) ?? false
+  // `/status`'s account block. Asked of the runner, so only once one is up.
+  const [account, setAccount] = useState<AccountInfo | null>(null)
+  useEffect(() => {
+    setAccount(null)
+    if (!attached) return
+    let stale = false
+    call('session.account', { sessionId })
+      .then((result) => {
+        if (!stale) setAccount(result.account)
+      })
+      .catch(() => {})
+    return () => {
+      stale = true
+    }
+  }, [sessionId, attached])
 
   return (
     <>
-      <div className={styles.section}>
+      <div className={styles.section} id="ccw-info-status">
         <div className={styles.sectionTitle}>运行时</div>
         <Field
           label="模型"
@@ -363,7 +399,13 @@ function InfoPane({
         />
         <Field label="目录" value={cwd} mono />
         {init && <Field label="CLI" value={init.version} />}
-        <Field label="会话" value={sessionId.slice(0, 8)} mono />
+        <Field label="会话" value={sessionId} mono />
+        {account?.email && <Field label="账号" value={account.email} />}
+        {account?.organization && <Field label="组织" value={account.organization} />}
+        {account?.subscriptionType && <Field label="订阅" value={account.subscriptionType} />}
+        {(account?.apiKeySource ?? account?.tokenSource) && (
+          <Field label="认证" value={(account.apiKeySource ?? account.tokenSource)!} />
+        )}
       </div>
 
       {/* Keyed by cwd: switching workspaces drops open diffs and pending confirms. */}
@@ -391,28 +433,7 @@ function InfoPane({
         )}
       </div>
 
-      {init ? (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>MCP 服务器</div>
-          {init.mcpServers.length === 0 ? (
-            <div className={styles.empty}>未配置</div>
-          ) : (
-            init.mcpServers.map((server) => (
-              <div key={server.name} className={styles.mcpRow}>
-                <span
-                  className={`${styles.mcpDot} ${server.status === 'connected' ? styles.mcpConnected : ''} ${
-                    server.status === 'failed' ? styles.mcpFailed : ''
-                  }`}
-                />
-                {server.name}
-              </div>
-            ))
-          )}
-        </div>
-      ) : (
-        // `init` opens a turn, so a freshly created session has none yet.
-        <div className={styles.empty}>发送首条消息后显示工具与 MCP 详情</div>
-      )}
+      <McpSection sessionId={sessionId} attached={attached} snapshot={init?.mcpServers ?? null} />
 
       {contextUsage && <ContextSection usage={contextUsage} />}
     </>

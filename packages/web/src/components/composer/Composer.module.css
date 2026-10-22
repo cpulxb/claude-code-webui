@@ -21,6 +21,12 @@
   border-color: var(--ccw-accent);
 }
 
+/* `!` mode runs a real command on Enter — the terminal recolours its prompt for the same reason. */
+.boxShell,
+.boxShell:focus-within {
+  border-color: var(--ccw-warning);
+}
+
 .textarea {
   display: block;
   width: 100%;

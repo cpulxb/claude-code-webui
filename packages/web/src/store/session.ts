@@ -19,6 +19,7 @@ import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 
 import { call, connectEvents, type ConnectionStatus } from '../api/client.ts'
+import { bashDisplay, bashEcho, bashPrompt } from '../render/bash.ts'
 import { applyHistoryMessage, listUserPromptUuids } from '../render/history.ts'
 import { applyMessage, emptyTranscript, findAgent, type AgentRun, type Transcript } from '../render/nodes.ts'
 import { applyWorkflowRecord } from '../render/workflows.ts'
@@ -109,6 +110,13 @@ type Store = {
   refreshProjects: () => Promise<void>
 
   send: (text: string, attachments?: Attachment[]) => Promise<void>
+  /** `!` mode: runs the command, shows its output, then sends both on to the model as the terminal does. */
+  runShell: (command: string) => Promise<void>
+  renameSession: (title: string) => Promise<void>
+  /** `/branch`: forks the active session and switches to the copy. */
+  forkSession: (title?: string) => Promise<void>
+  /** A transient line in the active transcript — feedback for commands the browser handles itself. */
+  addNotice: (level: 'info' | 'error', text: string) => void
   interrupt: () => Promise<void>
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   setEffort: (effort: EffortLevel) => Promise<void>
@@ -419,44 +427,78 @@ export const useStore = create<Store>()(
 
     send: async (text, attachments) => {
       const sessionId = get().activeId
-      if (!sessionId) return
+      if (!sessionId || !(await attachToSend(set, get, sessionId))) return
+      // Optimistic echo: the CLI does not replay user messages by default.
+      echoPrompt(set, sessionId, text, attachments?.length ?? 0)
+      await startTurn(set, sessionId, text, attachments)
+    },
+
+    runShell: async (command) => {
+      const sessionId = get().activeId
+      if (!sessionId || !(await attachToSend(set, get, sessionId))) return
+      const echoId = echoPrompt(set, sessionId, bashEcho(command), 0)
+      let output: { stdout: string; stderr: string }
       try {
-        await attach(set, get, sessionId)
+        output = await call('session.shell', { sessionId, command })
       } catch (error) {
-        // Nothing was echoed yet, so the message is simply not sent — say so
-        // instead of letting the click look like it worked.
+        // Nothing reaches the transcript, so the bubble must go too: rewind
+        // pairs local bubbles with on-disk prompts by position.
         set((state) => {
           const session = state.sessions[sessionId]
-          if (session) session.error = `无法启动会话：${String(error)}`
+          if (session) session.transcript.nodes = session.transcript.nodes.filter((node) => node.id !== echoId)
         })
+        pushNotice(set, sessionId, 'error', `命令执行失败（${command}）：${String(error)}`)
         return
       }
       set((state) => {
         const session = state.sessions[sessionId]
-        if (!session) return
-        // Optimistic echo: the CLI does not replay user messages by default.
-        session.transcript.nodes.push({
-          kind: 'user',
-          id: `local-${Date.now()}-${session.transcript.nodes.length}`,
-          text,
-          attachments: attachments?.length ?? 0,
+        session?.transcript.nodes.push({
+          kind: 'localOutput',
+          id: `${echoId}:out`,
+          content: bashDisplay(output.stdout, output.stderr),
         })
-        setSessionStatus(session, 'running')
-        session.error = null
-        session.turnStats = { startedAt: Date.now(), doneTokens: 0, currentTokens: 0 }
       })
+      await startTurn(set, sessionId, bashPrompt(command, output.stdout, output.stderr))
+    },
+
+    renameSession: async (title) => {
+      const sessionId = get().activeId
+      const session = sessionId ? get().sessions[sessionId] : undefined
+      if (!sessionId || !session) return
       try {
-        await call('session.send', { sessionId, text, ...(attachments?.length ? { attachments } : {}) })
+        await call('session.rename', { sessionId, title, cwd: session.cwd })
       } catch (error) {
-        // No turn was started, so no `result` will ever clear the running state.
-        set((state) => {
-          const session = state.sessions[sessionId]
-          if (!session) return
-          setSessionStatus(session, 'idle')
-          session.turnStats = null
-          session.error = `发送失败：${String(error)}`
-        })
+        pushNotice(set, sessionId, 'error', `重命名失败：${String(error)}`)
+        return
       }
+      pushNotice(set, sessionId, 'info', `会话已重命名为「${title.trim()}」`)
+      // The title lives on disk; the live runner's summary does not carry it.
+      await get().refreshProjects()
+    },
+
+    forkSession: async (title) => {
+      const sessionId = get().activeId
+      const session = sessionId ? get().sessions[sessionId] : undefined
+      if (!sessionId || !session) return
+      let forked: string
+      try {
+        ;({ sessionId: forked } = await call('session.fork', {
+          sessionId,
+          cwd: session.cwd,
+          ...(title ? { title } : {}),
+        }))
+      } catch (error) {
+        pushNotice(set, sessionId, 'error', `分叉失败：${String(error)}`)
+        return
+      }
+      await get().openSession(forked, session.cwd)
+      pushNotice(set, forked, 'info', `已从会话 ${sessionId.slice(0, 8)} 分叉；原会话保持不变，可从侧栏切回`)
+      void get().refreshProjects().catch(() => {})
+    },
+
+    addNotice: (level, text) => {
+      const sessionId = get().activeId
+      if (sessionId) pushNotice(set, sessionId, level, text)
     },
 
     interrupt: async () => {
@@ -919,6 +961,66 @@ async function attach(set: Setter, get: () => Store, sessionId: string): Promise
   // A session opened read-only has never had a reading — fetch one so the
   // meter has a denominator during the turn that is about to start.
   void loadContextUsage(set, get, sessionId)
+}
+
+/**
+ * `attach` for a prompt about to go out. On failure nothing has been echoed
+ * yet, so the message is simply not sent — say so instead of letting the
+ * click look like it worked.
+ */
+async function attachToSend(set: Setter, get: () => Store, sessionId: string): Promise<boolean> {
+  try {
+    await attach(set, get, sessionId)
+    return true
+  } catch (error) {
+    set((state) => {
+      const session = state.sessions[sessionId]
+      if (session) session.error = `无法启动会话：${String(error)}`
+    })
+    return false
+  }
+}
+
+/** Appends a user bubble and returns its id. The `local-` prefix is what rewind keys on. */
+function echoPrompt(set: Setter, sessionId: string, text: string, attachments: number): string {
+  let id = ''
+  set((state) => {
+    const session = state.sessions[sessionId]
+    if (!session) return
+    id = `local-${Date.now()}-${session.transcript.nodes.length}`
+    session.transcript.nodes.push({ kind: 'user', id, text, attachments })
+  })
+  return id
+}
+
+async function startTurn(set: Setter, sessionId: string, text: string, attachments?: Attachment[]): Promise<void> {
+  set((state) => {
+    const session = state.sessions[sessionId]
+    if (!session) return
+    setSessionStatus(session, 'running')
+    session.error = null
+    session.turnStats = { startedAt: Date.now(), doneTokens: 0, currentTokens: 0 }
+  })
+  try {
+    await call('session.send', { sessionId, text, ...(attachments?.length ? { attachments } : {}) })
+  } catch (error) {
+    // No turn was started, so no `result` will ever clear the running state.
+    set((state) => {
+      const session = state.sessions[sessionId]
+      if (!session) return
+      setSessionStatus(session, 'idle')
+      session.turnStats = null
+      session.error = `发送失败：${String(error)}`
+    })
+  }
+}
+
+function pushNotice(set: Setter, sessionId: string, level: 'info' | 'error', text: string): void {
+  set((state) => {
+    const session = state.sessions[sessionId]
+    if (!session) return
+    session.transcript.nodes.push({ kind: 'notice', id: `notice-${Date.now()}-${session.transcript.nodes.length}`, level, text })
+  })
 }
 
 /**

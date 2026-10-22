@@ -243,6 +243,42 @@
   background: var(--ccw-danger);
 }
 
+.mcpItem .mcpDot {
+  flex: none;
+}
+
+.mcpName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcpMeta {
+  flex: 1;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+  white-space: nowrap;
+}
+
+.mcpActions {
+  display: flex;
+  flex: none;
+  gap: var(--ccw-space-3);
+}
+
+.mcpActions .toggle:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.mcpError {
+  padding: 0 0 4px 14px;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-danger);
+  overflow-wrap: anywhere;
+}
+
 .empty {
   padding: var(--ccw-space-4) 0;
   font-size: var(--ccw-text-sm);
