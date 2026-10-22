@@ -170,6 +170,18 @@
   height: 100%;
 }
 
+/* No session yet: centred like the conversation pane's own blank state. */
+.blank {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ccw-space-4);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-faint);
+  text-align: center;
+}
+
 .section {
   margin-bottom: var(--ccw-space-4);
 }

@@ -244,7 +244,7 @@ export function DetailsPanel({
 
       <div className={styles.body}>
         {sessionId === null || cwd === undefined ? (
-          <div className={`${styles.pane} ${styles.empty}`}>尚未选择会话</div>
+          <div className={styles.blank}>尚未选择会话</div>
         ) : (
           // Hidden rather than unmounted: switching tabs must not drop the
           // tree's expansion state or an edit in progress in some file tab.
