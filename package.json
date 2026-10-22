@@ -11,8 +11,9 @@
     "dev": "pnpm -r --parallel dev",
     "start": "pnpm -r --parallel start",
     "build": "pnpm -r build",
-    "test": "pnpm --filter @ccw/server exec tsx --test scripts/scm.test.ts scripts/models.test.ts scripts/projects.test.ts scripts/subagents.test.ts scripts/shell.test.ts ../web/scripts/session.test.mjs ../web/scripts/agents.test.mjs ../web/scripts/models.test.mjs ../web/scripts/workflows.test.mjs ../web/scripts/office.test.mjs ../web/scripts/commands.test.mjs",
-    "typecheck": "pnpm -r typecheck"
+    "test": "pnpm --filter @ccw/server exec tsx --test scripts/auth.test.ts scripts/scm.test.ts scripts/models.test.ts scripts/projects.test.ts scripts/subagents.test.ts scripts/shell.test.ts ../web/scripts/session.test.mjs ../web/scripts/agents.test.mjs ../web/scripts/models.test.mjs ../web/scripts/workflows.test.mjs ../web/scripts/office.test.mjs ../web/scripts/commands.test.mjs",
+    "typecheck": "pnpm -r typecheck",
+    "pair": "pnpm --filter @ccw/server exec tsx src/pair.ts"
   },
   "devDependencies": {
     "typescript": "^5.9.2"

@@ -1,7 +1,12 @@
+import { existsSync } from 'node:fs'
+
 import { DEFAULT_PORT } from '@ccw/shared'
 
-import { DEFAULT_HOST, resolveAccessToken, resolveClaudeExecutable } from './config.ts'
-import { startServer } from './rpc/server.ts'
+import { AuthGate } from './auth/gate.ts'
+import { configDir } from './auth/pairing.ts'
+import { DEFAULT_HOST, assertSafeBind, requirePairing, resolveClaudeExecutable, resolveTls } from './config.ts'
+import { WEB_DIST } from './http/static.ts'
+import { startServer, type TlsOptions } from './rpc/server.ts'
 import { SessionManager } from './session/manager.ts'
 
 const SHUTDOWN_GRACE_MS = 5_000
@@ -19,19 +24,27 @@ process.on('uncaughtException', (error) => {
   process.exit(1)
 })
 
-let token: string | undefined
+let tls: TlsOptions | undefined
 try {
-  token = resolveAccessToken(host)
+  tls = resolveTls()
+  assertSafeBind(host, tls)
 } catch (error) {
   console.error(`[ccw] ${error instanceof Error ? error.message : String(error)}`)
   process.exit(1)
 }
+if (process.env['CCW_TOKEN']) {
+  console.warn('[ccw] CCW_TOKEN is no longer used: devices pair with a one-time code from `pnpm pair`.')
+}
 
 const manager = new SessionManager()
-const handle = await startServer({ host, port, manager, token })
+const auth = await AuthGate.open({ requirePairing: requirePairing() })
+const webRoot = existsSync(WEB_DIST) ? WEB_DIST : undefined
+const handle = await startServer({ host, port, manager, auth, ...(tls ? { tls } : {}), ...(webRoot ? { webRoot } : {}) })
 
 const executable = resolveClaudeExecutable()
-console.log(`[ccw] listening on http://${host}:${port}`)
+console.log(`[ccw] listening on ${tls ? 'https' : 'http'}://${host}:${port}`)
+console.log(`[ccw] web UI: ${webRoot ?? '(not built — run `pnpm --filter @ccw/web build` to serve it here)'}`)
+console.log(`[ccw] pairing: ${requirePairing() ? 'required everywhere' : 'required except from this machine'} (devices in ${configDir()})`)
 console.log(`[ccw] claude binary: ${executable ?? '(SDK bundled copy)'}`)
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

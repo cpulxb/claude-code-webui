@@ -1,0 +1,269 @@
+/* --- pairing screen ----------------------------------------------------- */
+
+.screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--ccw-space-5);
+  background: var(--ccw-bg-sidebar);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ccw-space-4);
+  width: min(400px, 100%);
+  padding: var(--ccw-space-6);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-lg);
+  box-shadow: var(--ccw-shadow-popover);
+}
+
+.brand {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: var(--ccw-text-md);
+  font-weight: 600;
+}
+
+.brandMark {
+  color: var(--ccw-accent);
+}
+
+.heading {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--ccw-text-base);
+  line-height: 1.6;
+  color: var(--ccw-text-secondary);
+}
+
+.hint code {
+  padding: 1px 5px;
+  font-family: var(--ccw-font-mono);
+  font-size: 0.92em;
+  background: var(--ccw-bg-sunken);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.codeInput {
+  padding: 10px var(--ccw-space-3);
+  font-family: var(--ccw-font-mono);
+  font-size: 24px;
+  color: inherit;
+  text-align: center;
+  letter-spacing: 0.12em;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-strong);
+  border-radius: var(--ccw-radius-md);
+  outline: none;
+}
+
+.codeInput:focus {
+  border-color: var(--ccw-accent);
+}
+
+.codeInput::placeholder {
+  color: var(--ccw-text-faint);
+}
+
+.button {
+  align-self: flex-start;
+  padding: 7px 20px;
+  font-size: var(--ccw-text-md);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-strong);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.button:hover:not(:disabled) {
+  background: var(--ccw-bg-hover);
+}
+
+.button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.card .button {
+  align-self: stretch;
+}
+
+.primary {
+  color: #fff;
+  background: var(--ccw-gray-900);
+  border-color: var(--ccw-gray-900);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--ccw-gray-700);
+}
+
+:root[data-theme='dark'] .primary {
+  color: var(--ccw-gray-900);
+  background: var(--ccw-gray-100);
+  border-color: var(--ccw-gray-100);
+}
+
+.error {
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-danger);
+}
+
+/* --- devices dialog ----------------------------------------------------- */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 32%);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ccw-space-4);
+  width: min(520px, 92vw);
+  max-height: min(640px, 86vh);
+  padding: var(--ccw-space-5);
+  overflow-y: auto;
+  background: var(--ccw-bg-base);
+  border-radius: var(--ccw-radius-lg);
+  box-shadow: var(--ccw-shadow-popover);
+}
+
+.dialogHead {
+  display: flex;
+  align-items: center;
+}
+
+.dialogTitle {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.close {
+  padding: 0 var(--ccw-space-1);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--ccw-text-muted);
+}
+
+.close:hover {
+  color: var(--ccw-text-primary);
+}
+
+.note {
+  padding: var(--ccw-space-2) var(--ccw-space-3);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-secondary);
+  background: var(--ccw-bg-sunken);
+  border-radius: var(--ccw-radius-md);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ccw-space-2);
+}
+
+.sectionTitle {
+  font-size: var(--ccw-text-sm);
+  font-weight: 600;
+  color: var(--ccw-text-secondary);
+}
+
+.muted {
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-faint);
+}
+
+.device {
+  display: flex;
+  gap: var(--ccw-space-3);
+  align-items: center;
+  padding: var(--ccw-space-2) 0;
+  border-bottom: 1px solid var(--ccw-border-l2);
+}
+
+.deviceText {
+  flex: 1;
+  min-width: 0;
+}
+
+.deviceName {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  font-size: var(--ccw-text-base);
+}
+
+.badge {
+  padding: 0 6px;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-accent);
+  background: var(--ccw-accent-soft);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.deviceMeta {
+  overflow: hidden;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.revoke {
+  flex: none;
+  padding: 3px 10px;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-danger);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.revoke:hover {
+  background: var(--ccw-bg-hover);
+}
+
+.pairing {
+  display: flex;
+  gap: var(--ccw-space-4);
+  align-items: center;
+}
+
+/* QR codes need a light quiet zone to scan, so it stays white in dark mode. */
+.qr {
+  flex: none;
+  background: #fff;
+  border-radius: var(--ccw-radius-md);
+}
+
+.pairingText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ccw-space-2);
+}
+
+.code {
+  font-family: var(--ccw-font-mono);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}

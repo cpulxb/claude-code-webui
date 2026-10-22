@@ -328,6 +328,18 @@
   border-top: 1px solid var(--ccw-border-l1);
 }
 
+.footButton {
+  padding: 1px 6px;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.footButton:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
 .statusDot {
   width: 6px;
   height: 6px;

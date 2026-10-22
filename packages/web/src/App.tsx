@@ -1,7 +1,10 @@
+import type { AuthStatus } from '@ccw/shared'
 import { useCallback, useEffect, useState } from 'react'
 
+import { fetchAuthStatus, onUnauthorized } from './api/client.ts'
 import styles from './App.module.css'
 import { AppFrame } from './components/AppFrame.tsx'
+import { PairingScreen } from './components/auth/PairingScreen.tsx'
 import { ChatView } from './components/chat/ChatView.tsx'
 import { Composer } from './components/composer/Composer.tsx'
 import { DetailsPanel } from './components/details/DetailsPanel.tsx'
@@ -9,7 +12,32 @@ import { MoonIcon, PanelLeftIcon, PanelRightIcon, SunIcon } from './components/I
 import { Sidebar } from './components/sidebar/Sidebar.tsx'
 import { useActiveSessionValue, useStore } from './store/session.ts'
 
-export function App(): JSX.Element {
+/**
+ * Pairing gate. Off this machine the server answers nothing but the pairing
+ * screen until this browser holds a device cookie, so the workspace — and with
+ * it the event socket — mounts only once authenticated, and unmounts again if
+ * the device is revoked while open.
+ */
+export function App(): JSX.Element | null {
+  // 'unknown' when the server could not be asked: the workspace's own
+  // reconnect loop takes over and re-checks once the server answers.
+  const [auth, setAuth] = useState<AuthStatus | 'unknown' | null>(null)
+
+  const check = useCallback(() => {
+    fetchAuthStatus()
+      .then(setAuth)
+      .catch(() => setAuth('unknown'))
+  }, [])
+
+  useEffect(check, [check])
+  useEffect(() => onUnauthorized(() => setAuth({ authenticated: false, local: false })), [])
+
+  if (auth === null) return null
+  if (auth !== 'unknown' && !auth.authenticated) return <PairingScreen onPaired={check} />
+  return <Workspace />
+}
+
+function Workspace(): JSX.Element {
   const connect = useStore((state) => state.connect)
   const restoreActive = useStore((state) => state.restoreActive)
   // Primitive slices only — the details panel and the composer subscribe to

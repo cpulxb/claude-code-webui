@@ -1,8 +1,9 @@
-import { timingSafeEqual } from 'node:crypto'
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createServer as createHttpServer, type IncomingMessage, type RequestListener, type ServerResponse } from 'node:http'
+import { createServer as createHttpsServer } from 'node:https'
 import type { Duplex } from 'node:stream'
 
 import {
+  API_AUTH_PATH,
   API_EVENTS_PATH,
   API_RPC_PATH,
   API_TERM_PATH,
@@ -12,7 +13,9 @@ import {
 } from '@ccw/shared'
 import { WebSocketServer, type WebSocket } from 'ws'
 
+import type { AuthGate, Principal } from '../auth/gate.ts'
 import { resolveInWorkspace } from '../files/roots.ts'
+import { serveStatic } from '../http/static.ts'
 import type { SessionManager } from '../session/manager.ts'
 import { attachTerminal, resolveShell, terminalSize } from '../terminal/pty.ts'
 import { createRpcHandlers } from './routes.ts'
@@ -24,17 +27,97 @@ const DRAIN_MS = 300
 
 export type ServerHandle = { close: () => Promise<void> }
 
-export function startServer(options: { host: string; port: number; manager: SessionManager; token?: string }): Promise<ServerHandle> {
-  const { host, port, manager, token } = options
+export type TlsOptions = { cert: Buffer; key: Buffer }
+
+export function startServer(options: {
+  host: string
+  port: number
+  manager: SessionManager
+  auth: AuthGate
+  /** Serve HTTPS directly. Omitted on loopback and behind a TLS-terminating proxy. */
+  tls?: TlsOptions
+  /** The built UI to serve next to the API; omitted, every non-API path is a 404. */
+  webRoot?: string
+}): Promise<ServerHandle> {
+  const { host, port, manager, auth, tls, webRoot } = options
   const handlers = createRpcHandlers(manager)
 
-  const http = createServer((req, res) => {
-    const denied = denyReason(req, token)
-    if (denied) {
-      respond(res, 403, { ok: false, error: denied })
+  const wss = new WebSocketServer({ noServer: true })
+  // Event sockets get every broadcast; terminal sockets each carry one PTY and
+  // must never see an event. Both are pinged.
+  const sockets = new Set<WebSocket>()
+  const terminals = new Set<WebSocket>()
+  const alive = new Set<WebSocket>()
+  // Which paired device opened each socket, so revoking it cuts it off now
+  // rather than at its next reconnect.
+  const owners = new Map<WebSocket, string>()
+
+  const track = (ws: WebSocket, set: Set<WebSocket>, principal: Principal): void => {
+    set.add(ws)
+    alive.add(ws)
+    if (principal.device) owners.set(ws, principal.device.id)
+    ws.on('pong', () => alive.add(ws))
+    ws.on('close', () => {
+      set.delete(ws)
+      alive.delete(ws)
+      owners.delete(ws)
+    })
+    ws.on('error', () => ws.close())
+  }
+
+  const disconnectDevice = (deviceId: string): void => {
+    for (const [ws, owner] of owners) {
+      if (owner === deviceId) ws.close(1008, 'device revoked')
+    }
+  }
+
+  const onRequest: RequestListener = (req, res) => {
+    setSecurityHeaders(res, tls !== undefined)
+    const path = pathOf(req.url)
+    if (path !== '/api' && !path.startsWith('/api/')) {
+      if (!webRoot) {
+        respond(res, 404, { ok: false, error: 'not found' })
+        return
+      }
+      void serveStatic(req, res, webRoot).catch((error) => {
+        console.error('[ccw] static file failed', error)
+        if (!res.headersSent) res.writeHead(500)
+        res.end()
+      })
       return
     }
-    if (req.method === 'POST' && pathOf(req.url) === API_RPC_PATH) {
+
+    res.setHeader('cache-control', 'no-store')
+    if (crossSite(req)) {
+      respond(res, 403, { ok: false, error: 'forbidden origin' })
+      return
+    }
+    // Another site can POST text/plain here without a CORS preflight and
+    // without reading the answer — enough to act through the loopback
+    // exemption. A JSON content type forces the preflight, which fails.
+    if (req.method === 'POST' && !req.headers['content-type']?.startsWith('application/json')) {
+      respond(res, 415, { ok: false, error: 'content-type must be application/json' })
+      return
+    }
+    const principal = auth.identify(req)
+    if (path === API_AUTH_PATH || path.startsWith(`${API_AUTH_PATH}/`)) {
+      void auth
+        .handle(req, res, principal, disconnectDevice)
+        .then((handled) => {
+          if (!handled) respond(res, 404, { ok: false, error: 'not found' })
+        })
+        .catch((error) => {
+          console.error('[ccw] auth route failed', error)
+          if (!res.headersSent) respond(res, 500, { ok: false, error: message(error) })
+          else res.end()
+        })
+      return
+    }
+    if (!principal) {
+      respond(res, 401, { ok: false, error: 'unauthorized' })
+      return
+    }
+    if (req.method === 'POST' && path === API_RPC_PATH) {
       void handleRpc(req, res, handlers).catch((error) => {
         console.error('[ccw] rpc dispatch failed', error)
         if (!res.headersSent) respond(res, 500, { ok: false, error: message(error) })
@@ -43,27 +126,11 @@ export function startServer(options: { host: string; port: number; manager: Sess
       return
     }
     respond(res, 404, { ok: false, error: 'not found' })
-  })
-
-  const wss = new WebSocketServer({ noServer: true })
-  // Event sockets get every broadcast; terminal sockets each carry one PTY and
-  // must never see an event. Both are pinged.
-  const sockets = new Set<WebSocket>()
-  const terminals = new Set<WebSocket>()
-  const alive = new Set<WebSocket>()
-
-  const track = (ws: WebSocket, set: Set<WebSocket>): void => {
-    set.add(ws)
-    alive.add(ws)
-    ws.on('pong', () => alive.add(ws))
-    ws.on('close', () => {
-      set.delete(ws)
-      alive.delete(ws)
-    })
-    ws.on('error', () => ws.close())
   }
 
-  const upgradeTerminal = async (req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> => {
+  const http = tls ? createHttpsServer(tls, onRequest) : createHttpServer(onRequest)
+
+  const upgradeTerminal = async (req: IncomingMessage, socket: Duplex, head: Buffer, principal: Principal): Promise<void> => {
     const query = parseTarget(req.url)?.searchParams
     const shell = await resolveShell()
     // Same containment as the file RPCs: a shell only opens inside a known
@@ -76,14 +143,15 @@ export function startServer(options: { host: string; port: number; manager: Sess
       return
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
-      track(ws, terminals)
+      track(ws, terminals, principal)
       attachTerminal(ws, { shell, cwd, cols: terminalSize(query?.get('cols')), rows: terminalSize(query?.get('rows')) })
     })
   }
 
   http.on('upgrade', (req, socket, head) => {
     const path = pathOf(req.url)
-    if ((path !== API_EVENTS_PATH && path !== API_TERM_PATH) || denyReason(req, token)) {
+    const principal = (path === API_EVENTS_PATH || path === API_TERM_PATH) && !crossSite(req) ? auth.identify(req) : null
+    if (!principal) {
       socket.destroy()
       return
     }
@@ -92,14 +160,21 @@ export function startServer(options: { host: string; port: number; manager: Sess
         socket.destroy()
         return
       }
-      void upgradeTerminal(req, socket, head).catch((error) => {
+      void upgradeTerminal(req, socket, head, principal).catch((error) => {
         console.error('[ccw] terminal upgrade failed', error)
         socket.destroy()
       })
       return
     }
+    // Every conversation streams through here, so another site's page must not
+    // read it via the loopback exemption either. A browser always sends Origin;
+    // a script with none (the smoke test) cannot be steered by a web page.
+    if (req.headers.origin !== undefined && !sameOrigin(req)) {
+      socket.destroy()
+      return
+    }
     // Downlink only: anything the browser writes here is ignored by design.
-    wss.handleUpgrade(req, socket, head, (ws) => track(ws, sockets))
+    wss.handleUpgrade(req, socket, head, (ws) => track(ws, sockets, principal))
   })
 
   // A socket whose peer vanished stays OPEN for minutes; ping/pong evicts it so
@@ -149,36 +224,26 @@ export function startServer(options: { host: string; port: number; manager: Sess
   })
 }
 
-/** Non-empty string when the request must be rejected. */
-function denyReason(req: IncomingMessage, token: string | undefined): string | null {
-  // Only meaningful on the loopback default: there the server binds loopback
-  // only, so a non-loopback Host means a DNS rebinding attempt because a real
-  // local client always sends one. A token is issued precisely when the bind is
-  // *not* loopback (see resolveAccessToken), and then legitimate requests carry
-  // the real hostname; the token, not the forgeable header, is the gate.
-  if (!token && !isLoopbackHost(req.headers.host)) {
-    return 'forbidden host'
-  }
+/**
+ * Best-effort defence in depth, not a guarantee: clients that omit
+ * Sec-Fetch-Site (curl, pre-16.4 Safari, some WebSocket handshakes) pass, so
+ * this only catches browsers that do send it. `same-site` is rejected too,
+ * which would 403 a sibling subdomain — harmless while the UI is served from
+ * the same origin as the API. Only `/api` is checked: a link to the UI from
+ * another site is an ordinary navigation and must load.
+ */
+function crossSite(req: IncomingMessage): boolean {
   const site = req.headers['sec-fetch-site']
-  if (site === 'cross-site' || site === 'same-site') {
-    // Best-effort defence in depth, not a guarantee: clients that omit the
-    // header (curl, pre-16.4 Safari, some WebSocket handshakes) are allowed
-    // through, so this only catches browsers that do send it. `same-site` is
-    // rejected too, which would 403 a sibling subdomain — harmless while the UI
-    // is served from the same origin as the API, worth revisiting if it is not.
-    return 'forbidden origin'
-  }
-  if (token && !hasToken(req, token)) return 'unauthorized'
-  return null
+  return site === 'cross-site' || site === 'same-site'
 }
 
 /**
- * A WebSocket handshake is exempt from CORS, so on the token-less loopback
- * default any page the user visits could otherwise open a shell here — and
- * denyReason's Sec-Fetch-Site check is best-effort only. Browsers always send
- * Origin on a handshake and page scripts cannot set it, so requiring it to
- * name the very host the request was sent to keeps terminals to the UI's own
- * origin. A reverse proxy in front must therefore pass Host through unchanged.
+ * A WebSocket handshake is exempt from CORS, so through the loopback exemption
+ * any page the user visits could otherwise open a shell here — and
+ * crossSite's check is best-effort only. Browsers always send Origin on a
+ * handshake and page scripts cannot set it, so requiring it to name the very
+ * host the request was sent to keeps terminals to the UI's own origin. A
+ * reverse proxy in front must therefore pass Host through unchanged.
  */
 function sameOrigin(req: IncomingMessage): boolean {
   const origin = req.headers.origin
@@ -190,19 +255,19 @@ function sameOrigin(req: IncomingMessage): boolean {
   }
 }
 
-function hasToken(req: IncomingMessage, token: string): boolean {
-  const header = req.headers.authorization
-  const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined
-  // Browsers cannot set headers on a WebSocket handshake, hence the query form.
-  const query = parseTarget(req.url)?.searchParams.get('token') ?? undefined
-  return matches(bearer, token) || matches(query, token)
-}
-
-function matches(candidate: string | undefined, token: string): boolean {
-  if (!candidate) return false
-  const a = Buffer.from(candidate)
-  const b = Buffer.from(token)
-  return a.length === b.length && timingSafeEqual(a, b)
+/**
+ * On every response, files and API alike. HSTS only when this process holds
+ * the certificate: behind a proxy, the proxy owns that decision, and browsers
+ * ignore it over a connection with certificate errors anyway.
+ */
+function setSecurityHeaders(res: ServerResponse, tls: boolean): void {
+  res.setHeader('x-content-type-options', 'nosniff')
+  res.setHeader('referrer-policy', 'no-referrer')
+  // Nothing here is meant to be framed — a framed UI is a clickjacked
+  // permission prompt.
+  res.setHeader('x-frame-options', 'DENY')
+  res.setHeader('content-security-policy', "frame-ancestors 'none'")
+  if (tls) res.setHeader('strict-transport-security', 'max-age=15552000')
 }
 
 /** Request path, or '' — which matches no route — when the target is unparseable. */
@@ -277,16 +342,6 @@ function respond(res: ServerResponse, status: number, body: RpcResponse): void {
   const json = JSON.stringify(body)
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(json) })
   res.end(json)
-}
-
-function isLoopbackHost(header: string | undefined): boolean {
-  if (!header) return false
-  try {
-    const { hostname } = new URL(`http://${header}`)
-    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1' || hostname === '[::1]'
-  } catch {
-    return false
-  }
 }
 
 function message(error: unknown): string {

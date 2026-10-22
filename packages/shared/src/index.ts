@@ -405,6 +405,40 @@ export type TerminalServerMessage =
 
 export const API_RPC_PATH = '/api/rpc'
 export const API_EVENTS_PATH = '/api/events'
-/** Query: `cwd` (absolute, must be a known workspace), `cols`, `rows`, plus `token` when required. */
+/** Query: `cwd` (absolute, must be a known workspace), `cols`, `rows`. */
 export const API_TERM_PATH = '/api/term'
 export const DEFAULT_PORT = 3090
+
+/**
+ * Pairing and device management. Plain HTTP routes rather than RPC methods:
+ * they read and set the device cookie, and pairing is the one call an
+ * unpaired browser may make. Every route answers in the `RpcResponse` envelope.
+ */
+export const API_AUTH_PATH = '/api/auth'
+/** POST `{ code }` — trades a pairing code for the device cookie. */
+export const API_PAIR_PATH = '/api/auth/pair'
+/** POST — a fresh pairing code for another device ("添加设备"). */
+export const API_PAIRING_CODE_PATH = '/api/auth/code'
+export const API_DEVICES_PATH = '/api/auth/devices'
+/** POST `{ id }`. */
+export const API_REVOKE_PATH = '/api/auth/revoke'
+
+/** `GET /api/auth`. `local` is a loopback request, which needs no pairing. */
+export type AuthStatus = { authenticated: boolean; local: boolean }
+
+export type DeviceInfo = {
+  id: string
+  /** Derived from the User-Agent at pairing time, e.g. "Safari · iPhone". */
+  name: string
+  createdAt: number
+  lastSeenAt: number
+  lastIp: string
+  /** The device this request came from. */
+  current: boolean
+}
+
+export type PairingCode = {
+  /** `XXXX-XXXX`, Crockford base32. */
+  code: string
+  expiresAt: number
+}

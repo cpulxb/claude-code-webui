@@ -5,9 +5,14 @@
  * forces a tool call, and auto-approves it through the same `permission.respond`
  * RPC the UI uses. Run with: pnpm --filter @ccw/server smoke
  */
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { API_EVENTS_PATH, API_RPC_PATH, type RpcMethod, type RpcParams, type RpcResponse, type ServerEvent } from '@ccw/shared'
 import { WebSocket } from 'ws'
 
+import { AuthGate } from '../src/auth/gate.ts'
 import { startServer } from '../src/rpc/server.ts'
 import { SessionManager } from '../src/session/manager.ts'
 
@@ -17,7 +22,9 @@ const BASE = `http://${HOST}:${PORT}`
 const TIMEOUT_MS = 180_000
 
 const manager = new SessionManager()
-const handle = await startServer({ host: HOST, port: PORT, manager })
+// Loopback requests need no pairing; a throwaway store keeps the real one untouched.
+const auth = await AuthGate.open({ dir: await mkdtemp(join(tmpdir(), 'ccw-smoke-auth-')) })
+const handle = await startServer({ host: HOST, port: PORT, manager, auth })
 console.log(`[smoke] server up on ${BASE}`)
 
 async function call<M extends RpcMethod>(method: M, params: RpcParams<M>): Promise<RpcResponse<M>> {

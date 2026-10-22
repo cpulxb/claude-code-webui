@@ -1,29 +1,42 @@
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+
+import type { TlsOptions } from './rpc/server.ts'
 
 export const DEFAULT_HOST = '127.0.0.1'
 
 /**
- * Shared secret required on every request, or undefined when none is needed.
- *
- * On the loopback default the Host-header check is guard enough. A non-loopback
- * bind exposes the RPC surface to the network, where a proxy can forge that
- * header, so a token becomes mandatory rather than optional: startup fails
- * instead of quietly serving an open port.
+ * Certificate and key for serving HTTPS directly, from `CCW_TLS_CERT` and
+ * `CCW_TLS_KEY` (PEM paths) — a `tailscale cert` pair, a Let's Encrypt pair,
+ * or a self-signed one. Undefined when neither is set. Read once at startup, so
+ * a renewed certificate takes a restart.
  */
-export function resolveAccessToken(host: string): string | undefined {
-  if (isLoopbackAddress(host)) return undefined
-  const token = process.env.CCW_TOKEN
-  if (!token) {
-    throw new Error(
-      `CCW_HOST=${host} is not loopback, so CCW_TOKEN is required. Set CCW_TOKEN to a non-empty secret ` +
-        `(e.g. CCW_TOKEN=$(openssl rand -hex 32)) and append ?token=<secret> to the URL you load the UI ` +
-        `from — the UI reads the token off its own page URL and forwards it only while it is served from ` +
-        `the same origin as /api. That URL is not this port: this port answers /api/rpc, /api/events and ` +
-        `/api/term only, everything else 404s. The UI's own dev server binds loopback, so exposing it to the ` +
-        `network is a separate step. Or drop CCW_HOST to bind loopback only.`,
-    )
-  }
-  return token
+export function resolveTls(): TlsOptions | undefined {
+  const cert = process.env['CCW_TLS_CERT']
+  const key = process.env['CCW_TLS_KEY']
+  if (!cert && !key) return undefined
+  if (!cert || !key) throw new Error('CCW_TLS_CERT and CCW_TLS_KEY must be set together')
+  return { cert: readFileSync(cert), key: readFileSync(key) }
+}
+
+/**
+ * A non-loopback bind serves the network directly, and without TLS everything
+ * would cross it in the clear — prompts, code, terminal keystrokes and the
+ * device cookie, which is Secure and would not even be kept. So startup fails
+ * instead. Behind a TLS-terminating proxy, keep the bind on loopback.
+ */
+export function assertSafeBind(host: string, tls: TlsOptions | undefined): void {
+  if (isLoopbackAddress(host) || tls) return
+  throw new Error(
+    `CCW_HOST=${host} is not loopback, so TLS is required: set CCW_TLS_CERT and CCW_TLS_KEY to a PEM ` +
+      `certificate and key, or keep CCW_HOST on loopback and put a TLS-terminating proxy (Caddy, ` +
+      `tailscale serve) in front. See docs/remote-deployment.md.`,
+  )
+}
+
+/** Whether `CCW_REQUIRE_PAIRING=1` turned the loopback exemption off. */
+export function requirePairing(): boolean {
+  return process.env['CCW_REQUIRE_PAIRING'] === '1'
 }
 
 function isLoopbackAddress(host: string): boolean {

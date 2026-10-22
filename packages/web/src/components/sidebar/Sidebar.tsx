@@ -2,6 +2,7 @@ import { fuzzyFilter, type ProjectGroup, type SessionSummary } from '@ccw/shared
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useStore } from '../../store/session.ts'
+import { DevicesDialog } from '../auth/DevicesDialog.tsx'
 import { FolderIcon, PanelLeftIcon } from '../Icons.tsx'
 import { DirectoryPicker } from './DirectoryPicker.tsx'
 import styles from './Sidebar.module.css'
@@ -38,6 +39,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
 
   const [selectedCwd, setSelectedCwd] = useState<string | null>(() => localStorage.getItem(SELECTED_KEY))
   const [picking, setPicking] = useState(false)
+  const [showDevices, setShowDevices] = useState(false)
   const [query, setQuery] = useState('')
   const [hitIndex, setHitIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -197,7 +199,13 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
           }`}
         />
         {connection === 'open' ? '已连接' : connection === 'connecting' ? '连接中…' : '连接断开，重试中'}
+        <span className={styles.spacer} />
+        <button className={styles.footButton} onClick={() => setShowDevices(true)} type="button" title="已配对的设备">
+          设备
+        </button>
       </div>
+
+      {showDevices && <DevicesDialog onClose={() => setShowDevices(false)} />}
     </div>
   )
 }
