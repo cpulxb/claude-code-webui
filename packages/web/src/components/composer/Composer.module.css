@@ -278,6 +278,15 @@
   color: var(--ccw-text-muted);
 }
 
+/*
+ * Reserve the widest label (思考强度（很高）, eight full-width glyphs) so the
+ * slider after it never shifts. Otherwise a 1↔2 character level change moves
+ * the track under the pointer mid-drag, which flips the level back — jitter.
+ */
+.footerLabel {
+  min-width: 8em;
+}
+
 /* --- model picker -------------------------------------------------------- */
 
 .pickerHeader {

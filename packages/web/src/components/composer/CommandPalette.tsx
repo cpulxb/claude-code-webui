@@ -148,7 +148,7 @@ export function CommandPalette(props: {
           <span className={styles.footerIcon}>
             <DumbbellIcon size={14} />
           </span>
-          <span>思考强度（{EFFORT_LABEL[props.effort]}）</span>
+          <span className={styles.footerLabel}>思考强度（{EFFORT_LABEL[props.effort]}）</span>
           <EffortSlider levels={props.efforts} value={props.effort} onChange={props.onEffort} />
         </div>
       )}
