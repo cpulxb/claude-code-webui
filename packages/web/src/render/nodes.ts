@@ -131,9 +131,14 @@ export function applyMessage(transcript: Transcript, message: SDKMessage): void 
   }
   const parent = (message as { parent_tool_use_id?: string | null }).parent_tool_use_id
   if (parent && message.type !== 'system' && message.type !== 'result') {
-    const agent = findAgent(transcript, parent) ?? placeholderAgent(transcript, parent)
-    applyLocal(agent.transcript, message, true)
-    return
+    // A tool_progress parent is usually the tool being timed — a main-thread
+    // Bash's heartbeat points at that Bash — so it never conjures a subagent.
+    const agent =
+      findAgent(transcript, parent) ?? (message.type === 'tool_progress' ? null : placeholderAgent(transcript, parent))
+    if (agent) {
+      applyLocal(agent.transcript, message, true)
+      return
+    }
   }
   applyLocal(transcript, message, false)
 }
@@ -217,7 +222,11 @@ function applyLocal(transcript: Transcript, message: SDKMessage, inAgent: boolea
     }
 
     case 'tool_progress': {
-      const node = toolNode(transcript, message.tool_use_id)
+      // Heartbeats and bash_progress carry an id of their own (`bash-progress-3`)
+      // and name the timed tool as their parent.
+      const node =
+        toolNode(transcript, message.tool_use_id) ??
+        (message.parent_tool_use_id ? toolNode(transcript, message.parent_tool_use_id) : null)
       if (node) node.elapsedSeconds = message.elapsed_time_seconds
       return
     }

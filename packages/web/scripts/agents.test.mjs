@@ -93,6 +93,33 @@ test('parseHandBack strips the frame, the indent and the agentId trailer', () =>
   assert.equal(parseHandBack('plain report'), 'plain report')
 })
 
+test("a main-thread tool's progress ticks time its card instead of conjuring a subagent", () => {
+  // CLI 2.1.302: tool heartbeats (every 30s) and bash_progress (container
+  // hosts only) carry an id of their own and name the timed tool as parent.
+  const transcript = emptyTranscript()
+  applyMessage(transcript, {
+    type: 'assistant',
+    message: { id: 'msg_1', content: [{ type: 'tool_use', id: 'toolu_bash', name: 'Bash', input: { command: 'sleep 90' } }] },
+    parent_tool_use_id: null,
+    uuid: 'a-1',
+    session_id: 's',
+  })
+  const tick = (toolUseId, seconds) =>
+    applyMessage(transcript, {
+      type: 'tool_progress',
+      tool_use_id: toolUseId,
+      tool_name: 'Bash',
+      parent_tool_use_id: 'toolu_bash',
+      elapsed_time_seconds: seconds,
+      uuid: `p-${seconds}`,
+      session_id: 's',
+    })
+  tick('bash-progress-0', 12)
+  tick('toolu_bash-heartbeat-0', 30)
+  assert.deepEqual(listAgents(transcript), [])
+  assert.equal(transcript.nodes[0].elapsedSeconds, 30)
+})
+
 test('a subagent stopped from the UI reads as stopped, not failed', () => {
   // Real run: two foreground subagents sleeping; stopTask on the first after
   // 6s. The CLI sends task_notification(stopped) and then an error tool_result.
