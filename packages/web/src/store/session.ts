@@ -204,6 +204,12 @@ const ultracodePicked = new Set<string>()
 const effortSeq = new Map<string, number>()
 const EFFORT_SEND_DELAY_MS = 120
 const modelRequests = new Map<string, object>()
+/**
+ * Sessions with a `session.flags` call in flight. The 2 s model poll fires one
+ * per tick without waiting for it, so a CLI that stops answering control
+ * requests would otherwise collect one stuck call per tick until close.
+ */
+const flagRequests = new Set<string>()
 
 // A history read can finish after a new session or prompt arrives. Replay only
 // those newer sidebar updates on top of it, and ignore older overlapping reads.
@@ -1224,11 +1230,15 @@ function applyFlags(session: SessionState | undefined, flags: SessionFlags): voi
 }
 
 async function loadSessionFlags(set: Setter, sessionId: string): Promise<void> {
+  if (flagRequests.has(sessionId)) return
+  flagRequests.add(sessionId)
   try {
     const flags = await call('session.flags', { sessionId })
     set((state) => applyFlags(state.sessions[sessionId], flags))
   } catch {
     // An older CLI without get_settings: the Ultracode row just stays hidden.
+  } finally {
+    flagRequests.delete(sessionId)
   }
 }
 
