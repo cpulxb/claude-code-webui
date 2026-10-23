@@ -360,6 +360,11 @@
   color: var(--ccw-text-secondary);
 }
 
+/* .modeDanger sits earlier in the file, so on its own it loses to the grey above. */
+.modeIcon.modeDanger {
+  color: var(--ccw-danger);
+}
+
 .modeText {
   flex: 1;
   min-width: 0;
