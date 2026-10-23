@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { pairDevice } from '../../api/client.ts'
+import { BrandMark } from '../Icons.tsx'
 import styles from './Auth.module.css'
 
 /**
@@ -49,7 +50,10 @@ export function PairingScreen({ onPaired }: { onPaired: () => void }): JSX.Eleme
         }}
       >
         <div className={styles.brand}>
-          <span className={styles.brandMark}>✳</span> Claude Code
+          <span className={styles.brandMark}>
+            <BrandMark size={15} />
+          </span>
+          Claude Code
         </div>
         <h1 className={styles.heading}>配对这台设备</h1>
         <p className={styles.hint}>

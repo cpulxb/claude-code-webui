@@ -5,7 +5,7 @@ import type { AssistantBlock, ChatNode, StreamingBlock } from '../../render/node
 import { AGENT_TOOLS, findAgent } from '../../render/nodes.ts'
 import { WORKFLOW_TOOL } from '../../render/workflows.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
-import { HistoryIcon } from '../Icons.tsx'
+import { BrandMark, HistoryIcon } from '../Icons.tsx'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 import styles from './ChatView.module.css'
 import { PermissionCard } from './PermissionCard.tsx'
@@ -160,7 +160,9 @@ export function ChatView(): JSX.Element | null {
       <AgentNav />
       {empty ? (
         <div className={styles.empty}>
-          <span className={styles.emptyMark}>✳</span>
+          <span className={styles.emptyMark}>
+            <BrandMark size={24} />
+          </span>
           <span>Claude Code</span>
         </div>
       ) : (

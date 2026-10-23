@@ -58,6 +58,6 @@
 }
 
 .blankMark {
-  font-size: 30px;
+  display: flex;
   color: var(--ccw-accent);
 }

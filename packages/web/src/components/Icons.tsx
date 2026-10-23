@@ -25,6 +25,18 @@ function Icon(props: { size?: number; strokeWidth?: number; children: ReactNode 
   )
 }
 
+/**
+ * 品牌标：八辐星，即原来那个 ✳ 字符的描边版。线宽加粗到 2.9，16px 下辐条间仍留得出空隙。
+ * `public/favicon.svg` 是同一组路径，改这里要一起改。
+ */
+export function BrandMark(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size} strokeWidth={2.9}>
+      <path d="M12 3.2v17.6M3.2 12h17.6M5.78 5.78l12.44 12.44M18.22 5.78 5.78 18.22" />
+    </Icon>
+  )
+}
+
 export function PanelLeftIcon(props: { size?: number }): JSX.Element {
   return (
     <Icon size={props.size}>

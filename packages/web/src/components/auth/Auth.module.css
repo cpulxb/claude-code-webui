@@ -30,6 +30,7 @@
 }
 
 .brandMark {
+  display: flex;
   color: var(--ccw-accent);
 }
 

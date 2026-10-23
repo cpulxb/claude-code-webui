@@ -22,7 +22,7 @@
 }
 
 .emptyMark {
-  font-size: 26px;
+  display: flex;
   color: var(--ccw-accent);
 }
 

@@ -8,7 +8,7 @@ import { PairingScreen } from './components/auth/PairingScreen.tsx'
 import { ChatView } from './components/chat/ChatView.tsx'
 import { Composer } from './components/composer/Composer.tsx'
 import { DetailsPanel } from './components/details/DetailsPanel.tsx'
-import { MoonIcon, PanelLeftIcon, PanelRightIcon, SunIcon } from './components/Icons.tsx'
+import { BrandMark, MoonIcon, PanelLeftIcon, PanelRightIcon, SunIcon } from './components/Icons.tsx'
 import { Sidebar } from './components/sidebar/Sidebar.tsx'
 import { useActiveSessionValue, useStore } from './store/session.ts'
 
@@ -116,7 +116,9 @@ function Workspace(): JSX.Element {
             <ActiveConversation />
           ) : (
             <div className={styles.blank}>
-              <span className={styles.blankMark}>✳</span>
+              <span className={styles.blankMark}>
+                <BrandMark size={28} />
+              </span>
               <span>从左侧选择一个会话，或新建一个</span>
             </div>
           )}

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useStore } from '../../store/session.ts'
 import { DevicesDialog } from '../auth/DevicesDialog.tsx'
-import { FolderIcon, PanelLeftIcon } from '../Icons.tsx'
+import { BrandMark, FolderIcon, PanelLeftIcon } from '../Icons.tsx'
 import { DirectoryPicker } from './DirectoryPicker.tsx'
 import styles from './Sidebar.module.css'
 import { UpdateDialog } from './UpdateDialog.tsx'
@@ -142,7 +142,10 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
     <div className={styles.root}>
       <div className={styles.head}>
         <span className={styles.brand}>
-          <span className={styles.brandMark}>✳</span> Claude Code
+          <span className={styles.brandMark}>
+            <BrandMark size={15} />
+          </span>
+          Claude Code
         </span>
         <span className={styles.spacer} />
         <button className={styles.iconButton} onClick={onCollapse} type="button" title="收起侧栏">
