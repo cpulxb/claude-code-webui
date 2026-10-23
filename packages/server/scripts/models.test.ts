@@ -64,6 +64,8 @@ function fixture(current = 'claude-opus-5-5[1m]', initialModels = cliModels, exp
     selected: () => selected,
     reads: () => reads,
     configure: (next: Settings) => { settings = next },
+    /** What a typed `/model` does: the CLI switches without asking SessionModels. */
+    typeModel: (model: string) => { selected = model },
     failNext: () => { failNext = true },
     setIdle: (next: boolean) => { idle = next },
   }
@@ -105,6 +107,30 @@ test('a selected role survives a later configuration refresh as that role', asyn
   assert.equal(f.selected(), 'opus')
   assert.equal(f.applied.at(-1)?.model, 'opus')
   assert.deepEqual(f.selections, ['opus'])
+})
+
+test('a model switched by a typed /model is followed, and a later refresh does not switch it back', async () => {
+  const f = fixture()
+  await f.catalog.select('opus')
+  f.typeModel('claude-haiku-4-5')
+  await f.catalog.follow()
+  assert.equal(f.events.at(-1)?.model, 'haiku')
+  f.configure({ env: { ANTHROPIC_DEFAULT_OPUS_MODEL: 'next-opus' } })
+  await f.catalog.list()
+  assert.equal(f.applied.at(-1)?.model, 'haiku')
+  assert.equal(f.selected(), 'haiku')
+})
+
+test('following a /model that changed nothing keeps the selection quiet', async () => {
+  const f = fixture()
+  await f.catalog.select('opus')
+  const events = f.events.length
+  // `/model` alone, or a name the CLI rejected.
+  await f.catalog.follow()
+  f.typeModel('claude-fable-5-1[1m]')
+  await f.catalog.follow()
+  assert.equal(f.events.length, events)
+  assert.equal((await f.catalog.list()).model, 'opus')
 })
 
 test('a failed refresh is retried and does not block a subsequent selection', async () => {

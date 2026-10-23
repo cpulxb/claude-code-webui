@@ -145,6 +145,9 @@ export class SessionRunner {
   /** Last ultracode state the CLI reported, so an effort change can carry it. */
   #ultracode = false
 
+  /** Set by {@link send} for a typed `/model`, which the CLI handles without telling {@link SessionModels}. */
+  #modelCommand = false
+
   /** Drains the SDK's message stream onto the downlink until the CLI exits. */
   async #pump(): Promise<void> {
     try {
@@ -163,6 +166,12 @@ export class SessionRunner {
           // The turn is over, so nothing still in flight belongs to it: a later
           // top-level assistant frame is a new turn and may say `running` again.
           this.#interrupted = false
+          // The switch has landed by the next result even when the command
+          // was queued behind a running turn (CLI 2.1.304).
+          if (this.#modelCommand) {
+            this.#modelCommand = false
+            void this.#models.follow().then(() => this.#publishFlags()).catch(() => {})
+          }
         }
         // A turn the CLI started on its own — a prompt it had queued behind the
         // one that just ended — is otherwise invisible: without
@@ -252,6 +261,7 @@ export class SessionRunner {
       })
       this.#status = 'running'
       this.#interrupted = false
+      if (/^\/model(?:\s|$)/.test(text.trim())) this.#modelCommand = true
       this.#summary.lastModified = Date.now()
       if (!this.config.resume && !this.#summary.firstPrompt) {
         this.#summary.firstPrompt = text.trim().slice(0, 2000) || '附件消息'

@@ -99,17 +99,38 @@ export class SessionModels {
     })
   }
 
+  /**
+   * Take over a model the CLI switched to on its own — a typed `/model` —
+   * so the browser shows it and the next configuration refresh, which
+   * re-applies the selection, does not switch it back.
+   */
+  follow(): Promise<void> {
+    return this.#run(async () => {
+      this.#models ??= await this.#query.supportedModels()
+      const current = await this.#currentModel()
+      const selected = this.#selected
+      const row = this.#models.find((entry) => entry.value === selected)
+      // Either form counts: a full id is its own resolution, a role is not.
+      if (selected !== undefined && [selected, row?.resolvedModel].some((id) => id && normalize(id) === normalize(current))) return
+      this.#selected = this.#recover(current)
+      this.#onChange({ models: this.#models, model: this.#selected })
+    })
+  }
+
+  /**
+   * Recover a role from the original CLI menu, before replacing channel A's
+   * mappings with B's. An explicitly selected full model id is kept as-is.
+   * Ambiguous mappings are also kept explicit instead of guessing a role.
+   */
+  #recover(current: string): string {
+    const roles = this.#models!.filter((row) => /^(opus|sonnet|haiku|fable)$/.test(row.value)
+      && row.resolvedModel && normalize(row.resolvedModel) === normalize(current))
+    return roles.length === 1 ? roles[0]!.value : current
+  }
+
   async #refresh(): Promise<ModelSnapshot> {
     this.#models ??= await this.#query.supportedModels()
-    if (this.#selected === undefined) {
-      const current = await this.#currentModel()
-      // Recover a role from the original CLI menu, before replacing channel A's
-      // mappings with B's. An explicitly selected full model id is kept as-is.
-      // Ambiguous mappings are also kept explicit instead of guessing a role.
-      const roles = this.#models.filter((row) => /^(opus|sonnet|haiku|fable)$/.test(row.value)
-        && row.resolvedModel && normalize(row.resolvedModel) === normalize(current))
-      this.#selected = roles.length === 1 ? roles[0]!.value : current
-    }
+    if (this.#selected === undefined) this.#selected = this.#recover(await this.#currentModel())
     const snapshot = (): ModelSnapshot => ({ models: this.#models!, model: this.#selected! })
     // Reinitializing during a pending tool callback can cancel that callback.
     // Keep an in-flight turn on its provider; idle/focus refresh or the next
