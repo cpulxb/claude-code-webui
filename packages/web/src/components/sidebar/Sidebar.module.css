@@ -46,6 +46,13 @@
   background: var(--ccw-bg-hover);
 }
 
+@media (pointer: coarse) {
+  .iconButton {
+    width: 36px;
+    height: 36px;
+  }
+}
+
 .newButton {
   display: flex;
   gap: 6px;
@@ -244,6 +251,14 @@
   opacity: 1;
 }
 
+/* Without hover the button would be invisible yet still tappable, so a live
+   row could lose its CLI process to a tap near its right edge. */
+@media (hover: none) {
+  .itemClose {
+    opacity: 1;
+  }
+}
+
 .itemClose:hover {
   color: var(--ccw-text-primary);
 }
@@ -281,6 +296,14 @@
   padding: 5px var(--ccw-space-3);
   font-size: var(--ccw-text-base);
   color: var(--ccw-text-secondary);
+}
+
+@media (pointer: coarse) {
+  .item,
+  .hitRow {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
 }
 
 .hitRow:hover .itemClose {

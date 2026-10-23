@@ -47,6 +47,14 @@
   background: var(--ccw-bg-hover);
 }
 
+/* A fingertip needs a bigger target than a pointer. */
+@media (pointer: coarse) {
+  .iconButton {
+    width: 36px;
+    height: 36px;
+  }
+}
+
 .blank {
   display: flex;
   flex: 1;

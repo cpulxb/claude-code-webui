@@ -118,6 +118,12 @@
   visibility: visible;
 }
 
+@media (hover: none) {
+  .tabClose {
+    visibility: visible;
+  }
+}
+
 .tabActive .tabClose {
   position: static;
   margin-right: 5px;
@@ -148,6 +154,20 @@
 .iconButton:hover {
   color: var(--ccw-text-primary);
   background: var(--ccw-bg-hover);
+}
+
+@media (pointer: coarse) {
+  .iconButton {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* A phone already gives the panel the whole screen. */
+@media (max-width: 640px) {
+  .maximize {
+    display: none;
+  }
 }
 
 .strip .iconButton {

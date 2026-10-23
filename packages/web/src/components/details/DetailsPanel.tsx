@@ -230,7 +230,7 @@ export function DetailsPanel({
           </div>
         )}
         <button
-          className={styles.iconButton}
+          className={`${styles.iconButton} ${styles.maximize}`}
           onClick={onToggleMaximize}
           type="button"
           title={maximized ? '退出全屏' : '全屏'}

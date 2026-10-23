@@ -62,6 +62,12 @@
   visibility: visible;
 }
 
+@media (hover: none) {
+  .rewindButton {
+    visibility: visible;
+  }
+}
+
 .rewindButton:hover {
   color: var(--ccw-text-primary);
   background: var(--ccw-bg-hover);

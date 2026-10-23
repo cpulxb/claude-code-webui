@@ -92,3 +92,70 @@
 .hidden {
   display: none;
 }
+
+/* --- phone: the panels become drawers over the conversation ------------ */
+
+.frame[data-narrow] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Out of the grid flow, which leaves the conversation the only track. */
+.frame[data-narrow] .sidebarCol,
+.frame[data-narrow] .detailsCol {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 20;
+  transition:
+    transform var(--ccw-duration-slow) var(--ccw-ease),
+    visibility var(--ccw-duration-slow);
+}
+
+.frame[data-narrow] .sidebarCol {
+  left: 0;
+  width: min(300px, 85%);
+  box-shadow: var(--ccw-shadow-popover);
+}
+
+/* Too narrow to share, so the details panel takes the whole screen. */
+.frame[data-narrow] .detailsCol {
+  right: 0;
+  width: 100%;
+  border-left: none;
+}
+
+/* Hidden as well as moved, so a closed drawer leaves the tab order. */
+.frame[data-narrow][data-sidebar-collapsed] .sidebarCol {
+  visibility: hidden;
+  transform: translateX(-100%);
+}
+
+.frame[data-narrow][data-details-collapsed] .detailsCol {
+  visibility: hidden;
+  transform: translateX(100%);
+}
+
+.frame[data-narrow] .handle {
+  display: none;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  background: rgb(0 0 0 / 32%);
+  transition: opacity var(--ccw-duration-slow) var(--ccw-ease);
+}
+
+.frame[data-sidebar-collapsed] .backdrop {
+  pointer-events: none;
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame[data-narrow] .sidebarCol,
+  .frame[data-narrow] .detailsCol,
+  .backdrop {
+    transition: none;
+  }
+}

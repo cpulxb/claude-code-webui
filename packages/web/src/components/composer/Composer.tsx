@@ -33,10 +33,18 @@ const MAX_ATTACHMENTS = 10
  * from being accepted into a request the server is certain to reject.
  */
 const MAX_ATTACHMENT_TOTAL_BYTES = 18 * 1024 * 1024
+/** A touch keyboard has no Shift+Enter, so there Enter adds a line and the send button sends. */
+const TOUCH = window.matchMedia('(pointer: coarse)')
 
 /** Raw bytes behind a base64 payload, give or take the two padding chars. */
 function rawBytes(data: string): number {
   return Math.floor((data.length * 3) / 4)
+}
+
+/** Grows the box to its text, up to the stylesheet's max-height. */
+function fitHeight(element: HTMLTextAreaElement): void {
+  element.style.height = 'auto'
+  element.style.height = `${element.scrollHeight}px`
 }
 
 export function Composer(): JSX.Element | null {
@@ -210,10 +218,24 @@ export function Composer(): JSX.Element | null {
 
   useLayoutEffect(() => {
     const element = textareaRef.current
-    if (!element) return
-    element.style.height = 'auto'
-    element.style.height = `${element.scrollHeight}px`
+    if (element) fitHeight(element)
   }, [text])
+
+  // The text rewraps when the box changes width too: a phone turned sideways,
+  // a panel opened beside the conversation.
+  useEffect(() => {
+    const element = textareaRef.current
+    if (!element) return
+    let width = element.clientWidth
+    const observer = new ResizeObserver(() => {
+      // Fitting changes the height, which reports back here; only width counts.
+      if (element.clientWidth === width) return
+      width = element.clientWidth
+      fitHeight(element)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   const updateText = useCallback((next: string, caret: number) => {
     setText(next)
@@ -368,7 +390,7 @@ export function Composer(): JSX.Element | null {
       setModelsOpen(false)
       return
     }
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !TOUCH.matches) {
       event.preventDefault()
       submit()
     }

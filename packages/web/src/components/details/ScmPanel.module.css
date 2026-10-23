@@ -105,6 +105,13 @@
   visibility: visible;
 }
 
+/* Safe to keep in view: discarding still takes a second tap to confirm. */
+@media (hover: none) {
+  .discard {
+    visibility: visible;
+  }
+}
+
 /* Hover-on-hover needs one step deeper than the row's own hover fill. */
 .discard:hover {
   color: var(--ccw-text-primary);

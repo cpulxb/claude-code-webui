@@ -121,6 +121,16 @@ button {
   border: none;
 }
 
+/* iOS Safari zooms the page into any focused field set under 16px and stays
+   zoomed after. Important, because every field's own class sets a size. */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

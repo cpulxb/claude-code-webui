@@ -87,3 +87,10 @@
   font-size: var(--ccw-text-base);
   color: var(--ccw-text-muted);
 }
+
+/* No keyboard to press them on. */
+@media (pointer: coarse) {
+  .shortcut {
+    display: none;
+  }
+}

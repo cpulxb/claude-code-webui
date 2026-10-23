@@ -16,6 +16,9 @@ type Column = 'sidebar' | 'details'
  * itself, and the handles are frame children (columns clip their overflow)
  * positioned on the column borders. A maximized details panel takes the
  * conversation's track as well; the sidebar keeps its own.
+ *
+ * On a phone (`narrow`) the conversation keeps the whole width and both
+ * panels slide over it as drawers, so none of the widths above apply.
  */
 export function AppFrame(props: {
   sidebar: ReactNode
@@ -24,6 +27,8 @@ export function AppFrame(props: {
   sidebarCollapsed: boolean
   detailsCollapsed: boolean
   detailsMaximized: boolean
+  narrow: boolean
+  onCollapseSidebar: () => void
 }): JSX.Element {
   const [sidebarWidth, setSidebarWidth] = useState(264)
   const [detailsWidth, setDetailsWidth] = useState(340)
@@ -70,24 +75,28 @@ export function AppFrame(props: {
     <div
       ref={frameRef}
       className={styles.frame}
-      style={{
-        gridTemplateColumns: maximized ? `${left}px 0px minmax(0, 1fr)` : `${left}px minmax(0, 1fr) ${right}px`,
-      }}
+      style={
+        props.narrow
+          ? undefined
+          : { gridTemplateColumns: maximized ? `${left}px 0px minmax(0, 1fr)` : `${left}px minmax(0, 1fr) ${right}px` }
+      }
       {...(dragging ? { 'data-dragging': '' } : {})}
       {...(props.sidebarCollapsed ? { 'data-sidebar-collapsed': '' } : {})}
       {...(props.detailsCollapsed ? { 'data-details-collapsed': '' } : {})}
+      {...(props.narrow ? { 'data-narrow': '' } : {})}
     >
       <div className={styles.sidebarCol}>
-        <div className={styles.columnBody} style={{ minWidth: `${sidebarWidth}px` }}>
+        <div className={styles.columnBody} style={props.narrow ? undefined : { minWidth: `${sidebarWidth}px` }}>
           {props.sidebar}
         </div>
       </div>
       <div className={styles.centerCol}>{props.main}</div>
       <div className={styles.detailsCol}>
-        <div className={styles.columnBody} style={{ minWidth: `${detailsWidth}px` }}>
+        <div className={styles.columnBody} style={props.narrow ? undefined : { minWidth: `${detailsWidth}px` }}>
           {props.details}
         </div>
       </div>
+      {props.narrow && <div className={styles.backdrop} onClick={props.onCollapseSidebar} aria-hidden />}
 
       <div
         className={props.sidebarCollapsed ? styles.hidden : styles.handle}

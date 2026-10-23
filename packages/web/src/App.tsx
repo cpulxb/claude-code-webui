@@ -1,5 +1,5 @@
 import type { AuthStatus } from '@ccw/shared'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 
 import { fetchAuthStatus, onUnauthorized } from './api/client.ts'
 import styles from './App.module.css'
@@ -11,6 +11,18 @@ import { DetailsPanel } from './components/details/DetailsPanel.tsx'
 import { BrandMark, MoonIcon, PanelLeftIcon, PanelRightIcon, SunIcon } from './components/Icons.tsx'
 import { Sidebar } from './components/sidebar/Sidebar.tsx'
 import { useActiveSessionValue, useStore } from './store/session.ts'
+
+/** Phone widths, where the side panels become drawers. Matches the 640px media queries in the CSS modules. */
+const NARROW = window.matchMedia('(max-width: 640px)')
+
+function subscribeNarrow(onChange: () => void): () => void {
+  NARROW.addEventListener('change', onChange)
+  return () => NARROW.removeEventListener('change', onChange)
+}
+
+function useNarrow(): boolean {
+  return useSyncExternalStore(subscribeNarrow, () => NARROW.matches)
+}
 
 /**
  * Pairing gate. Off this machine the server answers nothing but the pairing
@@ -47,8 +59,11 @@ function Workspace(): JSX.Element {
   const cwd = useActiveSessionValue((session) => session.cwd)
   const running = useActiveSessionValue((session) => session.status === 'running')
   const closed = useActiveSessionValue((session) => session.closed)
+  const activeId = useStore((state) => state.activeId)
+  const narrow = useNarrow()
 
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  // A phone opens on the conversation; the session list is a drawer away.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => NARROW.matches)
   const [detailsCollapsed, setDetailsCollapsed] = useState(true)
   const [detailsMaximized, setDetailsMaximized] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
@@ -68,11 +83,21 @@ function Workspace(): JSX.Element {
   const revealDetails = useCallback(() => setDetailsCollapsed(false), [])
   const toggleMaximized = useCallback(() => setDetailsMaximized((maximized) => !maximized), [])
 
+  // Drawers cover the conversation, so they close on shrinking into the phone
+  // layout and once a session has been picked from them.
+  useEffect(() => {
+    if (!narrow) return
+    collapseSidebar()
+    collapseDetails()
+  }, [narrow, activeId, collapseSidebar, collapseDetails])
+
   return (
     <AppFrame
       sidebarCollapsed={sidebarCollapsed}
       detailsCollapsed={detailsCollapsed}
       detailsMaximized={detailsMaximized}
+      narrow={narrow}
+      onCollapseSidebar={collapseSidebar}
       sidebar={<Sidebar onCollapse={collapseSidebar} />}
       details={
         <DetailsPanel

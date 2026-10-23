@@ -118,6 +118,13 @@
   text-align: center;
 }
 
+/* Its keys do not apply to a touch keyboard. */
+@media (pointer: coarse) {
+  .hint {
+    display: none;
+  }
+}
+
 /* --- attachments ------------------------------------------------------ */
 
 .attachError {
