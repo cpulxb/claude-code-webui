@@ -237,21 +237,29 @@ async function run(command: string, args: string[], cwd: string, timeout: number
     cwd,
     timeout,
     maxBuffer: 16 * 1024 * 1024,
-    // A remote that asks for credentials must fail, not wait on a prompt nobody sees.
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    env: {
+      ...process.env,
+      // A remote that asks for credentials must fail, not wait on a prompt nobody sees.
+      GIT_TERMINAL_PROMPT: '0',
+      // Whether to install is decided above, from the lockfile. pnpm 11 left to
+      // itself reruns the install before any script once package.json has
+      // changed — and a release always bumps its version.
+      pnpm_config_verify_deps_before_run: 'false',
+    },
   })
   return stdout
 }
 
 /**
  * The tail of a failed command's output — where git and pnpm put the reason —
- * or the error itself. Git's `hint:` lines would crowd out its `fatal:` one.
+ * or the error itself. Git's `hint:` lines would crowd out its `fatal:` one,
+ * and a crash's stack frames the message above them.
  */
 function describe(error: unknown): string {
   const { stderr, stdout } = error as { stderr?: unknown; stdout?: unknown }
   for (const output of [stderr, stdout]) {
     if (typeof output !== 'string') continue
-    const lines = output.split('\n').filter((line) => line.trim() !== '' && !line.startsWith('hint:'))
+    const lines = output.split('\n').filter((line) => line.trim() !== '' && !line.startsWith('hint:') && !/^\s+at /.test(line))
     if (lines.length > 0) return lines.slice(-4).join('\n')
   }
   return error instanceof Error ? error.message : String(error)

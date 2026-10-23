@@ -183,6 +183,39 @@ test('a release that only bumps package.json skips the install but still builds'
   assert.equal(progress.step, 'build')
 })
 
+test('the steps tell pnpm not to rerun the install the updater skipped', async (t) => {
+  // pnpm sets it for every script it runs, this test included; a server
+  // started by tsx directly has no such luck.
+  const inherited = process.env['pnpm_config_verify_deps_before_run']
+  delete process.env['pnpm_config_verify_deps_before_run']
+  t.after(() => {
+    if (inherited !== undefined) process.env['pnpm_config_verify_deps_before_run'] = inherited
+  })
+  const { install, release } = await fixture(t)
+  await release('0.2.0', 'chore: release 0.2.0')
+  const updates = updater(install, {
+    commands: [{ step: 'build', command: 'sh', args: ['-c', 'test "$pnpm_config_verify_deps_before_run" = false'] }],
+  })
+  await updates.check()
+  const done = settled(updates)
+  updates.apply()
+  assert.deepEqual((await done).progress, { state: 'restartRequired' })
+})
+
+test('a step that crashes is reported by its message, not its stack', async (t) => {
+  const { install, release } = await fixture(t)
+  await release('0.2.0', 'chore: release 0.2.0')
+  const crash = 'echo "Error: EPERM: operation not permitted" >&2; echo "    at sync (pnpm.mjs:1:1)" >&2; exit 1'
+  const updates = updater(install, { commands: [{ step: 'build', command: 'sh', args: ['-c', crash] }] })
+  await updates.check()
+  const done = settled(updates)
+  updates.apply()
+  const { progress } = await done
+  assert.equal(progress?.state, 'failed')
+  if (progress?.state !== 'failed') return
+  assert.equal(progress.error, 'Error: EPERM: operation not permitted')
+})
+
 test('apply refuses under pnpm dev', async (t) => {
   const { install, release } = await fixture(t)
   await release('0.2.0', 'chore: release 0.2.0')
