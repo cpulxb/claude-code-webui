@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { useActiveSessionValue } from '../../store/session.ts'
+import { BrandMark } from '../Icons.tsx'
 import styles from './Composer.module.css'
 
 /**
@@ -28,7 +29,9 @@ export function TurnStatus(): JSX.Element | null {
   const tokens = doneTokens + currentTokens
   return (
     <div className={styles.turnStatus}>
-      <span className={styles.turnSpinner} aria-hidden />
+      <span className={styles.turnSpinner} aria-hidden>
+        <BrandMark size={12} />
+      </span>
       <span>
         运行中… ({formatElapsed(elapsed)}
         {tokens > 0 ? ` · ↓ ${formatTokens(tokens)} tokens` : ''})

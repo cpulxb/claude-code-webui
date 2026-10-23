@@ -570,17 +570,27 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The CLI's · ✢ ✳ ✶ ✻ ✽ flicker, done by shrinking and turning the drawn mark
+   rather than swapping font glyphs. */
 .turnSpinner {
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid var(--ccw-border-strong);
-  border-top-color: var(--ccw-accent);
-  border-radius: 50%;
-  animation: turn-spin 0.9s linear infinite;
+  display: flex;
+  color: var(--ccw-accent);
+  animation: turn-twinkle 1.6s ease-in-out infinite;
 }
 
-@keyframes turn-spin {
-  to {
-    transform: rotate(360deg);
+@keyframes turn-twinkle {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(0.5);
+  }
+
+  50% {
+    transform: rotate(90deg) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turnSpinner {
+    animation: none;
   }
 }
