@@ -7,11 +7,12 @@ import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import { fileToAttachment, isSupportedAttachment } from '../../utils/attachments.ts'
 import { LOCAL_COMMANDS, parseLocalCommand, runLocalCommand } from '../../utils/local-commands.ts'
 import { findModel, modelLabel } from '../../utils/models.ts'
+import { ArrowUpIcon, StopIcon, XIcon } from '../Icons.tsx'
 import { buildPaletteEntries, CommandPalette, type PaletteEntry } from './CommandPalette.tsx'
 import styles from './Composer.module.css'
 import { ContextMeter } from './ContextMeter.tsx'
 import { EFFORT_LABEL, effortChoices } from './EffortSlider.tsx'
-import { ModeIcon } from './ModeIcon.tsx'
+import { AttachIcon, ModeIcon, SlashIcon } from './ModeIcon.tsx'
 import { ModelPicker } from './ModelPicker.tsx'
 import { MODE_META, ModesPopover } from './ModesPopover.tsx'
 import { applyTrigger, detectTrigger, type Trigger } from './trigger.ts'
@@ -486,7 +487,7 @@ export function Composer(): JSX.Element | null {
                     type="button"
                     aria-label="移除附件"
                   >
-                    ×
+                    <XIcon size={12} />
                   </button>
                 </span>
               ))}
@@ -519,10 +520,10 @@ export function Composer(): JSX.Element | null {
               type="button"
               title="添加附件"
             >
-              +
+              <AttachIcon />
             </button>
             <button className={styles.iconButton} onClick={openCommands} type="button" title="斜杠命令">
-              /
+              <SlashIcon />
             </button>
 
             {(models.length > 0 || model) && (
@@ -577,7 +578,7 @@ export function Composer(): JSX.Element | null {
                 type="button"
                 title="停止"
               >
-                ■
+                <StopIcon size={14} />
               </button>
             ) : (
               <button
@@ -587,7 +588,7 @@ export function Composer(): JSX.Element | null {
                 type="button"
                 title="发送"
               >
-                ↑
+                <ArrowUpIcon />
               </button>
             )}
           </div>

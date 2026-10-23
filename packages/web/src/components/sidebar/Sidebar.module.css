@@ -131,8 +131,8 @@
 }
 
 .switcherCaret {
+  display: flex;
   flex: none;
-  font-size: var(--ccw-text-xs);
   color: var(--ccw-text-faint);
 }
 
@@ -372,6 +372,7 @@
 }
 
 .updateMark {
+  display: flex;
   color: var(--ccw-accent);
 }
 

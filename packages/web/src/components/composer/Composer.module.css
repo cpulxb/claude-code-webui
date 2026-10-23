@@ -107,7 +107,8 @@
 }
 
 .stop {
-  background: var(--ccw-danger);
+  color: var(--ccw-bg-base);
+  background: var(--ccw-text-primary);
 }
 
 .hint {
@@ -143,6 +144,7 @@
 }
 
 .chipRemove {
+  display: flex;
   padding: 0 2px;
   color: var(--ccw-text-muted);
 }

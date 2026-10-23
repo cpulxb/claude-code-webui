@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useStore } from '../../store/session.ts'
 import { DevicesDialog } from '../auth/DevicesDialog.tsx'
-import { BrandMark, FolderIcon, PanelLeftIcon } from '../Icons.tsx'
+import { BrandMark, ChevronsUpDownIcon, CircleArrowUpIcon, FolderIcon, PanelLeftIcon, SquarePenIcon } from '../Icons.tsx'
 import { DirectoryPicker } from './DirectoryPicker.tsx'
 import styles from './Sidebar.module.css'
 import { UpdateDialog } from './UpdateDialog.tsx'
@@ -171,7 +171,8 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
         type="button"
         title={currentCwd ? `在 ${basename(currentCwd)} 新建会话` : '选择目录并新建会话'}
       >
-        ⊕ 新会话
+        <SquarePenIcon size={14} />
+        新会话
       </button>
 
       <input
@@ -223,7 +224,9 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
 
       {update?.latest && (
         <button className={styles.update} onClick={() => setShowUpdate(true)} type="button">
-          <span className={styles.updateMark}>↑</span>
+          <span className={styles.updateMark}>
+            <CircleArrowUpIcon size={14} />
+          </span>
           <span className={styles.updateText}>新版本 v{update.latest}</span>
           <span className={styles.updateAction}>{updateAction(update.progress)}</span>
         </button>
@@ -357,7 +360,9 @@ function ProjectSwitcher(props: {
       >
         <FolderIcon size={14} />
         <span className={styles.switcherName}>{props.cwd ? basename(props.cwd) : '选择项目'}</span>
-        <span className={styles.switcherCaret}>▾</span>
+        <span className={styles.switcherCaret}>
+          <ChevronsUpDownIcon size={14} />
+        </span>
       </button>
 
       {open && (

@@ -92,3 +92,21 @@ export function UltracodeIcon(props: { size?: number; className?: string }): JSX
     </Glyph>
   )
 }
+
+/** Paperclip: the toolbar button opens the file picker straight away. */
+export function AttachIcon(props: { size?: number; className?: string }): JSX.Element {
+  return (
+    <Glyph size={props.size} className={props.className}>
+      <path d="m13.33 5-7.01 7.16a1.67 1.67 0 0 0 2.36 2.36l7.01-7.16a3.33 3.33 0 1 0-4.71-4.71l-7.01 7.15a5 5 0 1 0 7.07 7.07" />
+    </Glyph>
+  )
+}
+
+/** The `/` that opens the command palette, drawn so it matches the paperclip's weight. */
+export function SlashIcon(props: { size?: number; className?: string }): JSX.Element {
+  return (
+    <Glyph size={props.size} className={props.className}>
+      <path d="M12.5 3.5 7.5 16.5" />
+    </Glyph>
+  )
+}

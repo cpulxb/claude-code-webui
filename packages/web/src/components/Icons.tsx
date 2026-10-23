@@ -223,3 +223,52 @@ export function TerminalIcon(props: { size?: number }): JSX.Element {
     </Icon>
   )
 }
+
+/** 项目切换器：上下双箭头，表示「点开可以换成别的」，比单个 ▾ 更像切换器。 */
+export function ChevronsUpDownIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="m7 15 5 5 5-5" />
+      <path d="m7 9 5-5 5 5" />
+    </Icon>
+  )
+}
+
+/** 新会话：方框里一支笔，「新建对话」的通用图标。 */
+export function SquarePenIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.38 2.62a2.12 2.12 0 1 1 3 3L12 15l-4 1 1-4Z" />
+    </Icon>
+  )
+}
+
+export function ArrowUpIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="m5 12 7-7 7 7" />
+      <path d="M12 19V5" />
+    </Icon>
+  )
+}
+
+/** 停止键里的实心方块。 */
+export function StopIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" />
+    </Icon>
+  )
+}
+
+/** 侧栏的新版本提示。 */
+export function CircleArrowUpIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="m16 12-4-4-4 4" />
+      <path d="M12 16V8" />
+    </Icon>
+  )
+}
