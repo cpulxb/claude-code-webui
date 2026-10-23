@@ -66,12 +66,7 @@ server 启动时检查一次，之后每小时对 `origin` 执行 `git fetch`，
 - 以其他方式启动时，页面提示手动重启。
 - `pnpm dev` 下不提供一键更新：tsx watch 会在代码合并的那一刻就重启 server。请手动执行 `git pull --ff-only && pnpm install`。
 
-发布新版本：改根目录 `package.json` 的 `version` 并提交，然后打 tag 推送。只推提交、不打 tag，不会提示用户更新。
-
-```bash
-git tag -a v0.2.0 -m v0.2.0
-git push origin master v0.2.0
-```
+发布新版本就是往 master 推一个 `vX.Y.Z` tag；只推提交、不打 tag，不会提示用户更新。步骤和规则见 [docs/releasing.md](docs/releasing.md)。
 
 ## 配置
 
