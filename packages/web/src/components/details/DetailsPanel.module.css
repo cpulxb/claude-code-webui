@@ -156,6 +156,13 @@
   background: var(--ccw-bg-hover);
 }
 
+.iconButton:disabled {
+  color: var(--ccw-text-muted);
+  cursor: default;
+  background: none;
+  opacity: 0.35;
+}
+
 @media (pointer: coarse) {
   .iconButton {
     width: 36px;

@@ -210,7 +210,11 @@ export function DetailsPanel({
                   </button>
                   <button
                     className={styles.tabClose}
-                    onClick={() => update((set) => closeTab(set, id))}
+                    // A lone start page is what closing the last tab leaves
+                    // behind, so closing it as well puts the panel away.
+                    onClick={() =>
+                      tabs.length === 1 && tab.kind === 'start' ? onCollapse() : update((set) => closeTab(set, id))
+                    }
                     type="button"
                     title="关闭"
                   >
@@ -222,6 +226,8 @@ export function DetailsPanel({
             <button
               className={styles.iconButton}
               onClick={() => update((set) => openTab(set, { kind: 'start' }))}
+              // There is one start page, and it is already in front.
+              disabled={active === 'start'}
               type="button"
               title="新标签页"
             >
