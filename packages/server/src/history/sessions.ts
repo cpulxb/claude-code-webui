@@ -213,6 +213,11 @@ function parsePermissionMode(line: string): PermissionMode | null {
   }
 }
 
+/** Whether the CLI has written this session's JSONL — it does so only with the first message. */
+export async function hasTranscript(sessionId: string): Promise<boolean> {
+  return (await findTranscript(sessionId)) !== null
+}
+
 /**
  * Locates a session's JSONL. The SDK exposes neither the path nor the rule that
  * encodes a cwd into a directory name, so every project directory is probed —

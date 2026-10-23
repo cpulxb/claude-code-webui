@@ -6,6 +6,7 @@ import { registerRoot, resolveInWorkspace } from '../files/roots.ts'
 import { suggestFiles } from '../files/suggest.ts'
 import {
   forkSavedSession,
+  hasTranscript,
   listProjects,
   listSubagentMeta,
   readMessages,
@@ -28,7 +29,15 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
       // The picked cwd becomes a legitimate root for the file RPCs. Trusted:
       // the user chose this directory, even if it is `~` itself.
       registerRoot(config.cwd, { trusted: true })
-      const runner = manager.create(config)
+      // A session opened and never sent to has no JSONL, so `--resume` exits
+      // with "No conversation found" — e.g. reopened after a server restart.
+      // Starting it fresh under the same id is what it still is.
+      let effective = config
+      if (config.resume && !(await hasTranscript(config.resume))) {
+        const { resume, ...fresh } = config
+        effective = { ...fresh, sessionId: resume }
+      }
+      const runner = manager.create(effective)
       return { sessionId: runner.sessionId }
     },
 
