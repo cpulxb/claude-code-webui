@@ -191,6 +191,11 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
 
     'update.status': async () => updater.status,
 
+    'update.check': async () => {
+      await updater.check()
+      return updater.status
+    },
+
     'update.apply': async () => updater.apply(),
   }
 }

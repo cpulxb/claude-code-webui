@@ -10,6 +10,8 @@ import { UpdateDialog } from './UpdateDialog.tsx'
 
 /** The project the list shows survives a reload, even with no session open. */
 const SELECTED_KEY = 'ccw.selectedProject'
+/** How long the check button says "已是最新" before offering itself again. */
+const UP_TO_DATE_MS = 3_000
 
 /** A search hit needs its project attached — the flat list loses the grouping. */
 type SearchHit = SessionSummary & { cwd: string }
@@ -38,11 +40,13 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
   const openSession = useStore((state) => state.openSession)
   const closeSession = useStore((state) => state.closeSession)
   const refreshProjects = useStore((state) => state.refreshProjects)
+  const checkUpdate = useStore((state) => state.checkUpdate)
 
   const [selectedCwd, setSelectedCwd] = useState<string | null>(() => localStorage.getItem(SELECTED_KEY))
   const [picking, setPicking] = useState(false)
   const [showDevices, setShowDevices] = useState(false)
   const [showUpdate, setShowUpdate] = useState(false)
+  const [updateCheck, setUpdateCheck] = useState<'idle' | 'running' | 'upToDate'>('idle')
   const [query, setQuery] = useState('')
   const [hitIndex, setHitIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -76,11 +80,30 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
 
   useEffect(() => setHitIndex(0), [query])
 
+  useEffect(() => {
+    if (updateCheck !== 'upToDate') return
+    const timer = setTimeout(() => setUpdateCheck('idle'), UP_TO_DATE_MS)
+    return () => clearTimeout(timer)
+  }, [updateCheck])
+
   const run = (action: Promise<unknown>, failure: string): void => {
     setError(null)
     void action
       .then(() => refreshProjects())
       .catch((cause: unknown) => setError(`${failure}：${cause instanceof Error ? cause.message : String(cause)}`))
+  }
+
+  // A release it finds shows up as the card above the footer; only "nothing
+  // new" needs saying here.
+  const checkForUpdate = (): void => {
+    setError(null)
+    setUpdateCheck('running')
+    checkUpdate()
+      .then((status) => setUpdateCheck(status.latest ? 'idle' : 'upToDate'))
+      .catch((cause: unknown) => {
+        setUpdateCheck('idle')
+        setError(`检查更新失败：${cause instanceof Error ? cause.message : String(cause)}`)
+      })
   }
 
   const startSession = (cwd: string): void => {
@@ -209,8 +232,24 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
             connection === 'closed' ? styles.statusClosed : ''
           }`}
         />
-        {connection === 'open' ? '已连接' : connection === 'connecting' ? '连接中…' : '连接断开，重试中'}
+        <span className={styles.footStatus}>
+          {connection === 'open' ? '已连接' : connection === 'connecting' ? '连接中…' : '连接断开，重试中'}
+        </span>
         <span className={styles.spacer} />
+        {update && (
+          <>
+            <span title="Claude Code WebUI 版本">v{update.current}</span>
+            <button
+              className={styles.footButton}
+              onClick={checkForUpdate}
+              disabled={updateCheck === 'running'}
+              type="button"
+              title="立即检查有没有新版本"
+            >
+              {updateCheck === 'running' ? '检查中…' : updateCheck === 'upToDate' ? '已是最新' : '检查更新'}
+            </button>
+          </>
+        )}
         <button className={styles.footButton} onClick={() => setShowDevices(true)} type="button" title="已配对的设备">
           设备
         </button>

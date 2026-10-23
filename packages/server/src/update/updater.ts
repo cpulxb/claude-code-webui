@@ -43,6 +43,7 @@ export class Updater {
   readonly #subscribers = new Set<(status: UpdateStatus) => void>()
   #status: UpdateStatus
   #timer: NodeJS.Timeout | null = null
+  #checking: Promise<void> | null = null
 
   constructor(options: {
     /** The git checkout to update; null, no release is ever found. */
@@ -90,18 +91,33 @@ export class Updater {
     return () => this.#subscribers.delete(handler)
   }
 
-  /** Checks now, then hourly. */
+  /** Checks now, then hourly; those checks only log their failures. */
   start(): void {
     if (!this.#root || this.#timer) return
-    void this.check()
-    this.#timer = setInterval(() => void this.check(), CHECK_INTERVAL_MS)
+    const check = (): void => {
+      this.check().catch((error: unknown) => console.warn(`[ccw] update check failed: ${describe(error)}`))
+    }
+    check()
+    this.#timer = setInterval(check, CHECK_INTERVAL_MS)
     this.#timer.unref()
   }
 
-  /** Fetches the remote's release tags and recomputes `latest`. Failures are logged, never thrown. */
-  async check(): Promise<void> {
+  /**
+   * Fetches the remote's release tags and recomputes `latest`. A check already
+   * running — the hourly one, a click in another tab — is joined, not raced:
+   * two fetches into one repository collide on its ref locks.
+   */
+  check(): Promise<void> {
     const root = this.#root
-    if (!root || this.#installing()) return
+    if (!root) return Promise.reject(new Error('not a git checkout: there are no releases to check'))
+    this.#checking ??= this.#fetch(root).finally(() => {
+      this.#checking = null
+    })
+    return this.#checking
+  }
+
+  async #fetch(root: string): Promise<void> {
+    if (this.#installing()) return
     try {
       await git(root, 'fetch', '--quiet', '--no-tags', 'origin', '+refs/tags/v*:refs/tags/v*')
       const tags = (await git(root, 'tag', '--list', 'v*', '--sort=-v:refname')).split('\n')
@@ -117,7 +133,8 @@ export class Updater {
       if (this.#installing()) return
       this.#set({ ...this.#status, latest, changes })
     } catch (error) {
-      console.warn(`[ccw] update check failed: ${describe(error)}`)
+      // git's own words, not execFile's "Command failed: git fetch …" header.
+      throw new Error(describe(error))
     }
   }
 

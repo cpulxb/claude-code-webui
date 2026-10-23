@@ -395,6 +395,8 @@ export type RpcMap = {
   'scm.shadowBaseline': { params: { cwd: string }; result: Record<string, never> }
   /** The last release check's answer; `update_status` events push every change after it. */
   'update.status': { params: Record<string, never>; result: UpdateStatus }
+  /** Checks for a release now rather than at the next hourly check; fails with git's reason. */
+  'update.check': { params: Record<string, never>; result: UpdateStatus }
   /**
    * Starts installing `latest` and returns at once; progress arrives as
    * `update_status` events. The restart at the end ends every live session.

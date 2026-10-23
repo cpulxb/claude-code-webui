@@ -53,7 +53,7 @@ server 监听非 loopback 地址时必须配置 TLS，否则拒绝启动。只�
 
 ## 更新
 
-server 启动时检查一次，之后每小时对 `origin` 执行 `git fetch`，看有没有当前代码还不包含的 `vX.Y.Z` tag。有的话，侧栏底部会出现新版本卡片，点开可以看到这个版本带来的提交。点「立即更新」后，server 依次执行：
+server 启动时检查一次，之后每小时对 `origin` 执行 `git fetch`，看有没有当前代码还不包含的 `vX.Y.Z` tag；侧栏底部版本号旁的「检查更新」可以随时立即检查一次。有的话，侧栏底部会出现新版本卡片，点开可以看到这个版本带来的提交。点「立即更新」后，server 依次执行：
 
 1. `git merge --ff-only <tag>`。本地有自己的提交，或者工作区的改动和新版本冲突时，会停下来并显示原因，不会强行合并。
 2. `pnpm install --frozen-lockfile`，只在这个版本改动了 `pnpm-lock.yaml` 或 `pnpm-workspace.yaml` 时执行

@@ -141,6 +141,8 @@ type Store = {
   stopWorkflow: (toolUseId: string) => Promise<void>
   /** Installs the release in `update.latest`; the server restarts when it is done. */
   applyUpdate: () => Promise<void>
+  /** Asks the server to look for a release now; resolves with what it found. */
+  checkUpdate: () => Promise<UpdateStatus>
 }
 
 function newSession(sessionId: string, cwd: string, attached: boolean): SessionState {
@@ -443,6 +445,14 @@ export const useStore = create<Store>()(
       set((state) => {
         state.update = status
       })
+    },
+
+    checkUpdate: async () => {
+      const status = await call('update.check', {})
+      set((state) => {
+        state.update = status
+      })
+      return status
     },
 
     send: async (text, attachments) => {

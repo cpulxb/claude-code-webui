@@ -83,6 +83,23 @@ test('a checkout that already contains the newest tag is up to date', async (t) 
   assert.equal(updates.status.latest, null)
 })
 
+test('a check that cannot reach origin says why', async (t) => {
+  const { git, install } = await fixture(t)
+  await git(install, 'remote', 'set-url', 'origin', join(install, 'gone.git'))
+  await assert.rejects(updater(install).check(), /Could not read from remote repository/)
+  await assert.rejects(Updater.none().check(), /not a git checkout/)
+})
+
+test('a check started while one runs joins it', async (t) => {
+  const { install, release } = await fixture(t)
+  await release('0.2.0', 'chore: release 0.2.0')
+  const updates = updater(install)
+  const first = updates.check()
+  assert.equal(updates.check(), first)
+  await first
+  assert.equal(updates.status.latest, '0.2.0')
+})
+
 test('apply fast-forwards to the tag, runs the install steps, then restarts', async (t) => {
   const { git, install, release } = await fixture(t)
   await release('0.2.0', 'chore: release 0.2.0')
