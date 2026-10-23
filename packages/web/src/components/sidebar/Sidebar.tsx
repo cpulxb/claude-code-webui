@@ -3,7 +3,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useStore } from '../../store/session.ts'
 import { DevicesDialog } from '../auth/DevicesDialog.tsx'
-import { BrandMark, ChevronsUpDownIcon, CircleArrowUpIcon, FolderIcon, PanelLeftIcon, SquarePenIcon } from '../Icons.tsx'
+import {
+  BrandMark,
+  ChevronsUpDownIcon,
+  CircleArrowUpIcon,
+  FolderIcon,
+  PanelLeftIcon,
+  SquarePenIcon,
+  XIcon,
+} from '../Icons.tsx'
 import { DirectoryPicker } from './DirectoryPicker.tsx'
 import styles from './Sidebar.module.css'
 import { UpdateDialog } from './UpdateDialog.tsx'
@@ -463,7 +471,7 @@ function SessionList(props: {
                   title="关闭会话（结束它的 CLI 进程）"
                   aria-label="关闭会话"
                 >
-                  ×
+                  <XIcon size={12} />
                 </button>
               )}
             </div>
@@ -524,7 +532,7 @@ function SearchResults(props: {
               title="关闭会话（结束它的 CLI 进程）"
               aria-label="关闭会话"
             >
-              ×
+              <XIcon size={12} />
             </button>
           )}
         </div>

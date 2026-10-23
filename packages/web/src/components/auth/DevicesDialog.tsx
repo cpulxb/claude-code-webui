@@ -3,6 +3,7 @@ import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
 
 import { createPairingCode, fetchAuthStatus, listDevices, revokeDevice } from '../../api/client.ts'
+import { XIcon } from '../Icons.tsx'
 import styles from './Auth.module.css'
 import { describeAuthError } from './PairingScreen.tsx'
 
@@ -71,7 +72,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }): JSX.Element
           <span className={styles.dialogTitle}>设备</span>
           <span className={styles.spacer} />
           <button className={styles.close} onClick={onClose} type="button" aria-label="关闭">
-            ×
+            <XIcon />
           </button>
         </div>
 

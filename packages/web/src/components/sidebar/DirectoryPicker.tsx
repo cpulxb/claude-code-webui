@@ -55,7 +55,7 @@ export function DirectoryPicker(props: {
             <>
               <Breadcrumbs path={current} home={listing?.home ?? ''} onNavigate={load} />
               <button className={styles.iconButton} onClick={() => setEditing(current)} type="button" title="直接输入路径">
-                ✎
+                <PencilIcon />
               </button>
             </>
           ) : (
@@ -89,7 +89,7 @@ export function DirectoryPicker(props: {
             <button key={entry.path} className={styles.entry} onClick={() => load(entry.path)} type="button">
               <FolderIcon />
               <span className={styles.entryName}>{entry.name}</span>
-              <span className={styles.chevron}>›</span>
+              <ChevronIcon />
             </button>
           ))}
         </div>
@@ -136,6 +136,29 @@ function UpIcon(): JSX.Element {
   return (
     <svg className={styles.folder} width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M8 12.5V4m0 0L4.5 7.5M8 4l3.5 3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function PencilIcon(): JSX.Element {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M10.6 3.1a1.4 1.4 0 0 1 2 0l.3.3a1.4 1.4 0 0 1 0 2L5.6 12.7l-3 .7.7-3zM9.2 4.5l2.3 2.3"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+/** Marks a row that opens into a deeper listing rather than picking it. */
+function ChevronIcon(): JSX.Element {
+  return (
+    <svg className={styles.chevron} width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

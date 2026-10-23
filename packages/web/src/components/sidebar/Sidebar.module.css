@@ -233,10 +233,10 @@
 /* A live row owns a CLI subprocess, so closing it needs to stay one click
    away — but not so present that it competes with the title. */
 .itemClose {
+  display: flex;
   flex: none;
   padding: 0 2px;
   color: var(--ccw-text-faint);
-  font-size: var(--ccw-text-sm);
   opacity: 0;
 }
 

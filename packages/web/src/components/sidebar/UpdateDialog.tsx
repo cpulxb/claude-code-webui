@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 
 import { useStore } from '../../store/session.ts'
 import dialog from '../auth/Auth.module.css'
+import { XIcon } from '../Icons.tsx'
 import styles from './UpdateDialog.module.css'
 
 const STEP_LABELS: Record<UpdateStep, string> = {
@@ -45,7 +46,7 @@ export function UpdateDialog({ onClose }: { onClose: () => void }): JSX.Element 
           <span className={dialog.dialogTitle}>新版本 v{latest}</span>
           <span className={dialog.spacer} />
           <button className={dialog.close} onClick={onClose} type="button" aria-label="关闭">
-            ×
+            <XIcon />
           </button>
         </div>
         <div className={dialog.muted}>当前版本 v{current}</div>

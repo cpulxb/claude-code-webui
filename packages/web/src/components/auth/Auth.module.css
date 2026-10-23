@@ -159,9 +159,8 @@
 }
 
 .close {
-  padding: 0 var(--ccw-space-1);
-  font-size: 20px;
-  line-height: 1;
+  display: flex;
+  padding: var(--ccw-space-1);
   color: var(--ccw-text-muted);
 }
 
