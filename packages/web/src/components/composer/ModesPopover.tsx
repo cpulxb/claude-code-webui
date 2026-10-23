@@ -1,5 +1,6 @@
 import { PERMISSION_MODES, type EffortLevel, type ModelInfo, type PermissionMode } from '@ccw/shared'
 
+import { CheckIcon } from '../Icons.tsx'
 import styles from './Composer.module.css'
 import { EFFORT_LABEL, EffortSlider, effortChoices, nextEffort } from './EffortSlider.tsx'
 import { EffortIcon, ModeIcon, UltracodeIcon } from './ModeIcon.tsx'
@@ -58,7 +59,11 @@ export function ModesPopover(props: {
                 {meta.hint}
               </span>
             </span>
-            {mode === props.mode && <span className={styles.modeCheck}>✓</span>}
+            {mode === props.mode && (
+              <span className={styles.modeCheck}>
+                <CheckIcon size={14} />
+              </span>
+            )}
           </button>
         )
       })}

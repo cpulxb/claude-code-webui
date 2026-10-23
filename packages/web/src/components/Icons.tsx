@@ -224,6 +224,15 @@ export function TerminalIcon(props: { size?: number }): JSX.Element {
   )
 }
 
+/** 面包屑分隔符，以及「点开进入」的行尾提示。 */
+export function ChevronRightIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="m9 18 6-6-6-6" />
+    </Icon>
+  )
+}
+
 /** 项目切换器：上下双箭头，表示「点开可以换成别的」，比单个 ▾ 更像切换器。 */
 export function ChevronsUpDownIcon(props: { size?: number }): JSX.Element {
   return (

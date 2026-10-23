@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { emptyTranscript, findAgent, listAgents } from '../../render/nodes.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
+import { ChevronRightIcon } from '../Icons.tsx'
 import { AgentStats, STATUS_LABEL } from './AgentCard.tsx'
 import styles from './AgentCard.module.css'
 import { PixelOffice } from './PixelOffice.tsx'
@@ -68,11 +69,15 @@ export function AgentNav(): JSX.Element | null {
             <button className={styles.crumb} onClick={() => void openAgent(null)} type="button">
               ← 主会话
             </button>
-            <span className={styles.sep}>›</span>
+            <span className={styles.sep}>
+              <ChevronRightIcon size={12} />
+            </span>
             {workflow && (
               <>
                 <span className={styles.navLabel}>工作流 {workflow.name}</span>
-                <span className={styles.sep}>›</span>
+                <span className={styles.sep}>
+                  <ChevronRightIcon size={12} />
+                </span>
               </>
             )}
             <span className={styles.crumbCurrent}>{current.description || '子代理'}</span>

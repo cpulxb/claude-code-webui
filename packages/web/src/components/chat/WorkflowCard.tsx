@@ -9,6 +9,7 @@ import {
   type WorkflowRun,
 } from '../../render/workflows.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
+import { ChevronRightIcon } from '../Icons.tsx'
 import { STATUS_LABEL } from './AgentCard.tsx'
 import styles from './WorkflowCard.module.css'
 
@@ -144,7 +145,11 @@ function AgentRow({ agent, onOpen }: { agent: WorkflowAgent; onOpen: (() => void
       </span>
       {activity && <span className={styles.agentActivity}>{activity}</span>}
       {stats.length > 0 && <span className={styles.agentStats}>{stats.join(' · ')}</span>}
-      {onOpen && <span className={styles.open}>›</span>}
+      {onOpen && (
+        <span className={styles.open}>
+          <ChevronRightIcon size={12} />
+        </span>
+      )}
     </button>
   )
 }

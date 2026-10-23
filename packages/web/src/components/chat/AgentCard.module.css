@@ -145,6 +145,7 @@
 }
 
 .sep {
+  display: flex;
   color: var(--ccw-text-faint);
 }
 

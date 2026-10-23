@@ -2,6 +2,7 @@ import type { ModelInfo } from '@ccw/shared'
 import { useEffect, useRef } from 'react'
 
 import { findModel, modelLabel } from '../../utils/models.ts'
+import { CheckIcon } from '../Icons.tsx'
 import styles from './Composer.module.css'
 
 /**
@@ -47,7 +48,11 @@ export function ModelPicker(props: {
             <span className={styles.modelName}>{modelLabel(model, props.models)}</span>
             {model.description && <span className={styles.modelDesc}>{model.description}</span>}
           </span>
-          {model === current && <span className={styles.modeCheck}>✓</span>}
+          {model === current && (
+            <span className={styles.modeCheck}>
+              <CheckIcon size={14} />
+            </span>
+          )}
         </button>
       ))}
     </div>

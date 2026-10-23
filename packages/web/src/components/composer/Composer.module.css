@@ -381,8 +381,14 @@
 }
 
 .modeCheck {
+  display: flex;
   flex: none;
   color: var(--ccw-accent);
+}
+
+/* Mode rows align to the top, so centre the 14px check on the title's line. */
+.modeRow .modeCheck {
+  padding-top: 3px;
 }
 
 .sectionTitle {
