@@ -45,12 +45,12 @@ const MODE_GLYPHS: Record<PermissionMode, JSX.Element> = {
   ),
   // Lightning: approved automatically after a safety check.
   auto: <path d="M10.9 2.6 4.6 10.75h5.15l-.65 6.65 6.3-8.15h-5.15z" />,
-  // A route that loops around the checkpoint instead of stopping at it.
+  // A shield struck through: the safety checks are off. The outline breaks
+  // where the slash crosses it, so the two don't merge at 14px.
   bypassPermissions: (
     <>
-      <circle cx="5" cy="4.75" r="1.75" />
-      <path d="M6.75 4.75h6.5a2.75 2.75 0 0 1 0 5.5h-6.5a2.75 2.75 0 0 0 0 5.5h6.5" />
-      <circle cx="15" cy="15.25" r="1.75" />
+      <path d="M15.08 12.89c.43-.93.67-1.98.67-3.14V4.5c-2.25 0-4.25-.75-5.75-2-.99.83-2.2 1.43-3.56 1.75M4.25 6.44v3.31c0 3.75 2.5 6.25 5.75 7.75 1.2-.56 2.31-1.25 3.22-2.09" />
+      <path d="m2.75 2.75 14.5 14.5" />
     </>
   ),
   // No entry: anything not pre-approved is refused.
