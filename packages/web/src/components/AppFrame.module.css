@@ -37,10 +37,22 @@
 }
 
 .detailsCol {
+  /* Pins the body to the window edge, so collapsing covers it from the left
+     the way the sidebar is covered from the right. */
+  display: flex;
+  justify-content: flex-end;
   min-width: 0;
   overflow: hidden;
   background: var(--ccw-bg-sidebar);
   border-left: 1px solid var(--ccw-border-l1);
+}
+
+/* Collapsing animates the track, and a body sized to it would re-wrap its text
+   at every frame. Held at the column's open width, it is clipped instead. */
+.columnBody {
+  flex: none;
+  width: 100%;
+  height: 100%;
 }
 
 /* Subtrees stay mounted at zero width, so their border must not paint a seam. */

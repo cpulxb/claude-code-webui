@@ -77,9 +77,17 @@ export function AppFrame(props: {
       {...(props.sidebarCollapsed ? { 'data-sidebar-collapsed': '' } : {})}
       {...(props.detailsCollapsed ? { 'data-details-collapsed': '' } : {})}
     >
-      <div className={styles.sidebarCol}>{props.sidebar}</div>
+      <div className={styles.sidebarCol}>
+        <div className={styles.columnBody} style={{ minWidth: `${sidebarWidth}px` }}>
+          {props.sidebar}
+        </div>
+      </div>
       <div className={styles.centerCol}>{props.main}</div>
-      <div className={styles.detailsCol}>{props.details}</div>
+      <div className={styles.detailsCol}>
+        <div className={styles.columnBody} style={{ minWidth: `${detailsWidth}px` }}>
+          {props.details}
+        </div>
+      </div>
 
       <div
         className={props.sidebarCollapsed ? styles.hidden : styles.handle}
