@@ -45,9 +45,11 @@ const webRoot = existsSync(WEB_DIST) ? WEB_DIST : undefined
 const updater = await Updater.open({
   canApply: process.env['npm_lifecycle_event'] !== 'dev',
   buildWeb: webRoot !== undefined,
-  // systemd sets INVOCATION_ID for the services it starts. Anywhere else no
-  // one would start the server again, so the user is asked to.
-  restart: process.env['INVOCATION_ID'] ? () => shutdown(RESTART_EXIT_CODE) : null,
+  // systemd sets INVOCATION_ID for the services it starts; CCW_SUPERVISED=1
+  // vouches for any other supervisor (a watchdog, a container restart
+  // policy). Anywhere else no one would start the server again, so the user
+  // is asked to.
+  restart: process.env['INVOCATION_ID'] || process.env['CCW_SUPERVISED'] === '1' ? () => shutdown(RESTART_EXIT_CODE) : null,
 })
 const handle = await startServer({
   host,

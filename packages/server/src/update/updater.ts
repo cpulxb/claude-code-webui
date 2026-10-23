@@ -138,6 +138,7 @@ export class Updater {
     // `^{commit}`: merging an annotated tag object would ask for a merge commit.
     const merge: UpdateCommand = { step: 'merge', command: 'git', args: ['merge', '--ff-only', '--quiet', `refs/tags/${tag}^{commit}`] }
     for (const { step, command, args } of [merge, ...this.#commands]) {
+      if (step === 'install' && !(await dependenciesChanged(root))) continue
       this.#setProgress({ state: 'running', step })
       try {
         await run(command, args, root, STEP_TIMEOUT_MS)
@@ -190,6 +191,23 @@ async function contains(root: string, tag: string): Promise<boolean> {
   } catch (error) {
     if ((error as { code?: unknown }).code === 1) return false
     throw error
+  }
+}
+
+/**
+ * Whether the merge just made changes what pnpm installs; the merge left the
+ * old HEAD in ORIG_HEAD. package.json alone does not count: a release bumps
+ * every version field without touching a dependency, yet an install then
+ * still rewrites node_modules/.pnpm/lock.yaml — which fails with EPERM where
+ * the files carry a gid the user namespace cannot map. Any doubt (git
+ * failing) runs the install.
+ */
+async function dependenciesChanged(root: string): Promise<boolean> {
+  try {
+    await git(root, 'diff', '--quiet', 'ORIG_HEAD', 'HEAD', '--', 'pnpm-lock.yaml', 'pnpm-workspace.yaml')
+    return false
+  } catch {
+    return true
   }
 }
 

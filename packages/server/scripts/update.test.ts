@@ -133,7 +133,9 @@ test('a diverged checkout fails at the merge and leaves HEAD alone', async (t) =
 })
 
 test('a failing install step is reported with its output', async (t) => {
-  const { install, release } = await fixture(t)
+  const { dev, install, release } = await fixture(t)
+  // A dependency change: with the lockfile untouched the install is skipped.
+  await writeFile(join(dev, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n")
   await release('0.2.0', 'chore: release 0.2.0')
   const updates = updater(install, { commands: [{ step: 'install', command: 'git', args: ['no-such-command'] }] })
   await updates.check()
@@ -144,6 +146,24 @@ test('a failing install step is reported with its output', async (t) => {
   if (progress?.state !== 'failed') return
   assert.equal(progress.step, 'install')
   assert.match(progress.error, /no-such-command/)
+})
+
+test('a release that only bumps package.json skips the install but still builds', async (t) => {
+  const { install, release } = await fixture(t)
+  await release('0.2.0', 'chore: release 0.2.0')
+  const updates = updater(install, {
+    commands: [
+      { step: 'install', command: 'git', args: ['no-such-install'] },
+      { step: 'build', command: 'git', args: ['no-such-build'] },
+    ],
+  })
+  await updates.check()
+  const done = settled(updates)
+  updates.apply()
+  const { progress } = await done
+  assert.equal(progress?.state, 'failed')
+  if (progress?.state !== 'failed') return
+  assert.equal(progress.step, 'build')
 })
 
 test('apply refuses under pnpm dev', async (t) => {
