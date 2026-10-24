@@ -339,6 +339,21 @@
   white-space: nowrap;
 }
 
+/* Pinned under a long list, so it is never a scroll away. */
+.pickerManage {
+  position: sticky;
+  bottom: 0;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
+  background: var(--ccw-bg-base);
+  border-top: 1px solid var(--ccw-border-l1);
+}
+
+.pickerManage:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
 /* --- modes ------------------------------------------------------------ */
 
 .modeRow {

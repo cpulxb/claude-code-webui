@@ -243,6 +243,24 @@ export type UpdateStatus = {
   progress: UpdateProgress | null
 }
 
+/** A field the settings dialog edits that a higher-precedence source also sets. */
+export type SettingsOverride = {
+  /** `model`, `modelPicker`, or `env.<NAME>`. */
+  key: string
+  source: 'project' | 'local' | 'flag' | 'managed'
+  path?: string
+}
+
+/** The user-level `settings.json` the settings dialog edits. */
+export type UserSettings = {
+  path: string
+  /** `{}` while the file does not exist. */
+  settings: Record<string, unknown>
+  /** Hash of the bytes read; a write based on an older one is refused. */
+  revision: string
+  overrides: SettingsOverride[]
+}
+
 /**
  * Every RPC the server answers over `POST /api/rpc`, keyed by method name.
  * The client's `call()` derives both argument and return types from this map.
@@ -417,6 +435,17 @@ export type RpcMap = {
    * `update_status` events. The restart at the end ends every live session.
    */
   'update.apply': { params: Record<string, never>; result: UpdateStatus }
+  /** `cwd` is where overrides are looked for: its project and local settings. */
+  'settings.read': { params: { cwd?: string }; result: UserSettings }
+  /**
+   * Replaces the whole file. Refused when it changed since `revision` was
+   * read — the CLI's `/model` and CC Switch write the same file. Live sessions
+   * pick the channel and models up at their next idle refresh.
+   */
+  'settings.write': {
+    params: { settings: Record<string, unknown>; revision: string; cwd?: string }
+    result: UserSettings
+  }
 }
 
 export type RpcMethod = keyof RpcMap

@@ -129,6 +129,8 @@ type Store = {
   defaultCwd: string
   /** The server's release status; null until the first connect answers. */
   update: UpdateStatus | null
+  /** The settings dialog, opened from the sidebar and from the model menu. */
+  settingsOpen: boolean
 
   connect: () => () => void
   createSession: (cwd: string) => Promise<string>
@@ -179,6 +181,7 @@ type Store = {
   applyUpdate: () => Promise<void>
   /** Asks the server to look for a release now; resolves with what it found. */
   checkUpdate: () => Promise<UpdateStatus>
+  setSettingsOpen: (open: boolean) => void
 }
 
 function newSession(sessionId: string, cwd: string, attached: boolean): SessionState {
@@ -342,6 +345,7 @@ export const useStore = create<Store>()(
     // so the first session inherits the server process's cwd via the sidebar.
     defaultCwd: '',
     update: null,
+    settingsOpen: false,
 
     connect: () =>
       connectEvents({
@@ -605,6 +609,12 @@ export const useStore = create<Store>()(
         state.update = status
       })
       return status
+    },
+
+    setSettingsOpen: (open) => {
+      set((state) => {
+        state.settingsOpen = open
+      })
     },
 
     send: async (text, attachments) => {

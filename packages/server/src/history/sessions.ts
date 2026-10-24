@@ -386,7 +386,7 @@ async function findTranscript(sessionId: string): Promise<string | null> {
 }
 
 /** Where the CLI keeps its state — `CLAUDE_CONFIG_DIR` overrides `~/.claude`, as in the CLI. */
-function claudeConfigDir(): string {
+export function claudeConfigDir(): string {
   return process.env['CLAUDE_CONFIG_DIR'] || join(homedir(), '.claude')
 }
 

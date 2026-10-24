@@ -290,3 +290,39 @@ export function CircleArrowUpIcon(props: { size?: number }): JSX.Element {
     </Icon>
   )
 }
+
+/** 设置里的密钥：点眼睛显示明文。 */
+export function EyeIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0" />
+      <circle cx="12" cy="12" r="3" />
+    </Icon>
+  )
+}
+
+/** 密钥正以明文显示，点它重新隐藏。 */
+export function EyeOffIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M10.73 5.08a10.74 10.74 0 0 1 11.2 6.57 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-1.44 2.49" />
+      <path d="M14.08 14.16a3 3 0 0 1-4.24-4.24" />
+      <path d="M17.48 17.5a10.75 10.75 0 0 1-15.42-5.15 1 1 0 0 1 0-.7 10.75 10.75 0 0 1 4.45-5.14" />
+      <path d="m2 2 20 20" />
+    </Icon>
+  )
+}
+
+/** 拖动手柄：六个点，按住它上下拖动调整顺序。 */
+export function GripVerticalIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <circle cx="9" cy="5" r="1" />
+      <circle cx="9" cy="12" r="1" />
+      <circle cx="9" cy="19" r="1" />
+      <circle cx="15" cy="5" r="1" />
+      <circle cx="15" cy="12" r="1" />
+      <circle cx="15" cy="19" r="1" />
+    </Icon>
+  )
+}

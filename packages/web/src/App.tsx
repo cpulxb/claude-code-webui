@@ -9,6 +9,7 @@ import { ChatView } from './components/chat/ChatView.tsx'
 import { Composer } from './components/composer/Composer.tsx'
 import { DetailsPanel } from './components/details/DetailsPanel.tsx'
 import { BrandMark, MoonIcon, PanelLeftIcon, PanelRightIcon, SunIcon } from './components/Icons.tsx'
+import { SettingsDialog } from './components/settings/SettingsDialog.tsx'
 import { Sidebar } from './components/sidebar/Sidebar.tsx'
 import { followAddressBar, useActiveSessionValue, useStore } from './store/session.ts'
 
@@ -59,6 +60,8 @@ function Workspace(): JSX.Element {
   const running = useActiveSessionValue((session) => session.status === 'running')
   const closed = useActiveSessionValue((session) => session.closed)
   const activeId = useStore((state) => state.activeId)
+  const settingsOpen = useStore((state) => state.settingsOpen)
+  const setSettingsOpen = useStore((state) => state.setSettingsOpen)
   const narrow = useNarrow()
 
   // A phone opens on the conversation; the session list is a drawer away.
@@ -91,64 +94,68 @@ function Workspace(): JSX.Element {
   }, [narrow, activeId, collapseSidebar, collapseDetails])
 
   return (
-    <AppFrame
-      sidebarCollapsed={sidebarCollapsed}
-      detailsCollapsed={detailsCollapsed}
-      detailsMaximized={detailsMaximized}
-      narrow={narrow}
-      onCollapseSidebar={collapseSidebar}
-      sidebar={<Sidebar onCollapse={collapseSidebar} />}
-      details={
-        <DetailsPanel
-          onCollapse={collapseDetails}
-          onReveal={revealDetails}
-          maximized={detailsMaximized}
-          onToggleMaximize={toggleMaximized}
-        />
-      }
-      main={
-        <div className={styles.main}>
-          <div className={styles.header}>
-            {sidebarCollapsed && (
-              <button className={styles.iconButton} onClick={() => setSidebarCollapsed(false)} type="button" title="展开侧栏">
-                <PanelLeftIcon />
+    <>
+      <AppFrame
+        sidebarCollapsed={sidebarCollapsed}
+        detailsCollapsed={detailsCollapsed}
+        detailsMaximized={detailsMaximized}
+        narrow={narrow}
+        onCollapseSidebar={collapseSidebar}
+        sidebar={<Sidebar onCollapse={collapseSidebar} />}
+        details={
+          <DetailsPanel
+            onCollapse={collapseDetails}
+            onReveal={revealDetails}
+            maximized={detailsMaximized}
+            onToggleMaximize={toggleMaximized}
+          />
+        }
+        main={
+          <div className={styles.main}>
+            <div className={styles.header}>
+              {sidebarCollapsed && (
+                <button className={styles.iconButton} onClick={() => setSidebarCollapsed(false)} type="button" title="展开侧栏">
+                  <PanelLeftIcon />
+                </button>
+              )}
+              <span className={styles.title}>{cwd !== undefined ? shortCwd(cwd) : 'Claude Code'}</span>
+              {running && <span className={styles.subtitle}>运行中…</span>}
+              {closed && <span className={styles.subtitle}>会话已结束</span>}
+              <span className={styles.spacer} />
+              <button
+                className={styles.iconButton}
+                onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+                type="button"
+                title="切换主题"
+              >
+                {theme === 'light' ? <MoonIcon /> : <SunIcon />}
               </button>
-            )}
-            <span className={styles.title}>{cwd !== undefined ? shortCwd(cwd) : 'Claude Code'}</span>
-            {running && <span className={styles.subtitle}>运行中…</span>}
-            {closed && <span className={styles.subtitle}>会话已结束</span>}
-            <span className={styles.spacer} />
-            <button
-              className={styles.iconButton}
-              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-              type="button"
-              title="切换主题"
-            >
-              {theme === 'light' ? <MoonIcon /> : <SunIcon />}
-            </button>
-            <button
-              className={styles.iconButton}
-              onClick={() => setDetailsCollapsed(!detailsCollapsed)}
-              type="button"
-              title="会话详情"
-            >
-              <PanelRightIcon />
-            </button>
-          </div>
-
-          {cwd !== undefined ? (
-            <ActiveConversation />
-          ) : (
-            <div className={styles.blank}>
-              <span className={styles.blankMark}>
-                <BrandMark size={28} />
-              </span>
-              <span>从左侧选择一个会话，或新建一个</span>
+              <button
+                className={styles.iconButton}
+                onClick={() => setDetailsCollapsed(!detailsCollapsed)}
+                type="button"
+                title="会话详情"
+              >
+                <PanelRightIcon />
+              </button>
             </div>
-          )}
-        </div>
-      }
-    />
+
+            {cwd !== undefined ? (
+              <ActiveConversation />
+            ) : (
+              <div className={styles.blank}>
+                <span className={styles.blankMark}>
+                  <BrandMark size={28} />
+                </span>
+                <span>从左侧选择一个会话，或新建一个</span>
+              </div>
+            )}
+          </div>
+        }
+      />
+      {/* Outside the frame: a drawer's stacking context would cap the dialog on phones. */}
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+    </>
   )
 }
 

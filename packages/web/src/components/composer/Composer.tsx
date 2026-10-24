@@ -54,6 +54,7 @@ export function Composer(): JSX.Element | null {
   const setPermissionMode = useStore((state) => state.setPermissionMode)
   const setEffort = useStore((state) => state.setEffort)
   const setModel = useStore((state) => state.setModel)
+  const setSettingsOpen = useStore((state) => state.setSettingsOpen)
   const setUltracode = useStore((state) => state.setUltracode)
   const refreshModels = useStore((state) => state.refreshModels)
   const activeId = useStore((state) => state.activeId)
@@ -476,6 +477,10 @@ export function Composer(): JSX.Element | null {
               rootRef={modelsRef}
               onSelect={chooseModel}
               onHover={setModelIndex}
+              onManage={() => {
+                setModelsOpen(false)
+                setSettingsOpen(true)
+              }}
             />
           )}
           {modesOpen && (

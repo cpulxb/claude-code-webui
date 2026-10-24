@@ -17,6 +17,8 @@ export function ModelPicker(props: {
   rootRef?: React.Ref<HTMLDivElement>
   onSelect: (model: ModelInfo) => void
   onHover: (index: number) => void
+  /** Opens the settings dialog, where the menu's rows are configured. */
+  onManage: () => void
 }): JSX.Element {
   const activeRef = useRef<HTMLButtonElement>(null)
 
@@ -55,6 +57,18 @@ export function ModelPicker(props: {
           )}
         </button>
       ))}
+      {/* Mouse only: the arrow keys walk the models, not this row. */}
+      <button
+        className={`${styles.modelRow} ${styles.pickerManage}`}
+        onMouseDown={(event) => {
+          event.preventDefault()
+          props.onManage()
+        }}
+        type="button"
+        tabIndex={-1}
+      >
+        管理模型…
+      </button>
     </div>
   )
 }

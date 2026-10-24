@@ -19,6 +19,7 @@ import {
 } from '../history/sessions.ts'
 import { scmDiff, scmDiscard, scmStatus, shadowBaseline } from '../scm/git.ts'
 import type { SessionManager } from '../session/manager.ts'
+import { readUserSettings, writeUserSettings } from '../settings/user-settings.ts'
 import type { Updater } from '../update/updater.ts'
 
 export type RpcHandlers = {
@@ -208,5 +209,16 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
     },
 
     'update.apply': async () => updater.apply(),
+
+    // `cwd` only says whose project settings to check for overrides; one
+    // outside the workspaces is ignored rather than read.
+    'settings.read': async ({ cwd }) => readUserSettings(await workspaceOrNothing(cwd)),
+
+    'settings.write': async ({ settings, revision, cwd }) =>
+      writeUserSettings(settings, revision, await workspaceOrNothing(cwd)),
   }
+}
+
+function workspaceOrNothing(cwd: string | undefined): Promise<string | undefined> {
+  return cwd ? resolveInWorkspace(cwd).catch(() => undefined) : Promise.resolve(undefined)
 }
