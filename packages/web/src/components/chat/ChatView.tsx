@@ -48,6 +48,30 @@ export function ChatView(): JSX.Element | null {
   // view shows only the ones its own tool calls raised.
   const pendingPermissions = viewAgent ? allPermissions?.filter((request) => request.agentId === agentId) : allPermissions
   const error = useActiveSessionValue((session) => session.error)
+  // Only the main thread pages its history; a subagent's comes in one read.
+  const historyCursor = useActiveSessionValue((session) => (session.viewAgent ? null : session.historyCursor)) ?? null
+  const historyLoading = useActiveSessionValue((session) => session.historyLoading)
+  const historyError = useActiveSessionValue((session) => (session.viewAgent ? null : session.historyError)) ?? null
+  const loadOlderHistory = useStore((state) => state.loadOlderHistory)
+  const retryHistory = useStore((state) => state.retryHistory)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  // The topmost row when an older page was asked for, by its offset in the
+  // scrolled content: only what lands above it moves that, not scrolling.
+  const anchorRef = useRef<{ element: Element; offset: number } | null>(null)
+  const holdAnchor = useCallback(() => {
+    const root = scrollRef.current
+    const first = sentinelRef.current?.nextElementSibling
+    if (!root || !first) return
+    anchorRef.current = { element: first, offset: contentOffset(root, first) }
+    // Native scroll anchoring may or may not shift for the same insert (not
+    // at scrollTop 0, not in Safari); off until the page lands, so the shift
+    // in the layout effect below is the only one.
+    root.style.overflowAnchor = 'none'
+  }, [])
+  const releaseAnchor = useCallback(() => {
+    anchorRef.current = null
+    if (scrollRef.current) scrollRef.current.style.overflowAnchor = ''
+  }, [])
 
   const startRewind = useCallback(
     async (nodeId: string): Promise<void> => {
@@ -104,6 +128,38 @@ export function ChatView(): JSX.Element | null {
     return () => element.removeEventListener('scroll', onScroll)
   }, [])
 
+  // The next page is fetched as the placeholder above the oldest row nears
+  // the viewport. Observed afresh per page: a page too short to push the
+  // placeholder away again fetches the one after it straight off. After a
+  // failure it waits for the retry button rather than looping on the error.
+  useEffect(() => {
+    const root = scrollRef.current
+    const sentinel = sentinelRef.current
+    if (!root || !sentinel || !activeId || !historyCursor || historyError) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        holdAnchor()
+        void loadOlderHistory(activeId)
+      },
+      { root, rootMargin: '100% 0px 0px 0px' },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [activeId, historyCursor, historyError, holdAnchor, loadOlderHistory])
+
+  const retry = useCallback(() => {
+    if (!activeId) return
+    // An older page lands above the rows shown; the newest one replaces them.
+    if (historyCursor) holdAnchor()
+    void retryHistory(activeId)
+  }, [activeId, historyCursor, holdAnchor, retryHistory])
+
+  // A page that failed never lands; hand anchoring back to the browser.
+  useEffect(() => {
+    if (!historyLoading) releaseAnchor()
+  }, [historyLoading, releaseAnchor])
+
   const nodes = transcript?.nodes
   const streaming = transcript?.streaming
 
@@ -114,6 +170,16 @@ export function ChatView(): JSX.Element | null {
   // 0. `nodes` is a fresh array whenever a node is added *or* mutated, so
   // arriving tool output follows too.
   useLayoutEffect(() => {
+    // An older page landed between the placeholder and the anchored row:
+    // scroll by exactly what was inserted above it, so the reader's view —
+    // wherever they scrolled to meanwhile — stays put.
+    const anchor = anchorRef.current
+    if (anchor && sentinelRef.current?.nextElementSibling !== anchor.element) {
+      const element = scrollRef.current
+      if (element && anchor.element.isConnected) element.scrollTop += contentOffset(element, anchor.element) - anchor.offset
+      releaseAnchor()
+    }
+
     const count = nodes?.length ?? 0
     const seen = seenRef.current
     const viewKey = `${activeId}/${viewAgent ?? ''}`
@@ -153,7 +219,7 @@ export function ChatView(): JSX.Element | null {
   )
 
   if (!nodes) return null
-  const empty = nodes.length === 0 && !streaming
+  const empty = nodes.length === 0 && !streaming && !historyCursor && !historyError
 
   return (
     <div className={styles.scroll} ref={scrollRef}>
@@ -167,6 +233,22 @@ export function ChatView(): JSX.Element | null {
         </div>
       ) : (
         <div className={styles.stream}>
+          {(historyCursor || historyError) && (
+            <div ref={sentinelRef} className={styles.olderHistory}>
+              {historyError ? (
+                <>
+                  <span className={styles.olderHistoryError}>{historyError}</span>
+                  <button className={styles.olderHistoryRetry} disabled={historyLoading} onClick={retry} type="button">
+                    {historyLoading ? '重试中…' : '重试'}
+                  </button>
+                </>
+              ) : historyLoading ? (
+                '正在加载更早的消息…'
+              ) : (
+                '上滑加载更早的消息'
+              )}
+            </div>
+          )}
           {nodes.map((node) =>
             node.kind === 'user' && viewAgent ? (
               // A subagent's prompt came from the parent model, not from a
@@ -356,6 +438,11 @@ function StreamingRow({ block }: { block: StreamingBlock }): JSX.Element {
       )}
     </div>
   )
+}
+
+/** Where `element` sits in the scroller's content, however far it is scrolled. */
+function contentOffset(scroller: HTMLElement, element: Element): number {
+  return element.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
 }
 
 function formatTokens(count: number): string {

@@ -244,6 +244,31 @@
   color: var(--ccw-text-muted);
 }
 
+.olderHistory {
+  margin-bottom: var(--ccw-space-4);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
+  text-align: center;
+}
+
+.olderHistoryError {
+  color: var(--ccw-danger);
+}
+
+.olderHistoryRetry {
+  padding: 1px 10px;
+  margin-left: var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-secondary);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.olderHistoryRetry:hover:not(:disabled) {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
 .compact::before,
 .compact::after {
   flex: 1;

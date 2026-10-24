@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-import { applyHistoryMessage } from '../src/render/history.ts'
+import { applyHistoryMessage, prependTranscript } from '../src/render/history.ts'
 import { applyMessage, emptyTranscript, listAgents, parseHandBack } from '../src/render/nodes.ts'
 
 // A real CLI 2.1.293 run: the main thread spawns two general-purpose
@@ -132,4 +132,45 @@ test('a subagent stopped from the UI reads as stopped, not failed', () => {
   assert.match(two.activity, /Sleep 25 seconds/)
   // The subagents' own Bash tasks share the task_* events but get no card.
   assert.equal(listAgents(transcript).length, 2)
+})
+
+test('history pages prepended newest first add up to the whole replay', () => {
+  const entry = (type, uuid, content, id) => ({
+    type,
+    uuid,
+    session_id: 's',
+    parent_tool_use_id: null,
+    message: type === 'assistant' ? { id, role: 'assistant', content } : { role: 'user', content },
+  })
+  // A background subagent launched on one page settles on the next: its
+  // notification is replayed before the card it belongs to exists.
+  const older = [
+    entry('user', 'p0', 'scan the repo'),
+    entry('assistant', 'a0', [{ type: 'tool_use', id: 'toolu_bg', name: 'Agent', input: { description: 'Scan', prompt: 'scan', run_in_background: true } }], 'm1'),
+    entry('user', 'r0', [{ type: 'tool_result', tool_use_id: 'toolu_bg', content: 'Agent is running in the background.\nagentId: abc123' }]),
+  ]
+  const newer = [
+    entry('user', 'p1', 'status?'),
+    entry('assistant', 'a1', [{ type: 'tool_use', id: 'toolu_sh', name: 'Bash', input: { command: 'ls' } }], 'm2'),
+    entry('user', 'r1', [{ type: 'tool_result', tool_use_id: 'toolu_sh', content: 'ok' }]),
+    entry('user', 'n0', '<task-notification><task-id>abc123</task-id><tool-use-id>toolu_bg</tool-use-id><status>completed</status></task-notification>'),
+    entry('assistant', 'a2', [{ type: 'text', text: 'all done' }], 'm3'),
+  ]
+  const replay = (list) => {
+    const transcript = emptyTranscript()
+    for (const message of list) applyHistoryMessage(transcript, message)
+    return transcript
+  }
+
+  const whole = replay([...older, ...newer])
+  const paged = replay(newer)
+  assert.equal(paged.pendingNotices.length, 1)
+  prependTranscript(paged, replay(older))
+
+  assert.deepEqual(kinds(paged), kinds(whole))
+  assert.deepEqual(Object.keys(paged.toolIndex).sort(), Object.keys(whole.toolIndex).sort())
+  for (const [id, index] of Object.entries(paged.toolIndex)) assert.equal(paged.nodes[index].toolUseId, id)
+  assert.deepEqual(listAgents(paged).map((agent) => agent.status), ['completed'])
+  assert.deepEqual(paged.pendingNotices, [])
+  assert.deepEqual(Object.keys(paged.seen).sort(), Object.keys(whole.seen).sort())
 })

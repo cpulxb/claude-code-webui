@@ -337,11 +337,19 @@ export type RpcMap = {
    * Replayed transcript. Note these are `SessionMessage`, not `SDKMessage` —
    * the on-disk shape carries an opaque `message` payload, so the renderer
    * adapts them rather than reusing the live-stream path unchanged.
+   *
+   * With `limit`, one page of it: the entries just before `before` (the first
+   * uuid of the page already shown), or the newest ones when it is absent.
+   * Without `limit`, the whole transcript.
    */
   'history.messages': {
-    params: { sessionId: string; cwd?: string }
-    /** `permissionMode` is absent when the session's mode was never toggled. */
-    result: { messages: SessionMessage[]; permissionMode?: PermissionMode }
+    params: { sessionId: string; cwd?: string; limit?: number; before?: string }
+    /**
+     * `hasMore`: older entries remain before this page. `permissionMode` is
+     * absent when the session's mode was never toggled, and is only read for
+     * the newest page.
+     */
+    result: { messages: SessionMessage[]; hasMore: boolean; permissionMode?: PermissionMode }
   }
   /** Subagents a session spawned, read from `<session>/subagents/*.meta.json`. */
   'history.subagents': { params: { sessionId: string }; result: { agents: SubagentMeta[] } }

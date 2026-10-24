@@ -6,6 +6,7 @@ import {
   settleWorkflowLaunch,
   unframeWorkflowPrompt,
   WORKFLOW_TOOL,
+  type TaskNotice,
   type WorkflowRun,
 } from './workflows.ts'
 
@@ -100,10 +101,15 @@ export type Transcript = {
    * history replay, backlog replay, and live events can overlap safely.
    */
   seen: Record<string, true>
+  /**
+   * Replayed task notifications whose card was not found — on a history page
+   * newer than the one that launched the task. Retried as older pages land.
+   */
+  pendingNotices: TaskNotice[]
 }
 
 export function emptyTranscript(): Transcript {
-  return { nodes: [], agents: {}, agentOrder: [], workflows: {}, streaming: null, toolIndex: {}, seen: {} }
+  return { nodes: [], agents: {}, agentOrder: [], workflows: {}, streaming: null, toolIndex: {}, seen: {}, pendingNotices: [] }
 }
 
 /**

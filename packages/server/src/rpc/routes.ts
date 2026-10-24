@@ -9,6 +9,7 @@ import {
   hasTranscript,
   listProjects,
   listSubagentMeta,
+  readMessagePage,
   readMessages,
   readPermissionMode,
   readSubagentMessages,
@@ -142,12 +143,15 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
       projects: await listProjects(manager.liveSummaries()),
     }),
 
-    'history.messages': async ({ sessionId, cwd }) => {
-      const [messages, permissionMode] = await Promise.all([
-        readMessages(sessionId, cwd),
-        readPermissionMode(sessionId),
+    'history.messages': async ({ sessionId, cwd, limit, before }) => {
+      const [page, permissionMode] = await Promise.all([
+        limit === undefined
+          ? readMessages(sessionId, cwd).then((messages) => ({ messages, hasMore: false }))
+          : readMessagePage(sessionId, cwd, limit, before),
+        // Older pages only add scrollback; the newest one already set the mode.
+        before === undefined ? readPermissionMode(sessionId) : null,
       ])
-      return { messages, ...(permissionMode ? { permissionMode } : {}) }
+      return { ...page, ...(permissionMode ? { permissionMode } : {}) }
     },
 
     'history.subagents': async ({ sessionId }) => ({ agents: await listSubagentMeta(sessionId) }),

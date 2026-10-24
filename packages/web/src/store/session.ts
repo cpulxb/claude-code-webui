@@ -9,10 +9,12 @@ import type {
   ProjectGroup,
   RewindFilesResult,
   ServerEvent,
+  SessionMessage,
   SessionStatus,
   SessionFlags,
   SessionSummary,
   SlashCommand,
+  SubagentMeta,
   UpdateStatus,
 } from '@ccw/shared'
 import { mergeProjectSessions, PERMISSION_MODES } from '@ccw/shared'
@@ -21,7 +23,7 @@ import { immer } from 'zustand/middleware/immer'
 
 import { call, connectEvents, type ConnectionStatus } from '../api/client.ts'
 import { bashDisplay, bashEcho, bashPrompt } from '../render/bash.ts'
-import { applyHistoryMessage, listUserPromptUuids } from '../render/history.ts'
+import { applyHistoryMessage, listUserPromptUuids, prependTranscript } from '../render/history.ts'
 import { applyMessage, emptyTranscript, findAgent, type AgentRun, type Transcript } from '../render/nodes.ts'
 import { applyWorkflowRecord } from '../render/workflows.ts'
 
@@ -52,6 +54,15 @@ export type SessionState = {
   sessionId: string
   cwd: string
   transcript: Transcript
+  /**
+   * Uuid of the oldest history entry shown while older ones remain on disk;
+   * null once the transcript is complete. History arrives a page at a time,
+   * newest first, as the reader scrolls up.
+   */
+  historyCursor: string | null
+  historyLoading: boolean
+  /** The last page read failed; shown where that page would go, with a retry. */
+  historyError: string | null
   status: SessionStatus
   /**
    * Whether a CLI process is backing this session. Sessions opened from the
@@ -108,6 +119,10 @@ type Store = {
   restoreActive: () => Promise<void>
   createSession: (cwd: string) => Promise<string>
   openSession: (sessionId: string, cwd?: string) => Promise<void>
+  /** Puts the next page of on-disk history above what is shown. No-op while one is loading. */
+  loadOlderHistory: (sessionId: string) => Promise<void>
+  /** Reads again the history page that failed — the newest one, or the next older one. */
+  retryHistory: (sessionId: string) => Promise<void>
   setActive: (sessionId: string | null) => void
   closeSession: (sessionId: string) => Promise<void>
   refreshProjects: () => Promise<void>
@@ -151,6 +166,9 @@ function newSession(sessionId: string, cwd: string, attached: boolean): SessionS
     sessionId,
     cwd,
     transcript: emptyTranscript(),
+    historyCursor: null,
+    historyLoading: false,
+    historyError: null,
     status: 'idle',
     attached,
     closed: false,
@@ -394,8 +412,8 @@ export const useStore = create<Store>()(
           // Cleared only when this click really starts a new attempt, so the
           // row does not keep a stale error while it runs. The sidebar is also
           // the only way to switch sessions, so clearing unconditionally would
-          // wipe a live failure (a failed send, a failed history read, a
-          // `session_error`) on a plain switch away and back, with nothing
+          // wipe a live failure (a failed send, a `session_error`) on a plain
+          // switch away and back, with nothing
           // taking over the display.
           if (retrying) {
             const session = state.sessions[sessionId]
@@ -417,6 +435,57 @@ export const useStore = create<Store>()(
       // Fire-and-forget: rendering must not wait for a CLI to boot. A failure
       // leaves the session detached, and `send` retries the attach anyway.
       if (!get().sessions[sessionId]?.attached) void eagerAttach(set, get, sessionId)
+    },
+
+    loadOlderHistory: async (sessionId) => {
+      const session = get().sessions[sessionId]
+      const before = session?.historyCursor
+      if (!session || !before || session.historyLoading) return
+      set((state) => {
+        state.sessions[sessionId]!.historyLoading = true
+      })
+      try {
+        const [{ messages, hasMore }, subagents] = await Promise.all([
+          call('history.messages', { sessionId, cwd: session.cwd, limit: HISTORY_PAGE, before }),
+          call('history.subagents', { sessionId }).catch(() => ({ agents: [] })),
+        ])
+        const older = await replayHistory(sessionId, messages, subagents.agents)
+        set((state) => {
+          const current = state.sessions[sessionId]
+          // Reopened meanwhile: that replay owns the transcript now.
+          if (current?.historyCursor !== before) return
+          prependTranscript(current.transcript, older)
+          current.historyCursor = hasMore ? (messages[0]?.uuid ?? null) : null
+          current.historyError = null
+        })
+      } catch (error) {
+        set((state) => {
+          const current = state.sessions[sessionId]
+          if (current) current.historyError = `读取更早的历史记录失败：${String(error)}`
+        })
+      } finally {
+        set((state) => {
+          const current = state.sessions[sessionId]
+          if (current) current.historyLoading = false
+        })
+      }
+    },
+
+    retryHistory: async (sessionId) => {
+      const session = get().sessions[sessionId]
+      if (!session || session.historyLoading) return
+      if (session.historyCursor) return get().loadOlderHistory(sessionId)
+      set((state) => {
+        state.sessions[sessionId]!.historyLoading = true
+      })
+      // The newest page never arrived: replay it as opening the session does,
+      // then re-adopt, so a running turn's backlog lands on top of it again.
+      await loadHistory(set, get, sessionId, session.cwd)
+      set((state) => {
+        const current = state.sessions[sessionId]
+        if (current) current.historyLoading = false
+      })
+      await adoptRunner(set, get, sessionId)
     },
 
     setActive: (sessionId) =>
@@ -1150,7 +1219,14 @@ async function loadProjects(set: Setter): Promise<ProjectGroup[] | undefined> {
 }
 
 /**
- * Replays a session's on-disk transcript into the store.
+ * Entries per history page. Measured on a 52 MB transcript: the newest 100
+ * came to ~100 KB of JSON, against 22 MB for the whole thing.
+ */
+const HISTORY_PAGE = 100
+
+/**
+ * Replays the newest page of a session's on-disk transcript into the store;
+ * `loadOlderHistory` fetches the rest as the reader scrolls up.
  *
  * A failure here is worth surfacing: an empty pane is indistinguishable from a
  * session that genuinely has no history, and silently showing one for the other
@@ -1158,34 +1234,20 @@ async function loadProjects(set: Setter): Promise<ProjectGroup[] | undefined> {
  */
 async function loadHistory(set: Setter, get: () => Store, sessionId: string, cwd: string): Promise<void> {
   try {
-    const [{ messages, permissionMode }, subagents] = await Promise.all([
-      call('history.messages', { sessionId, cwd }),
+    const [{ messages, hasMore, permissionMode }, subagents] = await Promise.all([
+      call('history.messages', { sessionId, cwd, limit: HISTORY_PAGE }),
       // Optional: without it the cards still render, they just cannot open
       // a conversation until a live event names the agent.
       call('history.subagents', { sessionId }).catch(() => ({ agents: [] })),
     ])
     if (!get().sessions[sessionId]) return
-    const transcript = emptyTranscript()
-    for (const entry of messages) applyHistoryMessage(transcript, entry)
-    // Workflow cards: the saved run record has the phases and every agent.
-    await Promise.all(
-      Object.values(transcript.workflows).map(async (run) => {
-        if (!run.runId) return
-        const { run: record } = await call('history.workflow', { sessionId, runId: run.runId }).catch(() => ({ run: null }))
-        if (record) applyWorkflowRecord(transcript, run, record)
-      }),
-    )
-    for (const meta of subagents.agents) {
-      const agent = meta.toolUseId ? findAgent(transcript, meta.toolUseId) : null
-      if (!agent) continue
-      agent.agentId ??= meta.agentId
-      if (!agent.subagentType && meta.agentType) agent.subagentType = meta.agentType
-      if (!agent.description && meta.description) agent.description = meta.description
-    }
+    const transcript = await replayHistory(sessionId, messages, subagents.agents)
     set((state) => {
       const session = state.sessions[sessionId]
       if (!session) return
       session.transcript = transcript
+      session.historyCursor = hasMore ? (messages[0]?.uuid ?? null) : null
+      session.historyError = null
       // Only when the transcript actually recorded a toggle; otherwise the
       // remembered default already in place is the better guess.
       if (permissionMode) session.permissionMode = permissionMode
@@ -1193,9 +1255,31 @@ async function loadHistory(set: Setter, get: () => Store, sessionId: string, cwd
   } catch (error) {
     set((state) => {
       const session = state.sessions[sessionId]
-      if (session) session.error = `读取历史记录失败：${String(error)}`
+      if (session) session.historyError = `读取历史记录失败：${String(error)}`
     })
   }
+}
+
+/** One page of history as a transcript of its own, its cards filled in from their saved records. */
+async function replayHistory(sessionId: string, messages: SessionMessage[], subagents: SubagentMeta[]): Promise<Transcript> {
+  const transcript = emptyTranscript()
+  for (const entry of messages) applyHistoryMessage(transcript, entry)
+  // Workflow cards: the saved run record has the phases and every agent.
+  await Promise.all(
+    Object.values(transcript.workflows).map(async (run) => {
+      if (!run.runId) return
+      const { run: record } = await call('history.workflow', { sessionId, runId: run.runId }).catch(() => ({ run: null }))
+      if (record) applyWorkflowRecord(transcript, run, record)
+    }),
+  )
+  for (const meta of subagents) {
+    const agent = meta.toolUseId ? findAgent(transcript, meta.toolUseId) : null
+    if (!agent) continue
+    agent.agentId ??= meta.agentId
+    if (!agent.subagentType && meta.agentType) agent.subagentType = meta.agentType
+    if (!agent.description && meta.description) agent.description = meta.description
+  }
+  return transcript
 }
 
 async function loadContextUsage(set: Setter, get: () => Store, sessionId: string): Promise<void> {

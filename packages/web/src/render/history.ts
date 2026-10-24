@@ -2,7 +2,7 @@ import type { SDKMessage, SessionMessage } from '@ccw/shared'
 
 import { bashEcho, parseBashInput, parseBashOutput } from './bash.ts'
 import { applyMessage, findAgent, findAgentById, type Transcript } from './nodes.ts'
-import { applyWorkflowEvent, parseTaskNotification, unframeWorkflowPrompt } from './workflows.ts'
+import { applyWorkflowEvent, parseTaskNotification, unframeWorkflowPrompt, type TaskNotice } from './workflows.ts'
 
 /**
  * Folds one on-disk transcript message into the transcript.
@@ -66,7 +66,7 @@ function applyUserText(transcript: Transcript, uuid: string, raw: string, attach
 
   const notification = parseTaskNotification(trimmed)
   if (notification) {
-    applyNotification(transcript, notification)
+    if (!applyNotification(transcript, notification)) transcript.pendingNotices.push(notification)
     return
   }
 
@@ -144,10 +144,14 @@ export function listUserPromptUuids(messages: SessionMessage[]): string[] {
   return uuids
 }
 
-/** A background task settled; history has no task_* events, only this message. */
-function applyNotification(transcript: Transcript, notification: NonNullable<ReturnType<typeof parseTaskNotification>>): void {
+/**
+ * A background task settled; history has no task_* events, only this message.
+ * False when no card in this transcript is the task's — not necessarily an
+ * error, since shell tasks have no card at all.
+ */
+function applyNotification(transcript: Transcript, notification: TaskNotice): boolean {
   const { taskId, toolUseId, status, summary } = notification
-  if (!taskId) return
+  if (!taskId) return true
   const event = {
     subtype: 'task_notification',
     task_id: taskId,
@@ -155,9 +159,44 @@ function applyNotification(transcript: Transcript, notification: NonNullable<Ret
     ...(status ? { status } : {}),
     ...(summary ? { summary } : {}),
   }
-  if (applyWorkflowEvent(transcript, event)) return
+  if (applyWorkflowEvent(transcript, event)) return true
   const agent = (toolUseId && findAgent(transcript, toolUseId)) || findAgentById(transcript, taskId)
-  if (!agent) return
+  if (!agent) return false
   if (status === 'completed' || status === 'failed') agent.status = status
   else if (status === 'killed' || status === 'stopped') agent.status = 'stopped'
+  return true
+}
+
+/**
+ * Puts an older page of history in front of the transcript already shown.
+ *
+ * The server cuts pages where no tool call straddles them, so the only links
+ * back into `older` are task notifications parked on the newer pages — the
+ * task's launch was not on screen yet — and live output of a background
+ * subagent launched there, which got a placeholder card.
+ */
+export function prependTranscript(transcript: Transcript, older: Transcript): void {
+  const shift = older.nodes.length
+  for (const id of Object.keys(transcript.toolIndex)) transcript.toolIndex[id]! += shift
+  Object.assign(transcript.toolIndex, older.toolIndex)
+  transcript.nodes = [...older.nodes, ...transcript.nodes]
+
+  for (const id of older.agentOrder) {
+    const agent = older.agents[id]!
+    const placeholder = transcript.agents[id]
+    if (!placeholder) {
+      transcript.agents[id] = agent
+      continue
+    }
+    // The placeholder holds the live run; the launch holds what it was asked.
+    if (agent.description) placeholder.description = agent.description
+    placeholder.prompt ||= agent.prompt
+    placeholder.subagentType ??= agent.subagentType
+  }
+  transcript.agentOrder = [...older.agentOrder, ...transcript.agentOrder.filter((id) => !older.agents[id])]
+  transcript.workflows = { ...older.workflows, ...transcript.workflows }
+  Object.assign(transcript.seen, older.seen)
+
+  const parked = transcript.pendingNotices.filter((notice) => !applyNotification(transcript, notice))
+  transcript.pendingNotices = [...older.pendingNotices, ...parked]
 }

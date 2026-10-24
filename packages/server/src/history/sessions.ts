@@ -139,12 +139,102 @@ export async function forkSavedSession(sessionId: string, cwd?: string, title?: 
 }
 
 export async function readMessages(sessionId: string, cwd?: string): Promise<SessionMessage[]> {
-  return getSessionMessages(sessionId, {
+  const messages = await getSessionMessages(sessionId, {
     ...(cwd ? { dir: cwd } : {}),
     // Compact boundaries and notices are rendered in the transcript, so the
     // replay must include them to match the live stream.
     includeSystemMessages: true,
   })
+  for (const entry of messages) dropInlineMedia(entry.message)
+  return messages
+}
+
+/**
+ * Empties base64 image and document payloads in place, keeping the blocks.
+ * The renderer only counts them (`[image]`, "附件 × n"), and on a
+ * screenshot-heavy session they were 20.8 of the transcript's 23 MB.
+ */
+function dropInlineMedia(message: unknown): void {
+  const content = (message as { content?: unknown } | null)?.content
+  if (!Array.isArray(content)) return
+  for (const block of content as { type?: unknown; source?: { type?: unknown; data?: unknown } }[]) {
+    if ((block.type === 'image' || block.type === 'document') && block.source?.type === 'base64') block.source.data = ''
+    // A tool result nests its own content blocks: a screenshot, a read image.
+    else if (block.type === 'tool_result') dropInlineMedia(block)
+  }
+}
+
+/**
+ * The transcript the last page was cut from. The SDK parses the whole file on
+ * every call — seconds for a 50 MB one on a loaded box — and scrolling up asks
+ * for page after page of the same transcript. The file only grows at its end,
+ * so everything before a cursor the cached copy holds is still what is on
+ * disk; the newest page re-reads, since that is where it grows. Dropped when
+ * unused for a while, as one long text-only transcript can be large.
+ */
+let lastRead: { sessionId: string; cwd: string | undefined; messages: SessionMessage[]; expiry: NodeJS.Timeout } | null = null
+const LAST_READ_TTL_MS = 5 * 60_000
+
+/** `pageMessages` over the session's transcript, read once per scroll-up. */
+export async function readMessagePage(
+  sessionId: string,
+  cwd: string | undefined,
+  limit: number,
+  before?: string,
+): Promise<{ messages: SessionMessage[]; hasMore: boolean }> {
+  const cached =
+    before !== undefined && lastRead?.sessionId === sessionId && lastRead.cwd === cwd ? lastRead.messages : null
+  const messages = cached?.some((entry) => entry.uuid === before) ? cached : await readMessages(sessionId, cwd)
+  if (lastRead) clearTimeout(lastRead.expiry)
+  lastRead = { sessionId, cwd, messages, expiry: setTimeout(() => (lastRead = null), LAST_READ_TTL_MS).unref() }
+  return pageMessages(messages, limit, before)
+}
+
+/**
+ * One page of a transcript: up to `limit` entries ending just before the one
+ * whose uuid is `before`, or at the newest entry when it is absent.
+ *
+ * The start moves back past `limit` until no tool call straddles it and it
+ * does not split one assistant message's blocks, so a page replays on its own
+ * exactly as it would inside the whole transcript. A 52 MB transcript answered
+ * in one piece came to 22 MB of JSON, which a tunnel dropped mid-body.
+ */
+export function pageMessages(
+  messages: SessionMessage[],
+  limit: number,
+  before?: string,
+): { messages: SessionMessage[]; hasMore: boolean } {
+  const end = before === undefined ? messages.length : messages.findIndex((entry) => entry.uuid === before)
+  if (end < 0) throw new Error(`history cursor ${before} is not in the transcript`)
+
+  // `straddled[i] > 0`: some tool call sits before entry i and its result at
+  // or after it. Built as a difference array over each call → result span.
+  const straddled = new Array<number>(messages.length + 1).fill(0)
+  const calledAt = new Map<string, number>()
+  messages.forEach((entry, index) => {
+    const content = (entry.message as { content?: unknown } | null)?.content
+    if (!Array.isArray(content)) return
+    for (const block of content as { type?: unknown; id?: unknown; tool_use_id?: unknown }[]) {
+      if (block.type === 'tool_use' && typeof block.id === 'string') calledAt.set(block.id, index)
+      if (block.type !== 'tool_result' || typeof block.tool_use_id !== 'string') continue
+      const call = calledAt.get(block.tool_use_id)
+      if (call === undefined) continue
+      straddled[call + 1]! += 1
+      straddled[index + 1]! -= 1
+    }
+  })
+  for (let i = 1; i <= messages.length; i++) straddled[i]! += straddled[i - 1]!
+
+  let start = Math.max(0, end - limit)
+  while (start > 0 && (straddled[start]! > 0 || continuesMessage(messages[start - 1]!, messages[start]!))) start--
+  return { messages: messages.slice(start, end), hasMore: start > 0 }
+}
+
+/** Both entries are blocks of one assistant message, which renders as one node. */
+function continuesMessage(previous: SessionMessage, entry: SessionMessage): boolean {
+  if (previous.type !== 'assistant' || entry.type !== 'assistant') return false
+  const id = (entry.message as { id?: unknown } | null)?.id
+  return id !== undefined && id === (previous.message as { id?: unknown } | null)?.id
 }
 
 /**
@@ -319,6 +409,7 @@ export async function readSubagentMessages(sessionId: string, agentId: string): 
       continue // a trailing line the CLI is still writing
     }
     if ((entry.type !== 'user' && entry.type !== 'assistant') || entry.isMeta || !entry.uuid || !entry.message) continue
+    dropInlineMedia(entry.message)
     messages.push({
       type: entry.type,
       uuid: entry.uuid,

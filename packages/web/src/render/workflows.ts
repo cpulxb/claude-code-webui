@@ -333,16 +333,18 @@ export function applyWorkflowRecord(transcript: Transcript, run: WorkflowRun, re
   run.historyLoaded = true
 }
 
+export type TaskNotice = { taskId?: string; toolUseId?: string; status?: string; summary?: string }
+
 /**
  * `<task-notification>` is how a finished background task reaches the model;
  * on disk it is a plain user message. It is not something the user typed, so
  * history folds it into the card it settles instead of drawing a bubble.
  */
-export function parseTaskNotification(text: string): { taskId?: string; toolUseId?: string; status?: string; summary?: string } | null {
+export function parseTaskNotification(text: string): TaskNotice | null {
   const trimmed = text.trim()
   if (!trimmed.startsWith('<task-notification>')) return null
   const tag = (name: string): string | undefined => new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(trimmed)?.[1]?.trim()
-  const out: { taskId?: string; toolUseId?: string; status?: string; summary?: string } = {}
+  const out: TaskNotice = {}
   const taskId = tag('task-id')
   const toolUseId = tag('tool-use-id')
   const status = tag('status')
