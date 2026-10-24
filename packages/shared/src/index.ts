@@ -351,6 +351,11 @@ export type RpcMap = {
      */
     result: { messages: SessionMessage[]; hasMore: boolean; permissionMode?: PermissionMode }
   }
+  /**
+   * The directory a session runs in, for opening one known only by its id —
+   * from the address bar. Null when no session has that id.
+   */
+  'history.locate': { params: { sessionId: string }; result: { cwd: string | null } }
   /** Subagents a session spawned, read from `<session>/subagents/*.meta.json`. */
   'history.subagents': { params: { sessionId: string }; result: { agents: SubagentMeta[] } }
   /** One dynamic workflow run, for a reloaded session's workflow card. */

@@ -9,6 +9,7 @@ import {
   hasTranscript,
   listProjects,
   listSubagentMeta,
+  locateSession,
   readMessagePage,
   readMessages,
   readPermissionMode,
@@ -153,6 +154,12 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
       ])
       return { ...page, ...(permissionMode ? { permissionMode } : {}) }
     },
+
+    // A runner writes no transcript before its first message, so only the
+    // manager knows where a fresh one runs.
+    'history.locate': async ({ sessionId }) => ({
+      cwd: manager.has(sessionId) ? manager.require(sessionId).config.cwd : await locateSession(sessionId),
+    }),
 
     'history.subagents': async ({ sessionId }) => ({ agents: await listSubagentMeta(sessionId) }),
 

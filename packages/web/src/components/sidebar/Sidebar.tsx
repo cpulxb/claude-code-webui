@@ -1,7 +1,7 @@
 import { fuzzyFilter, type ProjectGroup, type SessionSummary, type UpdateProgress } from '@ccw/shared'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { useStore } from '../../store/session.ts'
+import { sessionHref, useStore } from '../../store/session.ts'
 import { DevicesDialog } from '../auth/DevicesDialog.tsx'
 import {
   BrandMark,
@@ -452,17 +452,17 @@ function SessionList(props: {
               ref={session.sessionId === props.activeId ? activeRef : null}
               className={`${styles.item} ${session.sessionId === props.activeId ? styles.itemActive : ''}`}
             >
-              <button
+              <a
                 className={styles.itemOpen}
-                onClick={() => props.onOpen(session.sessionId)}
-                type="button"
+                href={sessionHref(session.sessionId)}
+                onClick={(event) => openInPlace(event, () => props.onOpen(session.sessionId))}
                 title={session.summary || '新会话'}
                 aria-current={session.sessionId === props.activeId ? 'page' : undefined}
               >
                 {session.live && <span className={styles.liveDot} />}
                 <span className={styles.itemTitle}>{session.summary || '新会话'}</span>
                 <span className={styles.itemAge}>{age(session.lastModified)}</span>
-              </button>
+              </a>
               {session.live && (
                 <button
                   className={styles.itemClose}
@@ -513,7 +513,12 @@ function SearchResults(props: {
           }`}
           onMouseEnter={() => props.onHover(index)}
         >
-          <button className={styles.hitOpen} onClick={() => props.onOpen(hit)} type="button" title={hit.summary}>
+          <a
+            className={styles.hitOpen}
+            href={sessionHref(hit.sessionId)}
+            onClick={(event) => openInPlace(event, () => props.onOpen(hit))}
+            title={hit.summary}
+          >
             <span className={styles.hitTitleLine}>
               {hit.live && <span className={styles.liveDot} />}
               <span className={styles.itemTitle}>{hit.summary || '新会话'}</span>
@@ -523,7 +528,7 @@ function SearchResults(props: {
               {basename(hit.cwd)}
               {hit.gitBranch ? ` · ${hit.gitBranch}` : ''}
             </span>
-          </button>
+          </a>
           {hit.live && (
             <button
               className={styles.itemClose}
@@ -539,6 +544,13 @@ function SearchResults(props: {
       ))}
     </>
   )
+}
+
+/** A plain click opens the session here; a modified one (new tab, new window) is the browser's. */
+function openInPlace(event: React.MouseEvent, open: () => void): void {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+  event.preventDefault()
+  open()
 }
 
 const DAY = 24 * 60 * 60 * 1000

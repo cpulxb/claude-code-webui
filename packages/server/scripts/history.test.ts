@@ -6,7 +6,7 @@ import { test } from 'node:test'
 
 import type { SessionMessage } from '@ccw/shared'
 
-import { pageMessages, readMessagePage, readMessages } from '../src/history/sessions.ts'
+import { locateSession, pageMessages, readMessagePage, readMessages } from '../src/history/sessions.ts'
 
 const entry = (type: 'user' | 'assistant', uuid: string, message: unknown): SessionMessage => ({
   type,
@@ -132,4 +132,13 @@ test('older pages are cut from the read the newest page made; the newest page re
   await writeTranscript(sessionId, [...entries, said('seven')])
   const grown = await readMessagePage(sessionId, '/work/app', 2)
   assert.deepEqual(grown.messages.map((entry) => entry.uuid), [`${sessionId}-5`, `${sessionId}-6`])
+})
+
+test('a session is located by its id alone, at the cwd its transcript records', async () => {
+  const sessionId = '00000000-0000-4000-8000-0000000000a3'
+  await writeTranscript(sessionId, [said('where is this')])
+  assert.equal(await locateSession(sessionId), '/work/app')
+  assert.equal(await locateSession('00000000-0000-4000-8000-0000000000ff'), null)
+  // Ids come from the address bar; one that is not a UUID never reaches the disk.
+  assert.equal(await locateSession('../../../etc/passwd'), null)
 })

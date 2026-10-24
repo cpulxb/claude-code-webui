@@ -308,6 +308,11 @@ export async function hasTranscript(sessionId: string): Promise<boolean> {
   return (await findTranscript(sessionId)) !== null
 }
 
+/** The directory a saved session ran in, for opening it by id alone. Null for an unknown or malformed id. */
+export async function locateSession(sessionId: string): Promise<string | null> {
+  return (await getSessionInfo(sessionId))?.cwd ?? null
+}
+
 /**
  * Locates a session's JSONL. The SDK exposes neither the path nor the rule that
  * encodes a cwd into a directory name, so every project directory is probed —

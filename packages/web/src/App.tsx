@@ -10,7 +10,7 @@ import { Composer } from './components/composer/Composer.tsx'
 import { DetailsPanel } from './components/details/DetailsPanel.tsx'
 import { BrandMark, MoonIcon, PanelLeftIcon, PanelRightIcon, SunIcon } from './components/Icons.tsx'
 import { Sidebar } from './components/sidebar/Sidebar.tsx'
-import { useActiveSessionValue, useStore } from './store/session.ts'
+import { followAddressBar, useActiveSessionValue, useStore } from './store/session.ts'
 
 /** Phone widths, where the side panels become drawers. Matches the 640px media queries in the CSS modules. */
 const NARROW = window.matchMedia('(max-width: 640px)')
@@ -51,7 +51,6 @@ export function App(): JSX.Element | null {
 
 function Workspace(): JSX.Element {
   const connect = useStore((state) => state.connect)
-  const restoreActive = useStore((state) => state.restoreActive)
   // Primitive slices only — the details panel and the composer subscribe to
   // their own slices too. Subscribing to the session object anywhere in here
   // would re-render that subtree once per streamed token, because immer
@@ -69,7 +68,7 @@ function Workspace(): JSX.Element {
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
 
   useEffect(() => connect(), [connect])
-  useEffect(() => void restoreActive(), [restoreActive])
+  useEffect(() => followAddressBar(), [])
 
   useEffect(() => {
     document.documentElement.dataset['theme'] = theme

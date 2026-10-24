@@ -30,7 +30,7 @@ globalThis.fetch = async (_url, options) => {
   return new Response(JSON.stringify({ ok: true, result: await rpc(method, params) }))
 }
 
-const { useStore } = await import('../src/store/session.ts')
+const { followAddressBar, useStore } = await import('../src/store/session.ts')
 
 function deferred() {
   let resolve
@@ -361,4 +361,167 @@ test('unchanged background model refreshes preserve menu row references', async 
   const rows = f.state().models
   await useStore.getState().refreshModels()
   assert.equal(f.state().models, rows)
+})
+
+// --- the address bar ---------------------------------------------------
+
+const A = '00000000-0000-4000-8000-00000000000a'
+const B = '00000000-0000-4000-8000-00000000000b'
+
+/** Saved sessions by id → cwd. Returns the ids the store had to ask the server to locate. */
+function saved(cwds, messages = {}) {
+  const located = []
+  rpc = async (method, params) => {
+    switch (method) {
+      case 'history.locate':
+        located.push(params.sessionId)
+        return { cwd: cwds[params.sessionId] ?? null }
+      case 'history.messages': return { messages: messages[params.sessionId] ?? [], hasMore: false }
+      case 'history.subagents': return { agents: [] }
+      case 'history.projects': return { projects: [] }
+      case 'session.state': return { live: false, status: 'idle', pendingPermissions: [], backlog: [] }
+      case 'session.create': return { sessionId: params.resume ?? params.sessionId }
+      case 'session.commands': return { commands: [] }
+      case 'session.models': return { models: [] }
+      case 'session.contextUsage': return { usage: null }
+      case 'session.close': return {}
+      default: throw new Error(`Unexpected RPC: ${method}`)
+    }
+  }
+  useStore.setState({ sessions: {}, activeId: null, projects: [] })
+  storage.clear()
+  return located
+}
+
+/** A history stack behind `window.history`, starting on `path`; `back` fires popstate as a browser does. */
+function addressBar(t, path, { remount = false } = {}) {
+  const entries = [path]
+  let index = 0
+  const listeners = new Set()
+  const show = (url) => {
+    const { pathname, search } = new URL(url, 'http://localhost')
+    Object.assign(window.location, { pathname, search })
+  }
+  show(path)
+  window.history = {
+    pushState: (_state, _title, url) => {
+      entries.splice(index + 1, Infinity, url)
+      index += 1
+      show(url)
+    },
+    replaceState: (_state, _title, url) => {
+      entries[index] = url
+      show(url)
+    },
+  }
+  window.addEventListener = (_type, listener) => listeners.add(listener)
+  window.removeEventListener = (_type, listener) => listeners.delete(listener)
+  // StrictMode mounts, tears down and mounts again; the first open runs on.
+  if (remount) followAddressBar()()
+  t.after(followAddressBar())
+  return {
+    entries: () => [...entries],
+    back() {
+      index -= 1
+      show(entries[index])
+      for (const listener of listeners) listener()
+    },
+  }
+}
+
+/** Lets an open's chain of requests run out. */
+async function drain() {
+  for (let i = 0; i < 30; i += 1) await settle()
+}
+
+test('a reload opens the session its address names, not the one another tab stored last', async (t) => {
+  const located = saved({ [A]: '/a', [B]: '/b' })
+  storage.set('ccw.activeSession', JSON.stringify({ sessionId: A, cwd: '/a' }))
+  const bar = addressBar(t, `/s/${B}`)
+  await drain()
+  assert.equal(useStore.getState().activeId, B)
+  assert.equal(useStore.getState().sessions[B].cwd, '/b')
+  assert.deepEqual(located, [B])
+  assert.deepEqual(bar.entries(), [`/s/${B}`])
+})
+
+test('a bare address opens the session last stored, without asking where it runs', async (t) => {
+  const located = saved({ [A]: '/a' })
+  storage.set('ccw.activeSession', JSON.stringify({ sessionId: A, cwd: '/a' }))
+  const bar = addressBar(t, '/')
+  await drain()
+  assert.equal(useStore.getState().activeId, A)
+  assert.deepEqual(located, [])
+  assert.deepEqual(bar.entries(), [`/s/${A}`])
+})
+
+test('switching sessions is a step that back retraces without adding one', async (t) => {
+  saved({ [A]: '/a', [B]: '/b' })
+  const bar = addressBar(t, `/s/${A}`)
+  await drain()
+  await useStore.getState().openSession(B, '/b')
+  await drain()
+  assert.deepEqual(bar.entries(), [`/s/${A}`, `/s/${B}`])
+  bar.back()
+  await drain()
+  assert.equal(useStore.getState().activeId, A)
+  assert.deepEqual(bar.entries(), [`/s/${A}`, `/s/${B}`])
+  assert.equal(window.location.pathname, `/s/${A}`)
+})
+
+test('an address that names no session is corrected to what is open', async (t) => {
+  saved({})
+  const bar = addressBar(t, `/s/${B}`)
+  await drain()
+  assert.equal(useStore.getState().activeId, null)
+  assert.deepEqual(bar.entries(), ['/'])
+})
+
+test('a closed session leaves no step to come back to', async (t) => {
+  saved({ [A]: '/a', [B]: '/b' })
+  const bar = addressBar(t, `/s/${A}`)
+  await drain()
+  await useStore.getState().openSession(B, '/b')
+  await drain()
+  await useStore.getState().closeSession(B)
+  assert.equal(useStore.getState().activeId, A)
+  assert.ok(!bar.entries().includes(`/s/${B}`))
+})
+
+test('a subagent opens from its address, and back from the main thread returns to it', async (t) => {
+  const spawn = {
+    type: 'assistant', uuid: 'a1', session_id: A, parent_tool_use_id: null, parent_agent_id: null,
+    message: { id: 'm1', role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_x', name: 'Agent', input: { description: 'look', prompt: 'look around' } }] },
+  }
+  saved({ [A]: '/a' }, { [A]: [spawn] })
+  const bar = addressBar(t, `/s/${A}?agent=toolu_x`)
+  await drain()
+  assert.equal(useStore.getState().sessions[A].viewAgent, 'toolu_x')
+  await useStore.getState().openAgent(null)
+  assert.deepEqual(bar.entries(), [`/s/${A}?agent=toolu_x`, `/s/${A}`])
+  bar.back()
+  await drain()
+  assert.equal(useStore.getState().sessions[A].viewAgent, 'toolu_x')
+  assert.equal(bar.entries().length, 2)
+})
+
+test('a remount while the address opens adds no step', async (t) => {
+  const spawn = {
+    type: 'assistant', uuid: 'a1', session_id: A, parent_tool_use_id: null, parent_agent_id: null,
+    message: { id: 'm1', role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_x', name: 'Agent', input: { description: 'look', prompt: 'look around' } }] },
+  }
+  saved({ [A]: '/a' }, { [A]: [spawn] })
+  const bar = addressBar(t, `/s/${A}?agent=toolu_x`, { remount: true })
+  await drain()
+  assert.equal(useStore.getState().sessions[A].viewAgent, 'toolu_x')
+  assert.deepEqual(bar.entries(), [`/s/${A}?agent=toolu_x`])
+})
+
+test('a tab whose address names nothing keeps the session another tab stored', async (t) => {
+  saved({ [A]: '/a' })
+  storage.set('ccw.activeSession', JSON.stringify({ sessionId: A, cwd: '/a' }))
+  addressBar(t, `/s/${B}`)
+  await drain()
+  useStore.setState({ connection: 'open' })
+  assert.equal(JSON.parse(storage.get('ccw.activeSession')).sessionId, A)
 })

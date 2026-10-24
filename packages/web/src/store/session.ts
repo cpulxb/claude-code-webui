@@ -116,7 +116,6 @@ type Store = {
   update: UpdateStatus | null
 
   connect: () => () => void
-  restoreActive: () => Promise<void>
   createSession: (cwd: string) => Promise<string>
   openSession: (sessionId: string, cwd?: string) => Promise<void>
   /** Puts the next page of on-disk history above what is shown. No-op while one is loading. */
@@ -338,26 +337,6 @@ export const useStore = create<Store>()(
         onEvent: (event) => handleEvent(set, get, event),
       }),
 
-    /**
-     * Reopens whatever session the tab was on before a reload.
-     *
-     * Only the id and cwd are persisted; everything else — transcript, whether
-     * a runner is still up, what it is doing — is re-read from the server,
-     * which is the authority on all three.
-     */
-    restoreActive: async () => {
-      if (get().activeId) return
-      const remembered = readRememberedSession()
-      if (!remembered) return
-      try {
-        await get().openSession(remembered.sessionId, remembered.cwd)
-        if (remembered.agent) await get().openAgent(remembered.agent).catch(() => {})
-      } catch {
-        // The session was deleted, or its project directory moved.
-        localStorage.removeItem(ACTIVE_KEY)
-      }
-    },
-
     createSession: async (cwd) => {
       // Register locally BEFORE the request: the CLI can emit `init` before
       // the HTTP response lands, and an event for an unknown session is
@@ -399,19 +378,21 @@ export const useStore = create<Store>()(
     // process per opened session — and, as in VS Code, resuming a session a
     // terminal still has open means two writers on one JSONL.
     openSession: async (sessionId, cwd) => {
+      // An address names only the session; the server knows where it runs.
+      const target = cwd ?? get().sessions[sessionId]?.cwd ?? (await locateSession(sessionId))
       const known = get().sessions[sessionId]
       if (known) {
         // e.g. opened before the runner existed, the eager attach failed, or
         // the runner has since gone away (server restart) — reopening from the
-        // sidebar is how a closed session is meant to come back, and is also
-        // the only automatic caller (`restoreActive`, once per reload), so a
-        // doomed CLI is never spawned in a loop.
+        // sidebar is how a closed session is meant to come back, and the only
+        // automatic caller follows the address bar (once per load, then per
+        // back/forward), so a doomed CLI is never spawned in a loop.
         const retrying = !known.attached
         set((state) => {
           state.activeId = sessionId
           // Cleared only when this click really starts a new attempt, so the
-          // row does not keep a stale error while it runs. The sidebar is also
-          // the only way to switch sessions, so clearing unconditionally would
+          // row does not keep a stale error while it runs. Every switch between
+          // sessions comes through here, so clearing unconditionally would
           // wipe a live failure (a failed send, a `session_error`) on a plain
           // switch away and back, with nothing
           // taking over the display.
@@ -423,7 +404,6 @@ export const useStore = create<Store>()(
         if (retrying) void eagerAttach(set, get, sessionId)
         return
       }
-      const target = cwd ?? get().defaultCwd
       set((state) => {
         state.sessions[sessionId] = newSession(sessionId, target, false)
         state.activeId = sessionId
@@ -768,14 +748,16 @@ export const useStore = create<Store>()(
 type Setter = (updater: (state: Store) => void) => void
 
 /**
- * The session the tab had open, so a reload lands back on it.
+ * The session this browser last had open, so a bare `/` lands back on it.
+ * Every tab shares it; a reload follows the tab's own address instead (see
+ * `followAddressBar`).
  *
  * Subscribed rather than written from each action: `activeId` moves in four
  * places, and only one of them is `setActive`.
  */
 const ACTIVE_KEY = 'ccw.activeSession'
 
-useStore.subscribe((state) => {
+useStore.subscribe((state, previous) => {
   const session = state.activeId ? state.sessions[state.activeId] : null
   if (session) {
     const value = JSON.stringify({
@@ -786,10 +768,13 @@ useStore.subscribe((state) => {
     // The subscription fires on every streamed token; only the two fields
     // above are persisted, so skip the synchronous write when they are
     // unchanged. Compared against what is actually stored, so a removal from
-    // elsewhere (`restoreActive` clearing a dead session) is written again.
+    // elsewhere (`followAddressBar` clearing a dead session) is written again.
     if (value === localStorage.getItem(ACTIVE_KEY)) return
     localStorage.setItem(ACTIVE_KEY, value)
-  } else if (state.activeId === null) {
+  } else if (state.activeId === null && previous.activeId !== null) {
+    // Only on closing what was open: a tab that never opened anything — an
+    // address naming nothing, or one still asking where its session runs —
+    // must not wipe what another tab left here.
     localStorage.removeItem(ACTIVE_KEY)
   }
 })
@@ -808,6 +793,89 @@ function readRememberedSession(): { sessionId: string; cwd: string; agent?: stri
   } catch {
     return null
   }
+}
+
+type Address = { sessionId: string; agent?: string }
+
+/**
+ * Opens of an address still in flight. The states they pass through — the
+ * session open, its agent not yet — are no place to go back to, and the bar
+ * already names where they end. Module-wide, not per `followAddressBar`: an
+ * open outlives the teardown that StrictMode's remount runs in between.
+ */
+let following = 0
+
+/** Where a session lives in the address bar. */
+export function sessionHref(sessionId: string): string {
+  return `/s/${sessionId}`
+}
+
+/** What the tab shows, as an address: the session, and the subagent whose conversation is open. */
+function addressOf(state: Store): string {
+  const session = state.activeId ? state.sessions[state.activeId] : undefined
+  if (!session) return '/'
+  const agent = session.viewAgent ? `?${new URLSearchParams({ agent: session.viewAgent })}` : ''
+  return sessionHref(session.sessionId) + agent
+}
+
+function readAddress(): Address | null {
+  const sessionId = /^\/s\/([^/]+)\/?$/.exec(window.location.pathname)?.[1]
+  if (!sessionId) return null
+  const agent = new URLSearchParams(window.location.search).get('agent')
+  return { sessionId, ...(agent ? { agent } : {}) }
+}
+
+/**
+ * Keeps the address bar on what the tab shows, and the tab on what the bar
+ * names. A reload or a link opens that session in this tab whatever the
+ * others are on, and back/forward step through what was viewed. A bare `/`
+ * opens the session this browser last had open. Returns the teardown.
+ */
+export function followAddressBar(): () => void {
+  const follow = async (address: Address | null): Promise<void> => {
+    const remembered = readRememberedSession()
+    following += 1
+    try {
+      // The remembered cwd spares asking the server on a plain reload.
+      await openAddress(address, remembered?.sessionId === address?.sessionId ? remembered?.cwd : undefined)
+    } catch {
+      // Deleted, or its project directory moved: stop landing on it.
+      if (remembered && remembered.sessionId === address?.sessionId) localStorage.removeItem(ACTIVE_KEY)
+    } finally {
+      following -= 1
+    }
+    // The bar may name something that did not open; the last open to settle
+    // puts what did in its place.
+    if (following === 0) window.history.replaceState(null, '', addressOf(useStore.getState()))
+  }
+  const onPopState = (): void => void follow(readAddress())
+
+  const unsubscribe = useStore.subscribe((state, previous) => {
+    if (following > 0) return
+    const address = addressOf(state)
+    if (address === addressOf(previous)) return
+    // Moving off a session that was just closed: no place to come back to.
+    const closed = previous.activeId !== null && !state.sessions[previous.activeId]
+    if (closed) window.history.replaceState(null, '', address)
+    else window.history.pushState(null, '', address)
+  })
+  window.addEventListener('popstate', onPopState)
+  void follow(readAddress() ?? readRememberedSession())
+  return () => {
+    unsubscribe()
+    window.removeEventListener('popstate', onPopState)
+  }
+}
+
+async function openAddress(address: Address | null, cwd: string | undefined): Promise<void> {
+  const { openSession, openAgent, setActive } = useStore.getState()
+  if (!address) return setActive(null)
+  await openSession(address.sessionId, cwd)
+  const { activeId, sessions } = useStore.getState()
+  // Another open took over meanwhile; the agent would land in its session.
+  if (activeId !== address.sessionId) return
+  const agent = address.agent ?? null
+  if ((sessions[activeId]?.viewAgent ?? null) !== agent) await openAgent(agent).catch(() => {})
 }
 
 /**
@@ -1216,6 +1284,12 @@ async function loadProjects(set: Setter): Promise<ProjectGroup[] | undefined> {
   } finally {
     projectReads.delete(changes)
   }
+}
+
+async function locateSession(sessionId: string): Promise<string> {
+  const { cwd } = await call('history.locate', { sessionId })
+  if (!cwd) throw new Error(`找不到会话 ${sessionId.slice(0, 8)}`)
+  return cwd
 }
 
 /**

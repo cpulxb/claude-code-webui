@@ -232,9 +232,11 @@
   gap: var(--ccw-space-2);
   align-items: baseline;
   min-width: 0;
+  padding: 1px 6px;
   color: inherit;
   font: inherit;
   text-align: left;
+  text-decoration: none;
 }
 
 /* A live row owns a CLI subprocess, so closing it needs to stay one click
@@ -314,9 +316,11 @@
   display: block;
   flex: 1;
   min-width: 0;
+  padding: 1px 6px;
   color: inherit;
   font: inherit;
   text-align: left;
+  text-decoration: none;
 }
 
 .hitTitleLine {
