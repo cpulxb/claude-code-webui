@@ -166,47 +166,92 @@ function dropInlineMedia(message: unknown): void {
 
 /**
  * The transcript the last page was cut from. The SDK parses the whole file on
- * every call — seconds for a 50 MB one on a loaded box — and scrolling up asks
+ * every call — seconds for a 50 MB one on a loaded box — and scrolling asks
  * for page after page of the same transcript. The file only grows at its end,
- * so everything before a cursor the cached copy holds is still what is on
- * disk; the newest page re-reads, since that is where it grows. Dropped when
- * unused for a while, as one long text-only transcript can be large.
+ * so every entry the cached copy holds is still what is on disk, and a page
+ * next to one of them can be cut from it — unless it reaches the copy's end,
+ * where the file grows. The newest page and a page around an entry are where
+ * a session is opened, and re-read. Dropped when unused for a while, as one
+ * long text-only transcript can be large.
  */
 let lastRead: { sessionId: string; cwd: string | undefined; messages: SessionMessage[]; expiry: NodeJS.Timeout } | null = null
 const LAST_READ_TTL_MS = 5 * 60_000
 
-/** `pageMessages` over the session's transcript, read once per scroll-up. */
+/** Where a page sits: next to an entry already shown, or around one to open at. Without one, the newest page. */
+export type PageCursor = { before?: string | undefined; after?: string | undefined; around?: string | undefined }
+
+export type MessagePage = { messages: SessionMessage[]; hasMore: boolean; hasNewer: boolean }
+
+/** `pageMessages` over the session's transcript, read once per run of pages. */
 export async function readMessagePage(
   sessionId: string,
   cwd: string | undefined,
   limit: number,
-  before?: string,
-): Promise<{ messages: SessionMessage[]; hasMore: boolean }> {
+  cursor: PageCursor = {},
+): Promise<MessagePage> {
+  const shown = cursor.before ?? cursor.after
   const cached =
-    before !== undefined && lastRead?.sessionId === sessionId && lastRead.cwd === cwd ? lastRead.messages : null
-  const messages = cached?.some((entry) => entry.uuid === before) ? cached : await readMessages(sessionId, cwd)
+    shown !== undefined && lastRead?.sessionId === sessionId && lastRead.cwd === cwd && lastRead.messages.some((entry) => entry.uuid === shown)
+      ? lastRead.messages
+      : null
+  let messages = cached ?? (await readMessages(sessionId, cwd))
+  let page = pageMessages(messages, limit, cursor)
+  if (cached && !page.hasNewer && cursor.after !== undefined) {
+    messages = await readMessages(sessionId, cwd)
+    page = pageMessages(messages, limit, cursor)
+  }
   if (lastRead) clearTimeout(lastRead.expiry)
   lastRead = { sessionId, cwd, messages, expiry: setTimeout(() => (lastRead = null), LAST_READ_TTL_MS).unref() }
-  return pageMessages(messages, limit, before)
+  return page
 }
 
 /**
- * One page of a transcript: up to `limit` entries ending just before the one
- * whose uuid is `before`, or at the newest entry when it is absent.
+ * One page of a transcript, up to `limit` entries: just before the entry whose
+ * uuid is `before`, just after the one that is `after`, around the one `around`
+ * names, or the newest. `around` matches an entry's uuid or a tool call in it
+ * (a subagent's), and gets the newest page when the transcript holds no such
+ * entry — the caller sees its target is missing.
  *
- * The start moves back past `limit` until no tool call straddles it and it
+ * Each edge moves outward past `limit` until no tool call straddles it and it
  * does not split one assistant message's blocks, so a page replays on its own
  * exactly as it would inside the whole transcript. A 52 MB transcript answered
  * in one piece came to 22 MB of JSON, which a tunnel dropped mid-body.
  */
-export function pageMessages(
-  messages: SessionMessage[],
-  limit: number,
-  before?: string,
-): { messages: SessionMessage[]; hasMore: boolean } {
-  const end = before === undefined ? messages.length : messages.findIndex((entry) => entry.uuid === before)
-  if (end < 0) throw new Error(`history cursor ${before} is not in the transcript`)
+export function pageMessages(messages: SessionMessage[], limit: number, cursor: PageCursor = {}): MessagePage {
+  const cuts = cutPoints(messages)
+  const target = cursor.around === undefined ? -1 : messages.findIndex((entry) => holds(entry, cursor.around!))
+  let start: number
+  let end: number
+  if (cursor.after !== undefined) {
+    start = positionOf(messages, cursor.after) + 1
+    end = Math.min(messages.length, start + limit)
+  } else if (target >= 0) {
+    // Most of the page follows the target: what came of it is read next.
+    start = Math.max(0, target - Math.floor(limit / 4))
+    end = Math.min(messages.length, start + limit)
+  } else {
+    end = cursor.before === undefined ? messages.length : positionOf(messages, cursor.before)
+    start = Math.max(0, end - limit)
+  }
+  while (!cuts(start)) start--
+  while (!cuts(end)) end++
+  return { messages: messages.slice(start, end), hasMore: start > 0, hasNewer: end < messages.length }
+}
 
+function positionOf(messages: SessionMessage[], uuid: string): number {
+  const index = messages.findIndex((entry) => entry.uuid === uuid)
+  if (index < 0) throw new Error(`history cursor ${uuid} is not in the transcript`)
+  return index
+}
+
+function holds(entry: SessionMessage, id: string): boolean {
+  if (entry.uuid === id) return true
+  const content = (entry.message as { content?: unknown } | null)?.content
+  return Array.isArray(content) && content.some((block: { type?: unknown; id?: unknown }) => block.type === 'tool_use' && block.id === id)
+}
+
+/** Whether a page may begin at an index — the one before it is where the previous page ends. */
+function cutPoints(messages: SessionMessage[]): (index: number) => boolean {
   // `straddled[i] > 0`: some tool call sits before entry i and its result at
   // or after it. Built as a difference array over each call → result span.
   const straddled = new Array<number>(messages.length + 1).fill(0)
@@ -224,10 +269,10 @@ export function pageMessages(
     }
   })
   for (let i = 1; i <= messages.length; i++) straddled[i]! += straddled[i - 1]!
-
-  let start = Math.max(0, end - limit)
-  while (start > 0 && (straddled[start]! > 0 || continuesMessage(messages[start - 1]!, messages[start]!))) start--
-  return { messages: messages.slice(start, end), hasMore: start > 0 }
+  return (index) =>
+    index <= 0 ||
+    index >= messages.length ||
+    (straddled[index] === 0 && !continuesMessage(messages[index - 1]!, messages[index]!))
 }
 
 /** Both entries are blocks of one assistant message, which renders as one node. */

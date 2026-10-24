@@ -23,7 +23,7 @@ import { immer } from 'zustand/middleware/immer'
 
 import { call, connectEvents, type ConnectionStatus } from '../api/client.ts'
 import { bashDisplay, bashEcho, bashPrompt } from '../render/bash.ts'
-import { applyHistoryMessage, listUserPromptUuids, prependTranscript } from '../render/history.ts'
+import { appendTranscript, applyHistoryMessage, listUserPromptUuids, prependTranscript } from '../render/history.ts'
 import { applyMessage, emptyTranscript, findAgent, type AgentRun, type Transcript } from '../render/nodes.ts'
 import { applyWorkflowRecord } from '../render/workflows.ts'
 
@@ -63,6 +63,21 @@ export type SessionState = {
   historyLoading: boolean
   /** The last page read failed; shown where that page would go, with a retry. */
   historyError: string | null
+  /**
+   * Uuid of the newest entry shown while newer ones are on disk — the session
+   * was opened at an older entry; null once the transcript reaches the end.
+   * Live output has nowhere to go meanwhile, so it is held back, and the
+   * runner's backlog replays the turn in flight once the end is reached.
+   */
+  newerCursor: string | null
+  newerLoading: boolean
+  newerError: string | null
+  /**
+   * Where the main thread's view goes: the user message with this uuid, or
+   * the end for a null id. A fresh object per request, so asking for the same
+   * place again moves the view again; null when nothing asked yet.
+   */
+  anchor: { id: string | null } | null
   status: SessionStatus
   /**
    * Whether a CLI process is backing this session. Sessions opened from the
@@ -117,9 +132,14 @@ type Store = {
 
   connect: () => () => void
   createSession: (cwd: string) => Promise<string>
-  openSession: (sessionId: string, cwd?: string) => Promise<void>
+  /** `at`: an entry to open at — a user message's uuid, or a subagent's tool call — instead of the newest. */
+  openSession: (sessionId: string, cwd?: string, at?: string) => Promise<void>
   /** Puts the next page of on-disk history above what is shown. No-op while one is loading. */
   loadOlderHistory: (sessionId: string) => Promise<void>
+  /** Puts the next page below what is shown, for a session opened at an older entry. */
+  loadNewerHistory: (sessionId: string) => Promise<void>
+  /** Moves the view to the end of the transcript, where replies land — reading it in first if it is not shown. */
+  jumpToLatest: (sessionId: string) => Promise<void>
   /** Reads again the history page that failed — the newest one, or the next older one. */
   retryHistory: (sessionId: string) => Promise<void>
   setActive: (sessionId: string | null) => void
@@ -141,6 +161,8 @@ type Store = {
   setModel: (model: string) => Promise<void>
   refreshModels: () => Promise<void>
   respondToPermission: (requestId: string, decision: PermissionDecision) => Promise<void>
+  /** The address that opens the active session at this user message. */
+  messageLink: (nodeId: string) => Promise<string>
   /** dryRun previews; a real run bumps `fsVersion` and posts a notice node. */
   rewindFiles: (nodeId: string, dryRun: boolean) => Promise<RewindFilesResult>
   /** Bumps `fsVersion` after an out-of-band write (editor-tab save). */
@@ -168,6 +190,10 @@ function newSession(sessionId: string, cwd: string, attached: boolean): SessionS
     historyCursor: null,
     historyLoading: false,
     historyError: null,
+    newerCursor: null,
+    newerLoading: false,
+    newerError: null,
+    anchor: null,
     status: 'idle',
     attached,
     closed: false,
@@ -377,7 +403,7 @@ export const useStore = create<Store>()(
     // and models are ready before the first message. The tradeoff is a CLI
     // process per opened session — and, as in VS Code, resuming a session a
     // terminal still has open means two writers on one JSONL.
-    openSession: async (sessionId, cwd) => {
+    openSession: async (sessionId, cwd, at) => {
       // An address names only the session; the server knows where it runs.
       const target = cwd ?? get().sessions[sessionId]?.cwd ?? (await locateSession(sessionId))
       const known = get().sessions[sessionId]
@@ -402,6 +428,23 @@ export const useStore = create<Store>()(
           }
         })
         if (retrying) void eagerAttach(set, get, sessionId)
+        // Already read in: only the view moves. Otherwise the transcript does.
+        if (at && holdsEntry(known.transcript, at)) {
+          if (isUserNode(known.transcript, at)) {
+            set((state) => {
+              state.sessions[sessionId]!.anchor = { id: at }
+            })
+          }
+        } else if (at) {
+          await moveWindow(set, get, sessionId, at).catch((error: unknown) => {
+            pushNotice(set, sessionId, 'error', `读取历史记录失败：${String(error)}`)
+            // Still where it was asked to go, not "gone from the session".
+            set((state) => {
+              const session = state.sessions[sessionId]
+              if (session) session.anchor = { id: at }
+            })
+          })
+        }
         return
       }
       set((state) => {
@@ -410,7 +453,7 @@ export const useStore = create<Store>()(
       })
       // Ordered, not raced: adopting can start delivering live events, and the
       // history replay overwrites the whole transcript when it lands.
-      await loadHistory(set, get, sessionId, target)
+      await loadHistory(set, get, sessionId, target, at)
       await adoptRunner(set, get, sessionId)
       // Fire-and-forget: rendering must not wait for a CLI to boot. A failure
       // leaves the session detached, and `send` retries the attach anyway.
@@ -451,6 +494,66 @@ export const useStore = create<Store>()(
       }
     },
 
+    loadNewerHistory: async (sessionId) => {
+      const session = get().sessions[sessionId]
+      const after = session?.newerCursor
+      if (!session || !after || session.newerLoading) return
+      set((state) => {
+        state.sessions[sessionId]!.newerLoading = true
+      })
+      try {
+        const [{ messages, hasNewer }, subagents] = await Promise.all([
+          call('history.messages', { sessionId, cwd: session.cwd, limit: HISTORY_PAGE, after }),
+          call('history.subagents', { sessionId }).catch(() => ({ agents: [] })),
+        ])
+        const newer = await replayHistory(sessionId, messages, subagents.agents)
+        set((state) => {
+          const current = state.sessions[sessionId]
+          // Moved meanwhile: that replay owns the transcript now.
+          if (current?.newerCursor !== after) return
+          appendTranscript(current.transcript, newer)
+          current.newerCursor = hasNewer ? (messages.at(-1)?.uuid ?? null) : null
+          current.newerError = null
+        })
+        // At the end again: the turn in flight streamed past the held-back view.
+        if (!hasNewer) await adoptRunner(set, get, sessionId)
+      } catch (error) {
+        set((state) => {
+          const current = state.sessions[sessionId]
+          if (current) current.newerError = `读取更新的历史记录失败：${String(error)}`
+        })
+      } finally {
+        set((state) => {
+          const current = state.sessions[sessionId]
+          if (current) current.newerLoading = false
+        })
+      }
+    },
+
+    jumpToLatest: async (sessionId) => {
+      const session = get().sessions[sessionId]
+      if (!session) return
+      if (!session.newerCursor) {
+        set((state) => {
+          state.sessions[sessionId]!.anchor = { id: null }
+        })
+        return
+      }
+      set((state) => {
+        state.sessions[sessionId]!.newerLoading = true
+      })
+      try {
+        await moveWindow(set, get, sessionId)
+      } catch (error) {
+        pushNotice(set, sessionId, 'error', `回到最新的消息失败：${String(error)}`)
+      } finally {
+        set((state) => {
+          const current = state.sessions[sessionId]
+          if (current) current.newerLoading = false
+        })
+      }
+    },
+
     retryHistory: async (sessionId) => {
       const session = get().sessions[sessionId]
       if (!session || session.historyLoading) return
@@ -458,9 +561,9 @@ export const useStore = create<Store>()(
       set((state) => {
         state.sessions[sessionId]!.historyLoading = true
       })
-      // The newest page never arrived: replay it as opening the session does,
+      // The first page never arrived: replay it as opening the session does,
       // then re-adopt, so a running turn's backlog lands on top of it again.
-      await loadHistory(set, get, sessionId, session.cwd)
+      await loadHistory(set, get, sessionId, session.cwd, session.anchor?.id ?? undefined)
       set((state) => {
         const current = state.sessions[sessionId]
         if (current) current.historyLoading = false
@@ -506,7 +609,9 @@ export const useStore = create<Store>()(
 
     send: async (text, attachments) => {
       const sessionId = get().activeId
-      if (!sessionId || !(await attachToSend(set, get, sessionId))) return
+      if (!sessionId) return
+      if (!(await toTheEnd(get, sessionId))) return pushNotice(set, sessionId, 'error', `没能回到最新的消息，这条没有发出：${text}`)
+      if (!(await attachToSend(set, get, sessionId))) return
       // Optimistic echo: the CLI does not replay user messages by default.
       echoPrompt(set, sessionId, text, attachments?.length ?? 0)
       await startTurn(set, sessionId, text, attachments)
@@ -514,7 +619,9 @@ export const useStore = create<Store>()(
 
     runShell: async (command) => {
       const sessionId = get().activeId
-      if (!sessionId || !(await attachToSend(set, get, sessionId))) return
+      if (!sessionId) return
+      if (!(await toTheEnd(get, sessionId))) return pushNotice(set, sessionId, 'error', `没能回到最新的消息，这条命令没有执行：${command}`)
+      if (!(await attachToSend(set, get, sessionId))) return
       const echoId = echoPrompt(set, sessionId, bashEcho(command), 0)
       let output: { stdout: string; stderr: string }
       try {
@@ -676,6 +783,13 @@ export const useStore = create<Store>()(
       await call('permission.respond', { sessionId, requestId, decision })
     },
 
+    messageLink: async (nodeId) => {
+      const sessionId = get().activeId
+      if (!sessionId) throw new Error('没有活跃会话')
+      const uuid = nodeId.startsWith('local-') ? await resolveUserUuid(get, sessionId, nodeId) : nodeId
+      return new URL(`${sessionHref(sessionId)}#m-${uuid}`, window.location.origin).href
+    },
+
     rewindFiles: async (nodeId, dryRun) => {
       const sessionId = get().activeId
       if (!sessionId) throw new Error('没有活跃会话')
@@ -795,7 +909,7 @@ function readRememberedSession(): { sessionId: string; cwd: string; agent?: stri
   }
 }
 
-type Address = { sessionId: string; agent?: string }
+type Address = { sessionId: string; agent?: string; anchor?: string }
 
 /**
  * Opens of an address still in flight. The states they pass through — the
@@ -810,19 +924,23 @@ export function sessionHref(sessionId: string): string {
   return `/s/${sessionId}`
 }
 
-/** What the tab shows, as an address: the session, and the subagent whose conversation is open. */
+/**
+ * What the tab shows, as an address: the session, the subagent whose
+ * conversation is open, or else the user message the view was sent to.
+ */
 function addressOf(state: Store): string {
   const session = state.activeId ? state.sessions[state.activeId] : undefined
   if (!session) return '/'
-  const agent = session.viewAgent ? `?${new URLSearchParams({ agent: session.viewAgent })}` : ''
-  return sessionHref(session.sessionId) + agent
+  if (session.viewAgent) return `${sessionHref(session.sessionId)}?${new URLSearchParams({ agent: session.viewAgent })}`
+  return sessionHref(session.sessionId) + (session.anchor?.id ? `#m-${session.anchor.id}` : '')
 }
 
 function readAddress(): Address | null {
   const sessionId = /^\/s\/([^/]+)\/?$/.exec(window.location.pathname)?.[1]
   if (!sessionId) return null
   const agent = new URLSearchParams(window.location.search).get('agent')
-  return { sessionId, ...(agent ? { agent } : {}) }
+  const anchor = /^#m-(.+)$/.exec(window.location.hash)?.[1]
+  return { sessionId, ...(agent ? { agent } : {}), ...(anchor ? { anchor } : {}) }
 }
 
 /**
@@ -868,14 +986,22 @@ export function followAddressBar(): () => void {
 }
 
 async function openAddress(address: Address | null, cwd: string | undefined): Promise<void> {
-  const { openSession, openAgent, setActive } = useStore.getState()
+  const { openSession, openAgent, setActive, addNotice, jumpToLatest } = useStore.getState()
   if (!address) return setActive(null)
-  await openSession(address.sessionId, cwd)
+  // A subagent opens where its card is, which may be far back.
+  await openSession(address.sessionId, cwd, address.agent ?? address.anchor)
   const { activeId, sessions } = useStore.getState()
   // Another open took over meanwhile; the agent would land in its session.
   if (activeId !== address.sessionId) return
+  const session = sessions[activeId]
+  if (address.anchor && !address.agent && session?.anchor?.id === null) {
+    addNotice('info', '链接指向的那条消息已不在这个会话里（可能被回退了），已打开最新的消息')
+  }
+  // Naming no message is naming the end — say, forward again after going
+  // back to one — wherever the view was sent before.
+  if (!address.anchor && !address.agent && (session?.anchor?.id || session?.newerCursor)) await jumpToLatest(activeId)
   const agent = address.agent ?? null
-  if ((sessions[activeId]?.viewAgent ?? null) !== agent) await openAgent(agent).catch(() => {})
+  if ((session?.viewAgent ?? null) !== agent) await openAgent(agent).catch(() => {})
 }
 
 /**
@@ -944,7 +1070,7 @@ async function adoptRunner(set: Setter, get: () => Store, sessionId: string): Pr
     // So is whatever the turn already streamed but the jsonl has not flushed
     // yet — replay it through the normal path; `seen` drops the overlap with
     // history and with live events that raced this snapshot.
-    for (const message of state.backlog) applyMessage(session.transcript, message)
+    if (!session.newerCursor) for (const message of state.backlog) applyMessage(session.transcript, message)
   })
   await loadSessionMeta(set, get, sessionId)
   // The reading normally refreshes on each `result`, all of which this page
@@ -987,7 +1113,9 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
         return
       case 'sdk': {
         const message = event.message
-        applyMessage(session.transcript, message)
+        // Held back while an older stretch is shown: there is no end to put
+        // it at. The runner's backlog replays it once the end is read in.
+        if (!session.newerCursor) applyMessage(session.transcript, message)
 
         // Every in-turn API round-trip streams an assistant message whose
         // usage *is* the current context size — realtime data the ring can
@@ -1306,32 +1434,74 @@ const HISTORY_PAGE = 100
  * session that genuinely has no history, and silently showing one for the other
  * is how the missing replay went unnoticed in the first place.
  */
-async function loadHistory(set: Setter, get: () => Store, sessionId: string, cwd: string): Promise<void> {
+async function loadHistory(set: Setter, get: () => Store, sessionId: string, cwd: string, at?: string): Promise<void> {
   try {
-    const [{ messages, hasMore, permissionMode }, subagents] = await Promise.all([
-      call('history.messages', { sessionId, cwd, limit: HISTORY_PAGE }),
-      // Optional: without it the cards still render, they just cannot open
-      // a conversation until a live event names the agent.
-      call('history.subagents', { sessionId }).catch(() => ({ agents: [] })),
-    ])
-    if (!get().sessions[sessionId]) return
-    const transcript = await replayHistory(sessionId, messages, subagents.agents)
-    set((state) => {
-      const session = state.sessions[sessionId]
-      if (!session) return
-      session.transcript = transcript
-      session.historyCursor = hasMore ? (messages[0]?.uuid ?? null) : null
-      session.historyError = null
-      // Only when the transcript actually recorded a toggle; otherwise the
-      // remembered default already in place is the better guess.
-      if (permissionMode) session.permissionMode = permissionMode
-    })
+    await readWindow(set, get, sessionId, cwd, at)
   } catch (error) {
     set((state) => {
       const session = state.sessions[sessionId]
-      if (session) session.historyError = `读取历史记录失败：${String(error)}`
+      if (!session) return
+      session.historyError = `读取历史记录失败：${String(error)}`
+      // For the retry, which should land where this was meant to.
+      if (at) session.anchor = { id: at }
     })
   }
+}
+
+/** Replaces the transcript with the newest page of history, or the page around `at`. */
+async function readWindow(set: Setter, get: () => Store, sessionId: string, cwd: string, at?: string): Promise<void> {
+  const [{ messages, hasMore, hasNewer, permissionMode }, subagents] = await Promise.all([
+    call('history.messages', { sessionId, cwd, limit: HISTORY_PAGE, ...(at ? { around: at } : {}) }),
+    // Optional: without it the cards still render, they just cannot open
+    // a conversation until a live event names the agent.
+    call('history.subagents', { sessionId }).catch(() => ({ agents: [] })),
+  ])
+  if (!get().sessions[sessionId]) return
+  const transcript = await replayHistory(sessionId, messages, subagents.agents)
+  set((state) => {
+    const session = state.sessions[sessionId]
+    if (!session) return
+    session.transcript = transcript
+    session.historyCursor = hasMore ? (messages[0]?.uuid ?? null) : null
+    session.newerCursor = hasNewer ? (messages.at(-1)?.uuid ?? null) : null
+    session.historyError = null
+    session.newerError = null
+    // A message the page lacks — rewound away — leaves the view at the end.
+    session.anchor = { id: at && isUserNode(transcript, at) ? at : null }
+    // Only when the transcript actually recorded a toggle; otherwise the
+    // remembered default already in place is the better guess.
+    if (permissionMode) session.permissionMode = permissionMode
+  })
+}
+
+/**
+ * Moves an open session's transcript to the newest page, or the page around
+ * `at`, and replays the turn in flight onto it. Throws when it cannot be read.
+ */
+async function moveWindow(set: Setter, get: () => Store, sessionId: string, at?: string): Promise<void> {
+  const session = get().sessions[sessionId]
+  if (!session) return
+  await readWindow(set, get, sessionId, session.cwd, at)
+  await adoptRunner(set, get, sessionId)
+}
+
+/**
+ * Replies land at the end, so a send goes there first: one written while an
+ * older stretch is shown would never be seen arriving. False when it cannot.
+ */
+async function toTheEnd(get: () => Store, sessionId: string): Promise<boolean> {
+  const session = get().sessions[sessionId]
+  if (session?.anchor?.id || session?.newerCursor) await get().jumpToLatest(sessionId)
+  return !get().sessions[sessionId]?.newerCursor
+}
+
+function isUserNode(transcript: Transcript, id: string): boolean {
+  return transcript.nodes.some((node) => node.kind === 'user' && node.id === id)
+}
+
+/** Whether an entry to open at is already read in: a user message, or a subagent's card. */
+function holdsEntry(transcript: Transcript, id: string): boolean {
+  return isUserNode(transcript, id) || findAgent(transcript, id) !== null
 }
 
 /** One page of history as a transcript of its own, its cards filled in from their saved records. */

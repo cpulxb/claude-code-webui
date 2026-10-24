@@ -5,7 +5,7 @@ import type { AssistantBlock, ChatNode, StreamingBlock } from '../../render/node
 import { AGENT_TOOLS, findAgent } from '../../render/nodes.ts'
 import { WORKFLOW_TOOL } from '../../render/workflows.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
-import { BrandMark, HistoryIcon } from '../Icons.tsx'
+import { BrandMark, CheckIcon, HistoryIcon, LinkIcon } from '../Icons.tsx'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 import styles from './ChatView.module.css'
 import { PermissionCard } from './PermissionCard.tsx'
@@ -54,7 +54,20 @@ export function ChatView(): JSX.Element | null {
   const historyError = useActiveSessionValue((session) => (session.viewAgent ? null : session.historyError)) ?? null
   const loadOlderHistory = useStore((state) => state.loadOlderHistory)
   const retryHistory = useStore((state) => state.retryHistory)
+  // Below: a session opened at an older entry reads forward the same way.
+  const newerCursor = useActiveSessionValue((session) => (session.viewAgent ? null : session.newerCursor)) ?? null
+  const newerLoading = useActiveSessionValue((session) => session.newerLoading)
+  const newerError = useActiveSessionValue((session) => (session.viewAgent ? null : session.newerError)) ?? null
+  const loadNewerHistory = useStore((state) => state.loadNewerHistory)
+  const jumpToLatest = useStore((state) => state.jumpToLatest)
+  const placement = useActiveSessionValue((session) => (session.viewAgent ? null : session.anchor)) ?? null
+  // The placement last carried out, so each request moves the view once.
+  const placedRef = useRef<object | null>(null)
+  // `newerCursor` as of the last layout: a page that just closed the gap below
+  // still came in under the reader.
+  const newerRef = useRef<string | null>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
+  const newerSentinelRef = useRef<HTMLDivElement>(null)
   // The topmost row when an older page was asked for, by its offset in the
   // scrolled content: only what lands above it moves that, not scrolling.
   const anchorRef = useRef<{ element: Element; offset: number } | null>(null)
@@ -148,6 +161,22 @@ export function ChatView(): JSX.Element | null {
     return () => observer.disconnect()
   }, [activeId, historyCursor, historyError, holdAnchor, loadOlderHistory])
 
+  // Below the newest row shown nothing needs anchoring: rows added under the
+  // viewport do not move it.
+  useEffect(() => {
+    const root = scrollRef.current
+    const sentinel = newerSentinelRef.current
+    if (!root || !sentinel || !activeId || !newerCursor || newerError) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) void loadNewerHistory(activeId)
+      },
+      { root, rootMargin: '0px 0px 100% 0px' },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [activeId, newerCursor, newerError, loadNewerHistory])
+
   const retry = useCallback(() => {
     if (!activeId) return
     // An older page lands above the rows shown; the newest one replaces them.
@@ -191,16 +220,48 @@ export function ChatView(): JSX.Element | null {
     const swapped = switched || count > seen.count + 1
     seenRef.current = { id: viewKey, count }
     // A freshly opened session opens at the bottom, whatever the reader was
-    // doing in the session they came from.
-    if (switched) followRef.current = true
-    if (!followRef.current) return
+    // doing in the session they came from — or where it was sent, again.
+    if (switched) {
+      followRef.current = true
+      placedRef.current = null
+    }
+    const readingForward = newerRef.current !== null
+    newerRef.current = newerCursor
     const element = scrollRef.current
     if (!element) return
-    if (swapped) {
-      if (frameRef.current !== undefined) {
-        cancelAnimationFrame(frameRef.current)
-        frameRef.current = undefined
+    const cancelFrame = (): void => {
+      if (frameRef.current === undefined) return
+      cancelAnimationFrame(frameRef.current)
+      frameRef.current = undefined
+    }
+    // Sent somewhere — opened at a message, or back to the end: carried out
+    // once per request, as soon as the row it names is on screen.
+    if (placement && placement !== placedRef.current) {
+      const target = placement.id === null ? null : element.querySelector(`[data-uuid="${CSS.escape(placement.id)}"]`)
+      if (target || placement.id === null) {
+        placedRef.current = placement
+        cancelFrame()
+        followRef.current = !target
+        if (target) {
+          target.scrollIntoView({ block: 'center' })
+          target.classList.add(styles.userTurnPlaced!)
+          target.addEventListener('animationend', () => target.classList.remove(styles.userTurnPlaced!), { once: true })
+        } else {
+          element.scrollTop = element.scrollHeight
+        }
+        return
       }
+    }
+    // Pages read in below the reader — the last one too — are theirs to scroll
+    // into: chasing one would skip it and fetch the next. Only where it leaves
+    // them says whether they still follow.
+    if (!switched && (newerCursor || readingForward)) {
+      followRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < FOLLOW_THRESHOLD
+      return
+    }
+    if (!followRef.current) return
+    if (swapped) {
+      cancelFrame()
       element.scrollTop = element.scrollHeight
       return
     }
@@ -209,7 +270,7 @@ export function ChatView(): JSX.Element | null {
       frameRef.current = undefined
       if (followRef.current) element.scrollTop = element.scrollHeight
     })
-  }, [nodes, streaming, pendingPermissions, activeId, viewAgent])
+  }, [nodes, streaming, pendingPermissions, activeId, viewAgent, placement, newerCursor])
 
   useEffect(
     () => () => {
@@ -219,7 +280,7 @@ export function ChatView(): JSX.Element | null {
   )
 
   if (!nodes) return null
-  const empty = nodes.length === 0 && !streaming && !historyCursor && !historyError
+  const empty = nodes.length === 0 && !streaming && !historyCursor && !historyError && !newerCursor && !newerError
 
   return (
     <div className={styles.scroll} ref={scrollRef}>
@@ -237,8 +298,8 @@ export function ChatView(): JSX.Element | null {
             <div ref={sentinelRef} className={styles.olderHistory}>
               {historyError ? (
                 <>
-                  <span className={styles.olderHistoryError}>{historyError}</span>
-                  <button className={styles.olderHistoryRetry} disabled={historyLoading} onClick={retry} type="button">
+                  <span className={styles.historyError}>{historyError}</span>
+                  <button className={styles.historyRetry} disabled={historyLoading} onClick={retry} type="button">
                     {historyLoading ? '重试中…' : '重试'}
                   </button>
                 </>
@@ -271,10 +332,36 @@ export function ChatView(): JSX.Element | null {
             ),
           )}
           {streaming && <StreamingRow block={streaming} />}
+          {(newerCursor || newerError) && (
+            <div ref={newerSentinelRef} className={styles.newerHistory}>
+              {newerError ? (
+                <>
+                  <span className={styles.historyError}>{newerError}</span>
+                  <button
+                    className={styles.historyRetry}
+                    disabled={newerLoading}
+                    onClick={() => activeId && void loadNewerHistory(activeId)}
+                    type="button"
+                  >
+                    {newerLoading ? '重试中…' : '重试'}
+                  </button>
+                </>
+              ) : newerLoading ? (
+                '正在加载更新的消息…'
+              ) : (
+                '下滑加载更新的消息'
+              )}
+            </div>
+          )}
           {pendingPermissions?.map((request) => (
             <PermissionCard key={request.requestId} request={request} />
           ))}
           {error && <div className={`${styles.row} ${styles.rowError}`}>{error}</div>}
+          {newerCursor && (
+            <button className={styles.jumpLatest} onClick={() => activeId && void jumpToLatest(activeId)} type="button">
+              跳到最新
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -294,19 +381,44 @@ const UserTurn = memo(function UserTurn({
   onConfirm: (nodeId: string) => void
   onCancel: () => void
 }): JSX.Element {
+  const messageLink = useStore((state) => state.messageLink)
+  const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const copyLink = (): void => {
+    void messageLink(node.id)
+      .then((link) => navigator.clipboard.writeText(link))
+      .then(
+        () => 'copied' as const,
+        () => 'failed' as const,
+      )
+      .then((result) => {
+        setCopied(result)
+        setTimeout(() => setCopied('idle'), 1400)
+      })
+  }
+
   return (
     <>
-      <div className={styles.userTurn}>
+      <div className={styles.userTurn} data-uuid={node.id}>
         {node.text}
         {node.attachments > 0 && <div className={styles.attachmentNote}>附件 × {node.attachments}</div>}
-        <button
-          className={styles.rewindButton}
-          onClick={() => onRewind(node.id)}
-          type="button"
-          title="把文件回退到这条消息之前的状态"
-        >
-          <HistoryIcon size={13} />
-        </button>
+        <div className={styles.turnActions}>
+          <button
+            className={`${styles.turnAction} ${copied === 'failed' ? styles.turnActionFailed : ''}`}
+            onClick={copyLink}
+            type="button"
+            title={copied === 'copied' ? '已复制链接' : copied === 'failed' ? '复制失败' : '复制这条消息的链接'}
+          >
+            {copied === 'copied' ? <CheckIcon size={13} /> : <LinkIcon size={13} />}
+          </button>
+          <button
+            className={styles.turnAction}
+            onClick={() => onRewind(node.id)}
+            type="button"
+            title="把文件回退到这条消息之前的状态"
+          >
+            <HistoryIcon size={13} />
+          </button>
+        </div>
       </div>
 
       {rewind && (

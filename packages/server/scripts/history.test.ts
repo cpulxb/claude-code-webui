@@ -49,21 +49,21 @@ test('without a cursor the page is the newest entries', () => {
 
 test('a page reaches back until no tool call straddles its start', () => {
   // Starting at u2 would leave t2 and t3's calls on the previous page.
-  const page = pageMessages(transcript, 2, 'a4')
+  const page = pageMessages(transcript, 2, { before: 'a4' })
   assert.deepEqual(uuids(page), ['a2', 'a3', 'u2', 'u3'])
   assert.equal(page.hasMore, true)
 })
 
 test('a page does not start inside one assistant message', () => {
   // a1 is m1's second block; starting there would render m1 as two nodes.
-  assert.deepEqual(uuids(pageMessages(transcript, 2, 'a2')), ['a0', 'a1', 'u1'])
+  assert.deepEqual(uuids(pageMessages(transcript, 2, { before: 'a2' })), ['a0', 'a1', 'u1'])
 })
 
 test('paging from the newest entry back covers the transcript once, in order', () => {
   const pages: string[][] = []
   let before: string | undefined
   for (;;) {
-    const page = pageMessages(transcript, 2, before)
+    const page = pageMessages(transcript, 2, { before })
     pages.unshift(uuids(page))
     if (!page.hasMore) break
     before = page.messages[0]!.uuid
@@ -79,7 +79,39 @@ test('a call that never got its result does not pin the start', () => {
 })
 
 test('an unknown cursor is an error, not an empty page', () => {
-  assert.throws(() => pageMessages(transcript, 2, 'gone'), /not in the transcript/)
+  assert.throws(() => pageMessages(transcript, 2, { before: 'gone' }), /not in the transcript/)
+  assert.throws(() => pageMessages(transcript, 2, { after: 'gone' }), /not in the transcript/)
+})
+
+test('a newer page reaches forward until no tool call straddles its end', () => {
+  // Ending at u2 would leave t3's result for the page after.
+  const page = pageMessages(transcript, 2, { after: 'u1' })
+  assert.deepEqual(uuids(page), ['a2', 'a3', 'u2', 'u3'])
+  assert.equal(page.hasNewer, true)
+})
+
+test('a page around an entry holds it, mostly followed by what came after', () => {
+  const page = pageMessages(transcript, 4, { around: 'u4' })
+  assert.deepEqual(uuids(page), ['a4', 'u4', 'a5'])
+  assert.deepEqual([page.hasMore, page.hasNewer], [true, false])
+  // A subagent's spawn is found by its tool call, not only by uuid.
+  assert.ok(uuids(pageMessages(transcript, 4, { around: 't3' })).includes('a3'))
+})
+
+test('a page around an entry the transcript lacks is the newest page', () => {
+  assert.deepEqual(pageMessages(transcript, 2, { around: 'rewound-away' }), pageMessages(transcript, 2))
+})
+
+test('newer pages from a page around an entry cover the rest once, in order', () => {
+  let page = pageMessages(transcript, 2, { around: 'a1' })
+  const shown = uuids(page)
+  while (page.hasNewer) {
+    page = pageMessages(transcript, 2, { after: page.messages.at(-1)!.uuid })
+    shown.push(...uuids(page))
+  }
+  const all = uuids({ messages: transcript })
+  assert.deepEqual(shown, all.slice(all.indexOf(shown[0]!)))
+  assert.equal(shown.at(-1), 'a5')
 })
 
 // Transcripts on disk, in the shape the CLI writes, for the readers above.
@@ -126,7 +158,7 @@ test('older pages are cut from the read the newest page made; the newest page re
 
   // Gone from disk, yet the older page still comes: it was not read again.
   await rm(path)
-  const older = await readMessagePage(sessionId, '/work/app', 2, newest.messages[0]!.uuid)
+  const older = await readMessagePage(sessionId, '/work/app', 2, { before: newest.messages[0]!.uuid })
   assert.deepEqual(older.messages.map((entry) => entry.uuid), [`${sessionId}-2`, `${sessionId}-3`])
 
   await writeTranscript(sessionId, [...entries, said('seven')])
@@ -141,4 +173,23 @@ test('a session is located by its id alone, at the cwd its transcript records', 
   assert.equal(await locateSession('00000000-0000-4000-8000-0000000000ff'), null)
   // Ids come from the address bar; one that is not a UUID never reaches the disk.
   assert.equal(await locateSession('../../../etc/passwd'), null)
+})
+
+test('a newer page short of the read\'s end is cut from it; one that reaches the end re-reads', async () => {
+  const sessionId = '00000000-0000-4000-8000-0000000000a4'
+  const entries = [said('one'), replied('m1', 'two'), said('three'), replied('m2', 'four'), said('five'), replied('m3', 'six')]
+  const path = await writeTranscript(sessionId, entries)
+  const opened = await readMessagePage(sessionId, '/work/app', 2, { around: `${sessionId}-0` })
+  assert.deepEqual(opened.messages.map((entry) => entry.uuid), [`${sessionId}-0`, `${sessionId}-1`])
+
+  // Gone from disk, yet the next page still comes: it was not read again.
+  await rm(path)
+  const next = await readMessagePage(sessionId, '/work/app', 2, { after: `${sessionId}-1` })
+  assert.deepEqual(next.messages.map((entry) => entry.uuid), [`${sessionId}-2`, `${sessionId}-3`])
+
+  // The last page would end where the read ends, so it reads what was appended since.
+  await writeTranscript(sessionId, [...entries, said('seven')])
+  const last = await readMessagePage(sessionId, '/work/app', 4, { after: `${sessionId}-3` })
+  assert.deepEqual(last.messages.map((entry) => entry.uuid), [`${sessionId}-4`, `${sessionId}-5`, `${sessionId}-6`])
+  assert.equal(last.hasNewer, false)
 })

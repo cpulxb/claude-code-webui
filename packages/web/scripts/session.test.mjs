@@ -368,18 +368,45 @@ test('unchanged background model refreshes preserve menu row references', async 
 const A = '00000000-0000-4000-8000-00000000000a'
 const B = '00000000-0000-4000-8000-00000000000b'
 
-/** Saved sessions by id → cwd. Returns the ids the store had to ask the server to locate. */
-function saved(cwds, messages = {}) {
+/** One page of a saved transcript, cut as the server cuts it minus the tool-call rules. */
+function pageOf(all, { limit = Infinity, before, after, around }) {
+  const holds = (entry, id) => entry.uuid === id || (Array.isArray(entry.message.content) && entry.message.content.some((block) => block.id === id))
+  const target = around === undefined ? -1 : all.findIndex((entry) => holds(entry, around))
+  let start
+  let end
+  if (after !== undefined) {
+    start = all.findIndex((entry) => entry.uuid === after) + 1
+    end = Math.min(all.length, start + limit)
+  } else if (target >= 0) {
+    start = Math.max(0, target - 1)
+    end = Math.min(all.length, start + limit)
+  } else {
+    end = before === undefined ? all.length : all.findIndex((entry) => entry.uuid === before)
+    start = Math.max(0, end - limit)
+  }
+  return { messages: all.slice(start, end), hasMore: start > 0, hasNewer: end < all.length }
+}
+
+/** The `history.messages` params of each read since the last `saved`. */
+let reads = []
+
+/** Saved sessions by id → cwd, and their transcripts. Returns the ids the store asked the server to locate. */
+function saved(cwds, messages = {}, runner = { live: false, status: 'idle', pendingPermissions: [], backlog: [] }) {
   const located = []
+  reads = []
   rpc = async (method, params) => {
     switch (method) {
       case 'history.locate':
         located.push(params.sessionId)
         return { cwd: cwds[params.sessionId] ?? null }
-      case 'history.messages': return { messages: messages[params.sessionId] ?? [], hasMore: false }
+      case 'history.messages':
+        reads.push(params)
+        return pageOf(messages[params.sessionId] ?? [], params)
       case 'history.subagents': return { agents: [] }
       case 'history.projects': return { projects: [] }
-      case 'session.state': return { live: false, status: 'idle', pendingPermissions: [], backlog: [] }
+      case 'session.state': return runner
+      case 'session.send': return {}
+      case 'session.flags': return {}
       case 'session.create': return { sessionId: params.resume ?? params.sessionId }
       case 'session.commands': return { commands: [] }
       case 'session.models': return { models: [] }
@@ -393,14 +420,25 @@ function saved(cwds, messages = {}) {
   return located
 }
 
+/** A saved conversation of `turns` prompt/reply pairs: u0, a0, u1, a1, … */
+function conversation(sessionId, turns) {
+  const entry = (type, uuid, message) => ({ type, uuid, session_id: sessionId, parent_tool_use_id: null, parent_agent_id: null, message })
+  return Array.from({ length: turns }, (_, i) => [
+    entry('user', `u${i}`, { role: 'user', content: `prompt ${i}` }),
+    entry('assistant', `a${i}`, { id: `m${i}`, role: 'assistant', content: [{ type: 'text', text: `reply ${i}` }] }),
+  ]).flat()
+}
+
+const texts = (sessionId) => JSON.stringify(useStore.getState().sessions[sessionId].transcript.nodes)
+
 /** A history stack behind `window.history`, starting on `path`; `back` fires popstate as a browser does. */
 function addressBar(t, path, { remount = false } = {}) {
   const entries = [path]
   let index = 0
   const listeners = new Set()
   const show = (url) => {
-    const { pathname, search } = new URL(url, 'http://localhost')
-    Object.assign(window.location, { pathname, search })
+    const { origin, pathname, search, hash } = new URL(url, 'http://localhost')
+    Object.assign(window.location, { origin, pathname, search, hash })
   }
   show(path)
   window.history = {
@@ -419,12 +457,25 @@ function addressBar(t, path, { remount = false } = {}) {
   // StrictMode mounts, tears down and mounts again; the first open runs on.
   if (remount) followAddressBar()()
   t.after(followAddressBar())
+  const navigated = () => {
+    for (const listener of listeners) listener()
+  }
   return {
     entries: () => [...entries],
     back() {
       index -= 1
       show(entries[index])
-      for (const listener of listeners) listener()
+      navigated()
+    },
+    forward() {
+      index += 1
+      show(entries[index])
+      navigated()
+    },
+    /** Following a link within the page: a new step, then popstate. */
+    go(url) {
+      window.history.pushState(null, '', url)
+      navigated()
     },
   }
 }
@@ -524,4 +575,113 @@ test('a tab whose address names nothing keeps the session another tab stored', a
   await drain()
   useStore.setState({ connection: 'open' })
   assert.equal(JSON.parse(storage.get('ccw.activeSession')).sessionId, A)
+})
+
+test('a link to a message opens the session there, with newer pages below it', async (t) => {
+  saved({ [A]: '/a' }, { [A]: conversation(A, 150) })
+  const bar = addressBar(t, `/s/${A}#m-u10`)
+  await drain()
+  const session = useStore.getState().sessions[A]
+  assert.equal(session.anchor.id, 'u10')
+  assert.ok(texts(A).includes('prompt 10'))
+  assert.ok(session.newerCursor)
+  assert.equal(reads[0].around, 'u10')
+  assert.deepEqual(bar.entries(), [`/s/${A}#m-u10`])
+
+  while (useStore.getState().sessions[A].newerCursor) await useStore.getState().loadNewerHistory(A)
+  // Every prompt from the one linked to on, once each, in order.
+  const prompts = useStore.getState().sessions[A].transcript.nodes.filter((node) => node.kind === 'user').map((node) => node.id)
+  assert.deepEqual(prompts, Array.from({ length: 140 }, (_, i) => `u${i + 10}`))
+})
+
+test('live output is held back while an older stretch is shown, then replayed at the end', async (t) => {
+  const streamed = {
+    type: 'assistant', uuid: 'live', session_id: A, parent_tool_use_id: null,
+    message: { id: 'm-live', role: 'assistant', content: [{ type: 'text', text: 'streamed meanwhile' }], usage: { input_tokens: 1, output_tokens: 1 } },
+  }
+  saved({ [A]: '/a' }, { [A]: conversation(A, 150) }, { live: true, status: 'running', pendingPermissions: [], backlog: [streamed] })
+  addressBar(t, `/s/${A}#m-u10`)
+  t.after(useStore.getState().connect())
+  await drain()
+  lastSocket.receive({ sessionId: A, type: 'sdk', message: streamed })
+  assert.ok(!texts(A).includes('streamed meanwhile'))
+  assert.equal(useStore.getState().sessions[A].status, 'running')
+
+  while (useStore.getState().sessions[A].newerCursor) await useStore.getState().loadNewerHistory(A)
+  const nodes = useStore.getState().sessions[A].transcript.nodes
+  assert.ok(JSON.stringify(nodes.at(-1)).includes('streamed meanwhile'))
+})
+
+test('sending from an older stretch goes to the end first', async (t) => {
+  saved({ [A]: '/a' }, { [A]: conversation(A, 150) })
+  const bar = addressBar(t, `/s/${A}#m-u10`)
+  await drain()
+  await useStore.getState().send('one more')
+  await drain()
+  const session = useStore.getState().sessions[A]
+  assert.equal(session.newerCursor, null)
+  assert.equal(session.anchor.id, null)
+  assert.deepEqual(reads.at(-1), { sessionId: A, cwd: '/a', limit: 100 })
+  assert.ok(JSON.stringify(session.transcript.nodes.at(-1)).includes('one more'))
+  assert.deepEqual(bar.entries(), [`/s/${A}#m-u10`, `/s/${A}`])
+})
+
+test('a link to a message already read in moves the view, not the transcript', async (t) => {
+  saved({ [A]: '/a' }, { [A]: conversation(A, 150) })
+  const bar = addressBar(t, `/s/${A}`)
+  await drain()
+  const before = reads.length
+  bar.go(`/s/${A}#m-u120`)
+  await drain()
+  assert.equal(useStore.getState().sessions[A].anchor.id, 'u120')
+  assert.equal(reads.length, before)
+  assert.equal(window.location.hash, '#m-u120')
+})
+
+test('a link to a message no longer in the session opens the newest page and says so', async (t) => {
+  saved({ [A]: '/a' }, { [A]: conversation(A, 150) })
+  const bar = addressBar(t, `/s/${A}#m-rewound`)
+  await drain()
+  const session = useStore.getState().sessions[A]
+  assert.equal(session.anchor.id, null)
+  assert.equal(session.newerCursor, null)
+  assert.ok(texts(A).includes('已不在这个会话里'))
+  assert.deepEqual(bar.entries(), [`/s/${A}`])
+})
+
+test('a subagent far back opens from its address', async (t) => {
+  const transcript = conversation(A, 150)
+  transcript.splice(3, 0, {
+    type: 'assistant', uuid: 'spawn', session_id: A, parent_tool_use_id: null, parent_agent_id: null,
+    message: { id: 'm-spawn', role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_far', name: 'Agent', input: { description: 'early', prompt: 'look' } }] },
+  })
+  saved({ [A]: '/a' }, { [A]: transcript })
+  addressBar(t, `/s/${A}?agent=toolu_far`)
+  await drain()
+  assert.equal(useStore.getState().sessions[A].viewAgent, 'toolu_far')
+})
+
+test('a message link names the session and the message', async (t) => {
+  saved({ [A]: '/a' }, { [A]: conversation(A, 3) })
+  addressBar(t, `/s/${A}`)
+  await drain()
+  assert.equal(await useStore.getState().messageLink('u1'), `http://localhost/s/${A}#m-u1`)
+})
+
+test('back and forward between a message and the end move the view between them', async (t) => {
+  saved({ [A]: '/a' }, { [A]: conversation(A, 150) })
+  const bar = addressBar(t, `/s/${A}#m-u10`)
+  await drain()
+  await useStore.getState().jumpToLatest(A)
+  await drain()
+  assert.deepEqual(bar.entries(), [`/s/${A}#m-u10`, `/s/${A}`])
+  bar.back()
+  await drain()
+  assert.equal(useStore.getState().sessions[A].anchor.id, 'u10')
+  bar.forward()
+  await drain()
+  const session = useStore.getState().sessions[A]
+  assert.equal(session.anchor.id, null)
+  assert.equal(session.newerCursor, null)
+  assert.deepEqual(bar.entries(), [`/s/${A}#m-u10`, `/s/${A}`])
 })

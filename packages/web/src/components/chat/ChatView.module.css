@@ -42,35 +42,58 @@
   margin-top: 0;
 }
 
-.rewindButton {
+.turnActions {
   position: absolute;
   top: 6px;
   right: 6px;
+  display: flex;
+  gap: 4px;
+  visibility: hidden;
+}
+
+.userTurn:hover .turnActions {
+  visibility: visible;
+}
+
+@media (hover: none) {
+  .turnActions {
+    visibility: visible;
+  }
+}
+
+.turnAction {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 22px;
   height: 22px;
   color: var(--ccw-text-muted);
-  visibility: hidden;
   background: var(--ccw-bg-base);
   border: 1px solid var(--ccw-border-l1);
   border-radius: var(--ccw-radius-sm);
 }
 
-.userTurn:hover .rewindButton {
-  visibility: visible;
-}
-
-@media (hover: none) {
-  .rewindButton {
-    visibility: visible;
-  }
-}
-
-.rewindButton:hover {
+.turnAction:hover {
   color: var(--ccw-text-primary);
   background: var(--ccw-bg-hover);
+}
+
+.turnActionFailed,
+.turnActionFailed:hover {
+  color: var(--ccw-danger);
+}
+
+/* The message a link opened at, pointed out once. */
+.userTurnPlaced {
+  animation: placed 1.6s var(--ccw-ease);
+}
+
+@keyframes placed {
+  0%,
+  40% {
+    border-color: var(--ccw-accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--ccw-accent) 25%, transparent);
+  }
 }
 
 /* Sits tight under the bubble it belongs to, ahead of the reply below. */
@@ -251,11 +274,18 @@
   text-align: center;
 }
 
-.olderHistoryError {
+.newerHistory {
+  margin-top: var(--ccw-space-4);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
+  text-align: center;
+}
+
+.historyError {
   color: var(--ccw-danger);
 }
 
-.olderHistoryRetry {
+.historyRetry {
   padding: 1px 10px;
   margin-left: var(--ccw-space-2);
   font-size: var(--ccw-text-sm);
@@ -264,8 +294,27 @@
   border-radius: var(--ccw-radius-pill);
 }
 
-.olderHistoryRetry:hover:not(:disabled) {
+.historyRetry:hover:not(:disabled) {
   color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+/* Floats at the bottom of the view while an older stretch is shown. */
+.jumpLatest {
+  position: sticky;
+  bottom: var(--ccw-space-4);
+  display: block;
+  padding: 4px 14px;
+  margin: var(--ccw-space-4) auto 0;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-pill);
+  box-shadow: var(--ccw-shadow-popover);
+}
+
+.jumpLatest:hover {
   background: var(--ccw-bg-hover);
 }
 

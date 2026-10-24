@@ -200,3 +200,9 @@ export function prependTranscript(transcript: Transcript, older: Transcript): vo
   const parked = transcript.pendingNotices.filter((notice) => !applyNotification(transcript, notice))
   transcript.pendingNotices = [...older.pendingNotices, ...parked]
 }
+
+/** Puts a newer page of history after the transcript shown: the same merge, with the page as the newer side. */
+export function appendTranscript(transcript: Transcript, newer: Transcript): void {
+  prependTranscript(newer, transcript)
+  Object.assign(transcript, newer)
+}

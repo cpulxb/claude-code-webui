@@ -144,13 +144,13 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
       projects: await listProjects(manager.liveSummaries()),
     }),
 
-    'history.messages': async ({ sessionId, cwd, limit, before }) => {
+    'history.messages': async ({ sessionId, cwd, limit, before, after, around }) => {
       const [page, permissionMode] = await Promise.all([
         limit === undefined
-          ? readMessages(sessionId, cwd).then((messages) => ({ messages, hasMore: false }))
-          : readMessagePage(sessionId, cwd, limit, before),
-        // Older pages only add scrollback; the newest one already set the mode.
-        before === undefined ? readPermissionMode(sessionId) : null,
+          ? readMessages(sessionId, cwd).then((messages) => ({ messages, hasMore: false, hasNewer: false }))
+          : readMessagePage(sessionId, cwd, limit, { before, after, around }),
+        // Pages next to one shown only add to it; the one opened at set the mode.
+        before === undefined && after === undefined ? readPermissionMode(sessionId) : null,
       ])
       return { ...page, ...(permissionMode ? { permissionMode } : {}) }
     },

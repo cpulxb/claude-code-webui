@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-import { applyHistoryMessage, prependTranscript } from '../src/render/history.ts'
+import { appendTranscript, applyHistoryMessage, prependTranscript } from '../src/render/history.ts'
 import { applyMessage, emptyTranscript, listAgents, parseHandBack } from '../src/render/nodes.ts'
 
 // A real CLI 2.1.293 run: the main thread spawns two general-purpose
@@ -134,7 +134,8 @@ test('a subagent stopped from the UI reads as stopped, not failed', () => {
   assert.equal(listAgents(transcript).length, 2)
 })
 
-test('history pages prepended newest first add up to the whole replay', () => {
+/** Two pages of one transcript; a background subagent launched on the older settles on the newer. */
+function twoPages() {
   const entry = (type, uuid, content, id) => ({
     type,
     uuid,
@@ -162,10 +163,25 @@ test('history pages prepended newest first add up to the whole replay', () => {
     return transcript
   }
 
-  const whole = replay([...older, ...newer])
-  const paged = replay(newer)
+  return { whole: replay([...older, ...newer]), older: replay(older), newer: replay(newer) }
+}
+
+test('history pages prepended newest first add up to the whole replay', () => {
+  const { whole, older, newer: paged } = twoPages()
   assert.equal(paged.pendingNotices.length, 1)
-  prependTranscript(paged, replay(older))
+  prependTranscript(paged, older)
+
+  assert.deepEqual(kinds(paged), kinds(whole))
+  assert.deepEqual(Object.keys(paged.toolIndex).sort(), Object.keys(whole.toolIndex).sort())
+  for (const [id, index] of Object.entries(paged.toolIndex)) assert.equal(paged.nodes[index].toolUseId, id)
+  assert.deepEqual(listAgents(paged).map((agent) => agent.status), ['completed'])
+  assert.deepEqual(paged.pendingNotices, [])
+  assert.deepEqual(Object.keys(paged.seen).sort(), Object.keys(whole.seen).sort())
+})
+
+test('a newer page appended after the one shown adds up to the whole replay', () => {
+  const { whole, older: paged, newer } = twoPages()
+  appendTranscript(paged, newer)
 
   assert.deepEqual(kinds(paged), kinds(whole))
   assert.deepEqual(Object.keys(paged.toolIndex).sort(), Object.keys(whole.toolIndex).sort())
