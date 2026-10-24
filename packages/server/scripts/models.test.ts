@@ -180,6 +180,19 @@ test('a changed token at the same endpoint invalidates the configuration cache',
   assert.equal(f.applied[1]?.env?.ANTHROPIC_AUTH_TOKEN, 'second')
 })
 
+test('a modelPicker-only edit makes the CLI re-read its settings and rebuild the menu', async () => {
+  const f = fixture()
+  const settings: Settings = { env: { ANTHROPIC_BASE_URL: 'http://provider.test' } }
+  f.configure(settings)
+  await f.catalog.list()
+  const reads = f.reads()
+  f.configure({ ...settings, modelPicker: { options: [{ model: 'gateway-model', label: 'Gateway' }] } })
+  await f.catalog.list()
+  assert.equal(f.applied.length, 2)
+  assert.equal('modelPicker' in f.applied[1]!, false)
+  assert.equal(f.reads(), reads + 1)
+})
+
 test('a provider switch waits for the active turn before reinitializing the CLI', async () => {
   const f = fixture()
   await f.catalog.list()

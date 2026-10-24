@@ -150,7 +150,12 @@ export class SessionModels {
     const flags = { env, model: this.#selected }
     // Credentials stay inside the server-to-CLI control request. Only a hash
     // is retained for change detection; browser snapshots contain model data.
-    const signature = createHash('sha256').update(JSON.stringify(flags)).digest('hex')
+    // modelPicker stays out of the flags, where it would hide the user's own
+    // file, but counts here: the CLI re-reads settings files on
+    // applyFlagSettings (verified on 2.1.310), never on reinitialize() alone.
+    const signature = createHash('sha256')
+      .update(JSON.stringify({ ...flags, modelPicker: settings.modelPicker }))
+      .digest('hex')
     if (signature !== this.#signature) {
       await this.#query.applyFlagSettings(flags)
       this.#signature = signature
