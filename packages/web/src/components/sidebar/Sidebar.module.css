@@ -252,8 +252,9 @@
 }
 
 /* A live row owns a CLI subprocess, so closing it needs to stay one click
-   away — but not so present that it competes with the title. */
-.itemClose {
+   away — but not so present that it competes with the title. Renaming sits
+   beside it on the same terms. */
+.itemAction {
   display: flex;
   flex: none;
   padding: 0 2px;
@@ -261,19 +262,19 @@
   opacity: 0;
 }
 
-.item:hover .itemClose {
+.item:hover .itemAction {
   opacity: 1;
 }
 
 /* Without hover the button would be invisible yet still tappable, so a live
    row could lose its CLI process to a tap near its right edge. */
 @media (hover: none) {
-  .itemClose {
+  .itemAction {
     opacity: 1;
   }
 }
 
-.itemClose:hover {
+.itemAction:hover {
   color: var(--ccw-text-primary);
 }
 
@@ -301,6 +302,50 @@
   color: var(--ccw-text-faint);
 }
 
+/* Takes the link's place at the link's size, so the row does not jump. */
+.renameInput {
+  flex: 1;
+  min-width: 0;
+  padding: 0 5px;
+  font: inherit;
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-accent);
+  border-radius: var(--ccw-radius-sm);
+  outline: none;
+}
+
+.branchFilter {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  max-width: calc(100% - var(--ccw-space-4));
+  padding: 2px 8px;
+  margin: 0 var(--ccw-space-2) 0 var(--ccw-space-3);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.branchFilter:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.branchFilterOn,
+.branchFilterOn:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-selected);
+  border-color: transparent;
+}
+
+.branchName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Two-line search result: title row plus a project · branch meta line. */
 .hitRow {
   display: flex;
@@ -322,7 +367,7 @@
   }
 }
 
-.hitRow:hover .itemClose {
+.hitRow:hover .itemAction {
   opacity: 1;
 }
 

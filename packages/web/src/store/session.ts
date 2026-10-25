@@ -152,6 +152,8 @@ type Store = {
   /** `!` mode: runs the command, shows its output, then sends both on to the model as the terminal does. */
   runShell: (command: string) => Promise<void>
   renameSession: (title: string) => Promise<void>
+  /** Retitles any session on disk, open or not — the sidebar's rename. Throws on failure. */
+  renameSavedSession: (sessionId: string, cwd: string, title: string) => Promise<void>
   /** `/branch`: forks the active session and switches to the copy. */
   forkSession: (title?: string) => Promise<void>
   /** A transient line in the active transcript — feedback for commands the browser handles itself. */
@@ -662,7 +664,7 @@ export const useStore = create<Store>()(
       const session = sessionId ? get().sessions[sessionId] : undefined
       if (!sessionId || !session) return
       try {
-        await call('session.rename', { sessionId, title, cwd: session.cwd })
+        await get().renameSavedSession(sessionId, session.cwd, title)
       } catch (error) {
         pushNotice(set, sessionId, 'error', `重命名失败：${String(error)}`)
         return
@@ -670,6 +672,14 @@ export const useStore = create<Store>()(
       pushNotice(set, sessionId, 'info', `会话已重命名为「${title.trim()}」`)
       // The title lives on disk; the live runner's summary does not carry it.
       await get().refreshProjects()
+    },
+
+    renameSavedSession: async (sessionId, cwd, title) => {
+      await call('session.rename', { sessionId, title, cwd })
+      // Shown at once rather than after the whole list is read back.
+      const name = title.trim()
+      const saved = get().projects.flatMap((project) => project.sessions).find((entry) => entry.sessionId === sessionId)
+      if (saved) updateProjectSession(set, { ...saved, customTitle: name, summary: name })
     },
 
     forkSession: async (title) => {

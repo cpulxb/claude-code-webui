@@ -151,6 +151,23 @@ test('/rename renames on disk and re-reads the sidebar; a bare /rename only expl
   assert.match(f.nodes().at(-1).text, /新名字/)
 })
 
+test('the sidebar renames a session it has not opened, and shows the name before the list is read back', async () => {
+  await fixture({ 'session.rename': () => ({}) })
+  const other = { sessionId: 'other', summary: '第一条提示', lastModified: 1, cwd: '/elsewhere', firstPrompt: '第一条提示' }
+  useStore.setState({ projects: [{ cwd: '/elsewhere', sessions: [other] }] })
+
+  await useStore.getState().renameSavedSession('other', '/elsewhere', '  新名字 ')
+  assert.deepEqual(calls, [{ method: 'session.rename', params: { sessionId: 'other', title: '  新名字 ', cwd: '/elsewhere' } }])
+  assert.equal(useStore.getState().projects[0].sessions[0].summary, '新名字')
+
+  // A failed rename leaves the list alone and reaches the caller.
+  rpc = async () => {
+    throw new Error('not found')
+  }
+  await assert.rejects(useStore.getState().renameSavedSession('other', '/elsewhere', '再改'), /not found/)
+  assert.equal(useStore.getState().projects[0].sessions[0].summary, '新名字')
+})
+
 test('an untitled session is shown by the first fifty characters of its prompt', () => {
   assert.equal(sessionTitle(undefined), '新会话')
   assert.equal(sessionTitle('  '), '新会话')

@@ -1,6 +1,7 @@
 import { fuzzyFilter, type ProjectGroup, type SessionSummary, type UpdateProgress } from '@ccw/shared'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { call } from '../../api/client.ts'
 import { sessionHref, useStore } from '../../store/session.ts'
 import { sessionTitle } from '../../utils/session-title.ts'
 import { DevicesDialog } from '../auth/DevicesDialog.tsx'
@@ -9,7 +10,9 @@ import {
   ChevronsUpDownIcon,
   CircleArrowUpIcon,
   FolderIcon,
+  GitBranchIcon,
   PanelLeftIcon,
+  PencilIcon,
   SquarePenIcon,
   XIcon,
 } from '../Icons.tsx'
@@ -48,6 +51,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
   const createSession = useStore((state) => state.createSession)
   const openSession = useStore((state) => state.openSession)
   const closeSession = useStore((state) => state.closeSession)
+  const renameSavedSession = useStore((state) => state.renameSavedSession)
   const refreshProjects = useStore((state) => state.refreshProjects)
   const checkUpdate = useStore((state) => state.checkUpdate)
   const setSettingsOpen = useStore((state) => state.setSettingsOpen)
@@ -60,6 +64,10 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
   const [query, setQuery] = useState('')
   const [hitIndex, setHitIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  // The terminal's `/resume` ctrl+b: off by default, offered once the
+  // project's branch is known.
+  const [onlyBranch, setOnlyBranch] = useState(false)
+  const [branch, setBranch] = useState<string | null>(null)
 
   useEffect(() => {
     void refreshProjects()
@@ -76,7 +84,26 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
   }, [selectedCwd])
 
   const currentCwd = selectedCwd ?? activeCwd ?? defaultCwd ?? projects[0]?.cwd ?? null
-  const currentSessions = projects.find((project) => project.cwd === currentCwd)?.sessions ?? []
+  const projectSessions = projects.find((project) => project.cwd === currentCwd)?.sessions ?? []
+  // Only worth offering when the sessions span branches.
+  const branched = new Set(projectSessions.map((session) => session.gitBranch).filter(Boolean)).size > 1
+
+  useEffect(() => {
+    setBranch(null)
+    if (!currentCwd || !branched) return
+    let stale = false
+    call('scm.status', { cwd: currentCwd })
+      .then(({ status }) => {
+        if (!stale && status.kind === 'git' && status.branch) setBranch(status.branch)
+      })
+      .catch(() => {})
+    return () => {
+      stale = true
+    }
+  }, [currentCwd, branched])
+
+  const currentSessions =
+    onlyBranch && branch ? projectSessions.filter((session) => session.gitBranch === branch) : projectSessions
 
   const hits: SearchHit[] = useMemo(() => {
     if (query.trim() === '') return []
@@ -221,14 +248,33 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
         ) : projects.length === 0 ? (
           <div className={styles.empty}>还没有会话记录</div>
         ) : (
-          <SessionList
-            sessions={currentSessions}
-            activeId={activeId}
-            onOpen={(sessionId) => {
-              if (currentCwd) run(openSession(sessionId, currentCwd), '打开会话失败')
-            }}
-            onClose={(sessionId) => void closeSession(sessionId)}
-          />
+          <>
+            {branch && (
+              <button
+                className={`${styles.branchFilter} ${onlyBranch ? styles.branchFilterOn : ''}`}
+                onClick={() => setOnlyBranch(!onlyBranch)}
+                type="button"
+                aria-pressed={onlyBranch}
+                title={onlyBranch ? '显示所有分支的会话' : `只显示在 ${branch} 分支上的会话`}
+              >
+                <GitBranchIcon size={12} />
+                <span className={styles.branchName}>{onlyBranch ? `只看 ${branch}` : '所有分支'}</span>
+              </button>
+            )}
+            <SessionList
+              sessions={currentSessions}
+              emptyText={onlyBranch && branch ? `${branch} 分支上还没有会话` : '这个项目还没有会话'}
+              activeId={activeId}
+              onOpen={(sessionId) => {
+                if (currentCwd) run(openSession(sessionId, currentCwd), '打开会话失败')
+              }}
+              onClose={(sessionId) => void closeSession(sessionId)}
+              onRename={(session, title) => {
+                const cwd = session.cwd ?? currentCwd
+                if (cwd) run(renameSavedSession(session.sessionId, cwd, title), '重命名失败')
+              }}
+            />
+          </>
         )}
       </div>
 
@@ -432,11 +478,14 @@ function ProjectSwitcher(props: {
 /** The current project's sessions, newest first, under 今天 / 昨天 / … headings. */
 function SessionList(props: {
   sessions: SessionSummary[]
+  emptyText: string
   activeId: string | null
   onOpen: (sessionId: string) => void
   onClose: (sessionId: string) => void
+  onRename: (session: SessionSummary, title: string) => void
 }): JSX.Element {
   const activeRef = useRef<HTMLDivElement>(null)
+  const [renaming, setRenaming] = useState<string | null>(null)
   // `containsActive` re-runs this once the history arrives after the list
   // first rendered empty.
   const containsActive = props.sessions.some((session) => session.sessionId === props.activeId)
@@ -444,7 +493,7 @@ function SessionList(props: {
     activeRef.current?.scrollIntoView({ block: 'nearest' })
   }, [props.activeId, containsActive])
 
-  if (props.sessions.length === 0) return <div className={styles.empty}>这个项目还没有会话</div>
+  if (props.sessions.length === 0) return <div className={styles.empty}>{props.emptyText}</div>
 
   return (
     <>
@@ -457,20 +506,42 @@ function SessionList(props: {
               ref={session.sessionId === props.activeId ? activeRef : null}
               className={`${styles.item} ${session.sessionId === props.activeId ? styles.itemActive : ''}`}
             >
-              <a
-                className={styles.itemOpen}
-                href={sessionHref(session.sessionId)}
-                onClick={(event) => openInPlace(event, () => props.onOpen(session.sessionId))}
-                title={session.summary || '新会话'}
-                aria-current={session.sessionId === props.activeId ? 'page' : undefined}
-              >
-                {session.live && <span className={styles.liveDot} />}
-                <span className={styles.itemTitle}>{sessionTitle(session.summary)}</span>
-                <span className={styles.itemAge}>{age(session.lastModified)}</span>
-              </a>
+              {renaming === session.sessionId ? (
+                <RenameInput
+                  title={session.summary}
+                  onDone={(title) => {
+                    setRenaming(null)
+                    if (title !== null) props.onRename(session, title)
+                  }}
+                />
+              ) : (
+                <a
+                  className={styles.itemOpen}
+                  href={sessionHref(session.sessionId)}
+                  onClick={(event) => openInPlace(event, () => props.onOpen(session.sessionId))}
+                  title={session.summary || '新会话'}
+                  aria-current={session.sessionId === props.activeId ? 'page' : undefined}
+                >
+                  {session.live && <span className={styles.liveDot} />}
+                  <span className={styles.itemTitle}>{sessionTitle(session.summary)}</span>
+                  <span className={styles.itemAge}>{age(session.lastModified)}</span>
+                </a>
+              )}
+              {/* A session nobody has written to yet has no transcript to retitle. */}
+              {renaming !== session.sessionId && session.summary && (
+                <button
+                  className={styles.itemAction}
+                  onClick={() => setRenaming(session.sessionId)}
+                  type="button"
+                  title="重命名"
+                  aria-label="重命名会话"
+                >
+                  <PencilIcon size={12} />
+                </button>
+              )}
               {session.live && (
                 <button
-                  className={styles.itemClose}
+                  className={styles.itemAction}
                   onClick={() => props.onClose(session.sessionId)}
                   type="button"
                   title="关闭会话（结束它的 CLI 进程）"
@@ -536,7 +607,7 @@ function SearchResults(props: {
           </a>
           {hit.live && (
             <button
-              className={styles.itemClose}
+              className={styles.itemAction}
               onClick={() => props.onClose(hit.sessionId)}
               type="button"
               title="关闭会话（结束它的 CLI 进程）"
@@ -548,6 +619,41 @@ function SearchResults(props: {
         </div>
       ))}
     </>
+  )
+}
+
+/**
+ * The row's title, editable in place — `/resume`'s ctrl+r. Enter or leaving
+ * the field keeps the new name; Escape, or a name left blank or unchanged,
+ * keeps the old one (`null`).
+ */
+function RenameInput(props: { title: string; onDone: (title: string | null) => void }): JSX.Element {
+  const [draft, setDraft] = useState(props.title)
+  // Escape unmounts the field, and the blur that follows must not save it.
+  const doneRef = useRef(false)
+
+  const finish = (title: string | null): void => {
+    if (doneRef.current) return
+    doneRef.current = true
+    const name = title?.trim()
+    props.onDone(name && name !== props.title ? name : null)
+  }
+
+  return (
+    <input
+      className={styles.renameInput}
+      value={draft}
+      autoFocus
+      onFocus={(event) => event.currentTarget.select()}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => finish(draft)}
+      onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing) return
+        if (event.key === 'Enter') finish(draft)
+        else if (event.key === 'Escape') finish(null)
+      }}
+      aria-label="会话名称"
+    />
   )
 }
 
