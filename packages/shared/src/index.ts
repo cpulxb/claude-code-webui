@@ -97,7 +97,12 @@ export type SubagentMeta = {
 }
 
 export type PermissionDecision =
-  | { behavior: 'allow'; remember?: boolean }
+  | {
+      behavior: 'allow'
+      remember?: boolean
+      /** AskUserQuestion's answers, keyed by question text; without them the model is told nobody answered. */
+      answers?: Record<string, string>
+    }
   | { behavior: 'deny'; message?: string }
 
 /** An image or document the user attached to a prompt. */

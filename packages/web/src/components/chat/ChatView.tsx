@@ -5,10 +5,12 @@ import type { AssistantBlock, ChatNode, StreamingBlock } from '../../render/node
 import { AGENT_TOOLS, findAgent } from '../../render/nodes.ts'
 import { WORKFLOW_TOOL } from '../../render/workflows.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
+import { parseQuestions } from '../../utils/questions.ts'
 import { BrandMark, CheckIcon, HistoryIcon, LinkIcon } from '../Icons.tsx'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 import styles from './ChatView.module.css'
 import { PermissionCard } from './PermissionCard.tsx'
+import { QuestionCard } from './QuestionCard.tsx'
 import { AgentCard } from './AgentCard.tsx'
 import { WorkflowCard } from './WorkflowCard.tsx'
 import { AgentNav } from './AgentNav.tsx'
@@ -353,9 +355,14 @@ export function ChatView(): JSX.Element | null {
               )}
             </div>
           )}
-          {pendingPermissions?.map((request) => (
-            <PermissionCard key={request.requestId} request={request} />
-          ))}
+          {pendingPermissions?.map((request) => {
+            const questions = request.toolName === 'AskUserQuestion' ? parseQuestions(request.input) : null
+            return questions ? (
+              <QuestionCard key={request.requestId} request={request} questions={questions} />
+            ) : (
+              <PermissionCard key={request.requestId} request={request} />
+            )
+          })}
           {error && <div className={`${styles.row} ${styles.rowError}`}>{error}</div>}
           {newerCursor && (
             <button className={styles.jumpLatest} onClick={() => activeId && void jumpToLatest(activeId)} type="button">

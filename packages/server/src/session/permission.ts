@@ -63,6 +63,7 @@ export class PermissionBroker {
 
     pending.resolve({
       behavior: 'allow',
+      ...(decision.answers ? { updatedInput: { ...pending.request.input, answers: decision.answers } } : {}),
       // The SDK's docs are explicit: hand the full suggestion set back so the
       // same tool is not re-prompted for the rest of the session.
       ...(decision.remember && pending.request.suggestions ? { updatedPermissions: pending.request.suggestions } : {}),
