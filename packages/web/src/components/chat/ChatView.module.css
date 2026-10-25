@@ -326,6 +326,25 @@
   background: var(--ccw-border-l1);
 }
 
+.compactToggle {
+  display: flex;
+  gap: var(--ccw-space-1);
+  align-items: center;
+  padding: 0;
+  color: var(--ccw-text-muted);
+}
+
+.compactToggle:hover {
+  color: var(--ccw-text-secondary);
+}
+
+.compactSummary {
+  padding-left: var(--ccw-space-3);
+  margin-bottom: var(--ccw-space-4);
+  color: var(--ccw-text-secondary);
+  border-left: 2px solid var(--ccw-border-l1);
+}
+
 .stats {
   display: flex;
   flex-wrap: wrap;

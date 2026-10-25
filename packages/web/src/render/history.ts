@@ -1,7 +1,7 @@
 import type { SDKMessage, SessionMessage } from '@ccw/shared'
 
 import { bashEcho, parseBashInput, parseBashOutput } from './bash.ts'
-import { applyMessage, findAgent, findAgentById, type Transcript } from './nodes.ts'
+import { applyMessage, findAgent, findAgentById, userText, type Transcript } from './nodes.ts'
 import { applyWorkflowEvent, parseTaskNotification, unframeWorkflowPrompt, type TaskNotice } from './workflows.ts'
 
 /**
@@ -30,6 +30,13 @@ export function applyHistoryMessage(transcript: Transcript, entry: SessionMessag
   }
 
   const content = (entry.message as { content?: unknown } | null)?.content
+  // A compaction's summary. Its boundary was a bare system envelope, so the
+  // divider is drawn here, without the token counts only the live event has.
+  if (isCompactSummary(entry)) {
+    transcript.seen[entry.uuid] = true
+    transcript.nodes.push({ kind: 'compact', id: entry.uuid, summary: userText(content) })
+    return
+  }
   if (typeof content === 'string') {
     applyUserText(transcript, entry.uuid, content, 0)
     return
@@ -52,6 +59,11 @@ export function applyHistoryMessage(transcript: Transcript, entry: SessionMessag
     .join('\n')
   const images = blocks.filter((block) => block.type === 'image' || block.type === 'document').length
   if (text || images) applyUserText(transcript, entry.uuid, text, images)
+}
+
+/** `getSessionMessages` passes the jsonl flag through, though `SessionMessage` does not declare it. */
+function isCompactSummary(entry: SessionMessage): boolean {
+  return (entry as { isCompactSummary?: boolean }).isCompactSummary === true
 }
 
 /** `<local-command-stdout>…</local-command-stdout>` — a slash command's output. */
@@ -116,7 +128,7 @@ function applyUserText(transcript: Transcript, uuid: string, raw: string, attach
 export function listUserPromptUuids(messages: SessionMessage[]): string[] {
   const uuids: string[] = []
   for (const entry of messages) {
-    if (entry.type !== 'user') continue
+    if (entry.type !== 'user' || isCompactSummary(entry)) continue
     const content = (entry.message as { content?: unknown } | null)?.content
 
     let text = ''

@@ -496,12 +496,7 @@ const NodeView = memo(function NodeView({ node }: { node: Exclude<ChatNode, { ki
       )
 
     case 'compact':
-      return (
-        <div className={styles.compact}>
-          上下文已压缩（{node.trigger === 'auto' ? '自动' : '手动'}，{formatTokens(node.preTokens)}
-          {node.postTokens !== undefined ? ` → ${formatTokens(node.postTokens)}` : ''}）
-        </div>
-      )
+      return <CompactRow node={node} />
 
     case 'result':
       return (
@@ -536,6 +531,37 @@ const ReasoningRow = memo(function ReasoningRow({ text, live }: { text: string; 
     </div>
   )
 })
+
+/** The divider opens to the summary the model carried on from. */
+function CompactRow({ node }: { node: Extract<ChatNode, { kind: 'compact' }> }): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const label =
+    node.preTokens === undefined
+      ? '上下文已压缩'
+      : `上下文已压缩（${node.trigger === 'auto' ? '自动' : '手动'}，${formatTokens(node.preTokens)}${
+          node.postTokens !== undefined ? ` → ${formatTokens(node.postTokens)}` : ''
+        }）`
+
+  return (
+    <>
+      <div className={styles.compact}>
+        {node.summary ? (
+          <button className={styles.compactToggle} onClick={() => setOpen(!open)} type="button">
+            <span className={`${styles.caret} ${open ? styles.caretOpen : ''}`}>▶</span>
+            {label}
+          </button>
+        ) : (
+          label
+        )}
+      </div>
+      {open && node.summary && (
+        <div className={styles.compactSummary}>
+          <AssistantMarkdown text={node.summary} />
+        </div>
+      )}
+    </>
+  )
+}
 
 function StreamingRow({ block }: { block: StreamingBlock }): JSX.Element {
   return (

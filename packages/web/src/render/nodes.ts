@@ -32,7 +32,16 @@ export type ChatNode =
     }
   | { kind: 'localOutput'; id: string; content: string }
   | { kind: 'notice'; id: string; level: 'info' | 'notice' | 'suggestion' | 'warning' | 'error'; text: string }
-  | { kind: 'compact'; id: string; trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number }
+  | {
+      kind: 'compact'
+      id: string
+      /** Absent when read from history: the boundary survives on disk as a bare envelope. */
+      trigger?: 'manual' | 'auto'
+      preTokens?: number
+      postTokens?: number
+      /** What the model carries on from in place of the conversation before it. */
+      summary?: string
+    }
   | {
       kind: 'result'
       id: string
@@ -192,16 +201,16 @@ function applyLocal(transcript: Transcript, message: SDKMessage, inAgent: boolea
 
     case 'user': {
       const content = message.message.content
+      // A compaction's summary follows its boundary as a synthetic prompt.
+      const last = transcript.nodes.at(-1)
+      if (message.isSynthetic && last?.kind === 'compact' && last.summary === undefined) {
+        last.summary = userText(content)
+        return
+      }
       // The parent's prompt arrives as the subagent's first user message; it
       // is the only place the conversation is told what it was asked to do.
       if (inAgent) {
-        const text =
-          typeof content === 'string'
-            ? content
-            : content
-                .filter((block) => block.type === 'text')
-                .map((block) => (block as { text: string }).text)
-                .join('\n')
+        const text = userText(content)
         if (text) {
           transcript.nodes.push({
             kind: 'user',
@@ -352,6 +361,16 @@ function toolNode(transcript: Transcript, toolUseId: string): Extract<ChatNode, 
   if (index === undefined) return null
   const node = transcript.nodes[index]
   return node?.kind === 'tool' ? node : null
+}
+
+/** A user message's text, whether it came as a string or as blocks. */
+export function userText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return (content as { type: string; text?: string }[])
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text ?? '')
+    .join('\n')
 }
 
 function flattenToolResult(content: unknown): string {
