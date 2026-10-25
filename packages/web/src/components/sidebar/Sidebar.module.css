@@ -6,19 +6,22 @@
 }
 
 .head {
+  container-type: inline-size;
   display: flex;
   gap: var(--ccw-space-2);
   align-items: center;
   padding: var(--ccw-space-3) var(--ccw-space-3) var(--ccw-space-2);
 }
 
-/* Set like claude.ai's wordmark. */
+/* Set like claude.ai's wordmark, and shrunk with the sidebar the way theirs
+   is: about 7em wide, at 9.5cqi it leaves the collapse button its room even
+   at the narrowest drag. */
 .brand {
   display: flex;
-  gap: 6px;
+  gap: 0.3em;
   align-items: center;
   font-family: var(--ccw-font-serif);
-  font-size: 20px;
+  font-size: min(20px, 9.5cqi);
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
@@ -27,6 +30,11 @@
 .brandMark {
   display: flex;
   color: var(--ccw-accent);
+}
+
+.brandMark > svg {
+  width: 0.75em;
+  height: 0.75em;
 }
 
 .spacer {
