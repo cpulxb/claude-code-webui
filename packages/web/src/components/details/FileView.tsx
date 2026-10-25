@@ -6,18 +6,8 @@ import { AssistantMarkdown } from '../chat/AssistantMarkdown.tsx'
 import { CheckIcon, RefreshIcon } from '../Icons.tsx'
 import { CodeEditor } from './CodeEditor.tsx'
 import panelStyles from './DetailsPanel.module.css'
+import { getDraft, putDraft } from './drafts.ts'
 import styles from './FileView.module.css'
-
-/**
- * Unsaved buffers, keyed by absolute path, kept outside React so closing a tab
- * or switching sessions unmounts the view without dropping the edits: reopening
- * the same file restores them. `base` travels with the text — it is the on-disk
- * content the buffer was typed on, so a restored buffer is compared against the
- * version it was written against instead of silently overwriting whatever the
- * file holds now. Cleared as soon as the buffer stops being dirty (saved,
- * discarded, or typed back to the on-disk text).
- */
-const drafts = new Map<string, { text: string; base: string }>()
 
 /**
  * One editor tab in the details panel, dsh-style: text opens straight into a
@@ -40,7 +30,7 @@ export function FileView({
   const [data, setData] = useState<FilePreview | null>(null)
   const [error, setError] = useState<string | null>(null)
   /** Null while the doc matches disk; the unsaved buffer otherwise. */
-  const [draft, setDraft] = useState<string | null>(() => drafts.get(path)?.text ?? null)
+  const [draft, setDraft] = useState<string | null>(() => getDraft(path)?.text ?? null)
   const [saving, setSaving] = useState(false)
   const [mdMode, setMdMode] = useState<'preview' | 'edit'>('preview')
   /** Set when disk moved under an unsaved buffer — saving then loses the newer file. */
@@ -56,14 +46,13 @@ export function FileView({
    * including the read on mount, so a buffer restored from `drafts` is measured
    * against its own baseline rather than against the file as it is now.
    */
-  const baseRef = useRef<string | null>(drafts.get(path)?.base ?? null)
+  const baseRef = useRef<string | null>(getDraft(path)?.base ?? null)
 
   useEffect(() => {
     const base = baseRef.current
     // No entry without both halves: a buffer with no baseline could not be
     // checked for conflicts on the next mount, so it is dropped instead.
-    if (draft === null || base === null) drafts.delete(path)
-    else drafts.set(path, { text: draft, base })
+    putDraft(path, draft === null || base === null ? null : { text: draft, base })
   }, [path, draft])
 
   // Reads race: the mount effect, manual refresh, save and the turn-end check

@@ -1,5 +1,5 @@
 import type { AccountInfo, ContextUsage, SessionStatus, TreeEntry } from '@ccw/shared'
-import { useCallback, useEffect, useRef, useState, type ReactNode, type WheelEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode, type WheelEvent } from 'react'
 import { useShallow } from 'zustand/shallow'
 
 import { call } from '../../api/client.ts'
@@ -16,6 +16,7 @@ import {
   XIcon,
 } from '../Icons.tsx'
 import styles from './DetailsPanel.module.css'
+import { dirtyPaths, putDraft, subscribeDrafts } from './drafts.ts'
 import { ExplorerTree } from './ExplorerTree.tsx'
 import { FileTypeIcon, WorkspaceFolderIcon } from './FileTypeIcon.tsx'
 import { FileView } from './FileView.tsx'
@@ -104,11 +105,25 @@ export function DetailsPanel({
   // sessions in the same cwd share them, and switching to another cwd and back
   // finds that project's tabs as they were left. Only the active cwd's tabs
   // are mounted. Unmounting a FileView does not lose its unsaved buffer:
-  // FileView keeps drafts keyed by path, restores them when the file is opened
-  // again, and flags the conflict if the file changed on disk meanwhile.
+  // `drafts` keeps it keyed by path, FileView restores it when the file is
+  // shown again, and flags the conflict if the file changed on disk meanwhile.
   const [tabsByCwd, setTabsByCwd] = useState<Record<string, TabSet>>({})
   const { tabs, active } = (cwd !== undefined ? tabsByCwd[cwd] : undefined) ?? INITIAL
   const stripRef = useRef<HTMLDivElement>(null)
+  const dirty = useSyncExternalStore(subscribeDrafts, dirtyPaths)
+
+  // Drafts live in this page's memory only, so a reload or a closed browser
+  // tab — the reload after an update included — would drop them unannounced.
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent): void => {
+      if (dirtyPaths().size === 0) return
+      event.preventDefault()
+      // What Chromium before 119 and older Safari go by instead.
+      event.returnValue = true
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [])
 
   const update = useCallback(
     (change: (set: TabSet) => TabSet): void => {
@@ -186,6 +201,19 @@ export function DetailsPanel({
     update((set) => openTab(set, { kind: 'file', path: entry.path, name: entry.name }))
   }
 
+  const close = (tab: Tab, id: string): void => {
+    // A lone start page is what closing the last tab leaves behind, so
+    // closing it as well puts the panel away.
+    if (tabs.length === 1 && tab.kind === 'start') return onCollapse()
+    // Once its tab is gone nothing shows a file's unsaved buffer any more, so
+    // closing asks first and the buffer goes with the tab.
+    if (tab.kind === 'file' && dirty.has(tab.path)) {
+      if (!window.confirm(`${tab.name} 有未保存的修改，关闭会丢弃这些修改。确定关闭吗？`)) return
+      putDraft(tab.path, null)
+    }
+    update((set) => closeTab(set, id))
+  }
+
   return (
     <div className={styles.root}>
       <div className={styles.head}>
@@ -193,10 +221,11 @@ export function DetailsPanel({
           <div className={styles.strip} ref={stripRef} onWheel={scrollStrip}>
             {tabs.map((tab) => {
               const id = tabId(tab)
+              const unsaved = tab.kind === 'file' && dirty.has(tab.path)
               return (
                 <div
                   key={id}
-                  className={id === active ? `${styles.tab} ${styles.tabActive}` : styles.tab}
+                  className={`${styles.tab}${id === active ? ` ${styles.tabActive}` : ''}${unsaved ? ` ${styles.tabDirty}` : ''}`}
                   {...(id === active ? { 'data-active': '' } : {})}
                 >
                   <button
@@ -210,14 +239,11 @@ export function DetailsPanel({
                   </button>
                   <button
                     className={styles.tabClose}
-                    // A lone start page is what closing the last tab leaves
-                    // behind, so closing it as well puts the panel away.
-                    onClick={() =>
-                      tabs.length === 1 && tab.kind === 'start' ? onCollapse() : update((set) => closeTab(set, id))
-                    }
+                    onClick={() => close(tab, id)}
                     type="button"
-                    title="关闭"
+                    title={unsaved ? '关闭（有未保存的修改）' : '关闭'}
                   >
+                    {unsaved && <span className={styles.tabDirtyDot} />}
                     <XIcon size={14} />
                   </button>
                 </div>

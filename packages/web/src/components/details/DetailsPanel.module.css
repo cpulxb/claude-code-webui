@@ -131,6 +131,36 @@
   background: none;
 }
 
+/* An unsaved file shows a dot where × goes, on every tab and not just the
+   one in front, as VS Code does; × comes back under the pointer. Being a
+   lasting state, the dot takes room the way the active tab's × does. */
+.tabDirty .tabMain {
+  padding-right: 4px;
+}
+
+.tabDirty .tabClose {
+  position: static;
+  margin-right: 5px;
+  visibility: visible;
+  background: none;
+}
+
+.tabDirtyDot {
+  width: 8px;
+  height: 8px;
+  background: #e8a33d;
+  border-radius: 50%;
+}
+
+.tabDirty .tabClose > svg,
+.tabDirty:hover .tabDirtyDot {
+  display: none;
+}
+
+.tabDirty:hover .tabClose > svg {
+  display: block;
+}
+
 .tabClose:hover {
   color: var(--ccw-text-primary);
   background: var(--ccw-border-l1);
