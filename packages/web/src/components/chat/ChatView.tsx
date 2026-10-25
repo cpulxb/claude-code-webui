@@ -6,7 +6,7 @@ import { AGENT_TOOLS, findAgent } from '../../render/nodes.ts'
 import { WORKFLOW_TOOL } from '../../render/workflows.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import { parseQuestions } from '../../utils/questions.ts'
-import { BrandMark, CheckIcon, HistoryIcon, LinkIcon } from '../Icons.tsx'
+import { ArrowDownIcon, BrandMark, CheckIcon, HistoryIcon, LinkIcon } from '../Icons.tsx'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 import styles from './ChatView.module.css'
 import { PermissionCard } from './PermissionCard.tsx'
@@ -25,6 +25,8 @@ type RewindState = { nodeId: string; busy: boolean; preview: RewindFilesResult |
 export function ChatView(): JSX.Element | null {
   const scrollRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
+  // Set while the "back to bottom" button's smooth scroll is under way.
+  const seekingRef = useRef(false)
   const frameRef = useRef<number | undefined>(undefined)
   // Last session and node count this component scrolled for, to tell a swapped
   // node list apart from a node appended by the running turn.
@@ -50,6 +52,7 @@ export function ChatView(): JSX.Element | null {
   // view shows only the ones its own tool calls raised.
   const pendingPermissions = viewAgent ? allPermissions?.filter((request) => request.agentId === agentId) : allPermissions
   const error = useActiveSessionValue((session) => session.error)
+  const running = useActiveSessionValue((session) => session.status === 'running') ?? false
   // Only the main thread pages its history; a subagent's comes in one read.
   const historyCursor = useActiveSessionValue((session) => (session.viewAgent ? null : session.historyCursor)) ?? null
   const historyLoading = useActiveSessionValue((session) => session.historyLoading)
@@ -136,8 +139,16 @@ export function ChatView(): JSX.Element | null {
   useEffect(() => {
     const element = scrollRef.current
     if (!element) return
+    let lastTop = element.scrollTop
     const onScroll = (): void => {
-      followRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < FOLLOW_THRESHOLD
+      const top = element.scrollTop
+      const near = element.scrollHeight - top - element.clientHeight < FOLLOW_THRESHOLD
+      // The smooth scroll back down passes through distances that would read
+      // as the reader having left. It is over at the bottom, or as soon as
+      // they scroll up themselves.
+      if (near || top < lastTop) seekingRef.current = false
+      if (!seekingRef.current) followRef.current = near
+      lastTop = top
     }
     element.addEventListener('scroll', onScroll, { passive: true })
     return () => element.removeEventListener('scroll', onScroll)
@@ -193,6 +204,36 @@ export function ChatView(): JSX.Element | null {
 
   const nodes = transcript?.nodes
   const streaming = transcript?.streaming
+  const empty =
+    nodes?.length === 0 && !streaming && !historyCursor && !historyError && !newerCursor && !newerError
+  const streamShown = nodes !== undefined && !empty
+
+  // The way back down, offered once the newest output is out of following
+  // reach. Watched rather than measured on scroll: a session switch or a
+  // collapsing card moves the end without any scroll event.
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const [away, setAway] = useState(false)
+  useEffect(() => {
+    const root = scrollRef.current
+    const sentinel = bottomRef.current
+    setAway(false)
+    if (!root || !sentinel) return
+    const observer = new IntersectionObserver(([entry]) => setAway(!entry!.isIntersecting), {
+      root,
+      rootMargin: `0px 0px ${FOLLOW_THRESHOLD}px 0px`,
+    })
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [streamShown])
+
+  const scrollToBottom = useCallback(() => {
+    const element = scrollRef.current
+    if (!element) return
+    followRef.current = true
+    seekingRef.current = true
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    element.scrollTo({ top: element.scrollHeight, behavior: reduce ? 'auto' : 'smooth' })
+  }, [])
 
   // Streaming coalesces into one scroll per frame: measuring on every token
   // forced a synchronous layout per delta. A swapped node list — session
@@ -282,7 +323,6 @@ export function ChatView(): JSX.Element | null {
   )
 
   if (!nodes) return null
-  const empty = nodes.length === 0 && !streaming && !historyCursor && !historyError && !newerCursor && !newerError
 
   return (
     <div className={styles.scroll} ref={scrollRef}>
@@ -369,6 +409,29 @@ export function ChatView(): JSX.Element | null {
               跳到最新
             </button>
           )}
+          {/* An older stretch has 跳到最新 above instead: its end is not the latest. */}
+          {away && !newerCursor && (
+            <div className={styles.toBottomDock}>
+              <button
+                className={styles.toBottom}
+                onClick={scrollToBottom}
+                type="button"
+                title={running ? '正在回复，回到底部' : '回到底部'}
+                aria-label={running ? '正在回复，回到底部' : '回到底部'}
+              >
+                {running ? (
+                  <span className={styles.toBottomDots}>
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                ) : (
+                  <ArrowDownIcon size={16} />
+                )}
+              </button>
+            </div>
+          )}
+          <div ref={bottomRef} />
         </div>
       )}
     </div>

@@ -338,6 +338,72 @@
   background: var(--ccw-bg-hover);
 }
 
+/* Pinned to the bottom of the view at no height, so showing the button never
+   changes how far there is left to scroll. */
+.toBottomDock {
+  position: sticky;
+  bottom: var(--ccw-space-4);
+  z-index: 2;
+  height: 0;
+}
+
+.toBottom {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: var(--ccw-text-secondary);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: 50%;
+  box-shadow: var(--ccw-shadow-popover);
+  transform: translateX(-50%);
+}
+
+.toBottom:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+@media (pointer: coarse) {
+  .toBottom {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* The reply is still coming: three dots in place of the arrow. */
+.toBottomDots {
+  display: flex;
+  gap: 3px;
+}
+
+.toBottomDots > span {
+  width: 4px;
+  height: 4px;
+  background: currentColor;
+  border-radius: 50%;
+  animation: pulse 1.4s var(--ccw-ease) infinite;
+}
+
+.toBottomDots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.toBottomDots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toBottomDots > span {
+    animation: none;
+  }
+}
+
 .compact::before,
 .compact::after {
   flex: 1;

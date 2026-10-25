@@ -271,6 +271,16 @@ export function ArrowUpIcon(props: { size?: number }): JSX.Element {
   )
 }
 
+/** 对话往上翻时的「回到底部」。 */
+export function ArrowDownIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M12 5v14" />
+      <path d="m19 12-7 7-7-7" />
+    </Icon>
+  )
+}
+
 /** 停止键里的实心方块。 */
 export function StopIcon(props: { size?: number }): JSX.Element {
   return (
