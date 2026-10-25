@@ -101,6 +101,7 @@ function Workspace(): JSX.Element {
         detailsMaximized={detailsMaximized}
         narrow={narrow}
         onCollapseSidebar={collapseSidebar}
+        onCollapseDetails={collapseDetails}
         sidebar={<Sidebar onCollapse={collapseSidebar} />}
         details={
           <DetailsPanel

@@ -6,6 +6,8 @@ const SIDEBAR_RANGE = [180, 480] as const
 const DETAILS_RANGE = [240, 1200] as const
 /** Dragging a column never squeezes the conversation narrower than this. */
 const MAIN_MIN = 360
+/** Pulling this far past a column's minimum folds it instead of stopping there. */
+const COLLAPSE_PAST_MIN = 40
 
 type Column = 'sidebar' | 'details'
 
@@ -29,6 +31,7 @@ export function AppFrame(props: {
   detailsMaximized: boolean
   narrow: boolean
   onCollapseSidebar: () => void
+  onCollapseDetails: () => void
 }): JSX.Element {
   const [sidebarWidth, setSidebarWidth] = useState(264)
   const [detailsWidth, setDetailsWidth] = useState(340)
@@ -47,11 +50,20 @@ export function AppFrame(props: {
       const otherWidth = otherCollapsed ? 0 : column === 'sidebar' ? detailsWidth : sidebarWidth
       const room = (frameRef.current?.clientWidth ?? Infinity) - otherWidth - MAIN_MIN
       const max = Math.max(min, Math.min(range, room))
+      const collapse = column === 'sidebar' ? props.onCollapseSidebar : props.onCollapseDetails
 
       const onMove = (moveEvent: PointerEvent): void => {
         // The details column grows leftwards, so its delta is inverted.
         const delta = column === 'sidebar' ? moveEvent.clientX - startX : startX - moveEvent.clientX
-        const next = Math.min(max, Math.max(min, startWidth + delta))
+        const raw = startWidth + delta
+        if (raw < min - COLLAPSE_PAST_MIN) {
+          // Folding ends the drag: the collapse animates, and moving back out does not reopen the column.
+          collapse()
+          setDragging(null)
+          window.removeEventListener('pointermove', onMove)
+          return
+        }
+        const next = Math.min(max, Math.max(min, raw))
         if (column === 'sidebar') setSidebarWidth(next)
         else setDetailsWidth(next)
       }
@@ -64,7 +76,7 @@ export function AppFrame(props: {
       window.addEventListener('pointermove', onMove)
       window.addEventListener('pointerup', onUp)
     },
-    [sidebarWidth, detailsWidth, props.sidebarCollapsed, props.detailsCollapsed],
+    [sidebarWidth, detailsWidth, props.sidebarCollapsed, props.detailsCollapsed, props.onCollapseSidebar, props.onCollapseDetails],
   )
 
   const left = props.sidebarCollapsed ? 0 : sidebarWidth
