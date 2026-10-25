@@ -683,10 +683,18 @@ function preview(value: unknown): string {
   return text.length > 400 ? `${text.slice(0, 400)}…` : text
 }
 
+/**
+ * The SDK's `customTitle` is a `/rename` title or else the AI-generated one.
+ * Untitled, a session is named by its first prompt, as claude.ai names a chat:
+ * the SDK's own `summary` falls back to the latest prompt, which turns into
+ * "继续吧" a turn later. A `firstPrompt` that is a bare command name is the
+ * SDK's stand-in for a transcript with no prose in its head, so it gives way.
+ */
 function toSummary(info: SDKSessionInfo): SessionSummary {
+  const prompt = info.firstPrompt && !/^\/[\w:-]+$/.test(info.firstPrompt) ? info.firstPrompt : undefined
   return {
     sessionId: info.sessionId,
-    summary: info.customTitle ?? info.summary,
+    summary: info.customTitle ?? prompt ?? info.summary,
     lastModified: info.lastModified,
     ...(info.cwd ? { cwd: info.cwd } : {}),
     ...(info.gitBranch ? { gitBranch: info.gitBranch } : {}),

@@ -1,4 +1,4 @@
-import type { AuthStatus } from '@ccw/shared'
+import type { AuthStatus, ProjectGroup } from '@ccw/shared'
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 
 import { fetchAuthStatus, onUnauthorized } from './api/client.ts'
@@ -12,6 +12,7 @@ import { BrandMark, MoonIcon, PanelLeftIcon, PanelRightIcon, SunIcon } from './c
 import { SettingsDialog } from './components/settings/SettingsDialog.tsx'
 import { Sidebar } from './components/sidebar/Sidebar.tsx'
 import { followAddressBar, useActiveSessionValue, useStore } from './store/session.ts'
+import { sessionTitle } from './utils/session-title.ts'
 
 /** Phone widths, where the side panels become drawers. Matches the 640px media queries in the CSS modules. */
 const NARROW = window.matchMedia('(max-width: 640px)')
@@ -60,6 +61,7 @@ function Workspace(): JSX.Element {
   const running = useActiveSessionValue((session) => session.status === 'running')
   const closed = useActiveSessionValue((session) => session.closed)
   const activeId = useStore((state) => state.activeId)
+  const summary = useStore(activeSummary)
   const settingsOpen = useStore((state) => state.settingsOpen)
   const setSettingsOpen = useStore((state) => state.setSettingsOpen)
   const narrow = useNarrow()
@@ -119,7 +121,9 @@ function Workspace(): JSX.Element {
                   <PanelLeftIcon />
                 </button>
               )}
-              <span className={styles.title}>{cwd !== undefined ? shortCwd(cwd) : 'Claude Code'}</span>
+              <span className={styles.title} title={cwd !== undefined ? `${summary || '新会话'}\n${shortCwd(cwd)}` : undefined}>
+                {cwd !== undefined ? sessionTitle(summary) : 'Claude Code'}
+              </span>
               {running && <span className={styles.subtitle}>运行中…</span>}
               {closed && <span className={styles.subtitle}>会话已结束</span>}
               <span className={styles.spacer} />
@@ -167,6 +171,17 @@ function ActiveConversation(): JSX.Element {
       <Composer />
     </>
   )
+}
+
+/**
+ * The active session's title, from its sidebar entry. Runs on every store
+ * change — every streamed token — so it walks the list instead of copying it.
+ */
+function activeSummary(state: { projects: ProjectGroup[]; activeId: string | null }): string | undefined {
+  for (const project of state.projects) {
+    for (const entry of project.sessions) if (entry.sessionId === state.activeId) return entry.summary
+  }
+  return undefined
 }
 
 function shortCwd(cwd: string): string {

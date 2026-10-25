@@ -33,6 +33,7 @@ const { lastReplyText, transcriptMarkdown } = await import('../src/utils/transcr
 const { applyHistoryMessage, listUserPromptUuids } = await import('../src/render/history.ts')
 const { emptyTranscript } = await import('../src/render/nodes.ts')
 const { bashPrompt } = await import('../src/render/bash.ts')
+const { sessionTitle } = await import('../src/utils/session-title.ts')
 
 /** A created, attached session; `handlers` overrides individual RPCs. */
 async function fixture(handlers = {}) {
@@ -148,6 +149,14 @@ test('/rename renames on disk and re-reads the sidebar; a bare /rename only expl
   assert.deepEqual(calls[0], { method: 'session.rename', params: { sessionId: f.sessionId, title: '新名字', cwd: '/fixture' } })
   assert.ok(calls.some((call) => call.method === 'history.projects'))
   assert.match(f.nodes().at(-1).text, /新名字/)
+})
+
+test('an untitled session is shown by the first fifty characters of its prompt', () => {
+  assert.equal(sessionTitle(undefined), '新会话')
+  assert.equal(sessionTitle('  '), '新会话')
+  assert.equal(sessionTitle('修复\n  登录页'), '修复 登录页')
+  assert.equal(sessionTitle('字'.repeat(50)), '字'.repeat(50))
+  assert.equal(sessionTitle(`${'字'.repeat(49)}😀尾巴`), `${'字'.repeat(49)}😀…`)
 })
 
 test('/branch opens the fork and leaves the original untouched', async () => {

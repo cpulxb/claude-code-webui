@@ -44,6 +44,49 @@ test('the first prompt replaces an empty title and an old session is not promote
   assert.equal(prompted[0]?.sessions.filter((session) => session.sessionId === 'new').length, 1)
 })
 
+// Ids unlike the next test's: the headless verdicts are cached per session id for the whole process.
+test('a session is named by its title, else by its first prompt rather than its latest', async () => {
+  const config = await mkdtemp(join(tmpdir(), 'ccw-projects-'))
+  const previous = process.env['CLAUDE_CONFIG_DIR']
+  process.env['CLAUDE_CONFIG_DIR'] = config
+  try {
+    const project = join(config, 'projects', '-work-app')
+    await mkdir(project, { recursive: true })
+    const prompt = (sessionId: string, uuid: string, content: string): object => ({
+      parentUuid: null, isSidechain: false, type: 'user', uuid, message: { role: 'user', content },
+      timestamp: '2026-10-01T00:00:00.000Z', userType: 'external', entrypoint: 'sdk-ts', cwd: '/work/app', sessionId,
+    })
+    const command = '<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args></command-args>'
+    const transcripts: Record<string, object[]> = {
+      '10000000-0000-4000-8000-000000000001': [],
+      '10000000-0000-4000-8000-000000000002': [{ type: 'ai-title', aiTitle: 'Three.js shooter' }],
+      '10000000-0000-4000-8000-000000000003': [{ type: 'ai-title', aiTitle: 'Three.js shooter' }, { type: 'custom-title', customTitle: 'My game' }],
+    }
+    for (const [sessionId, titles] of Object.entries(transcripts)) {
+      const lines = [
+        prompt(sessionId, `${sessionId.slice(0, -1)}a`, '做一个 three.js 射击游戏'),
+        prompt(sessionId, `${sessionId.slice(0, -1)}b`, '继续吧'),
+        { type: 'last-prompt', lastPrompt: '继续吧', sessionId },
+        ...titles.map((title) => ({ ...title, sessionId })),
+      ]
+      await writeFile(join(project, `${sessionId}.jsonl`), `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`)
+    }
+    const commandOnly = '10000000-0000-4000-8000-000000000004'
+    await writeFile(
+      join(project, `${commandOnly}.jsonl`),
+      `${[prompt(commandOnly, `${commandOnly.slice(0, -1)}a`, command), { type: 'last-prompt', lastPrompt: '现在的时间', sessionId: commandOnly }]
+        .map((line) => JSON.stringify(line)).join('\n')}\n`,
+    )
+
+    const titles = Object.fromEntries((await listProjects())[0]?.sessions.map((session) => [session.sessionId.at(-1), session.summary]) ?? [])
+    assert.deepEqual(titles, { 1: '做一个 three.js 射击游戏', 2: 'Three.js shooter', 3: 'My game', 4: '现在的时间' })
+  } finally {
+    if (previous === undefined) delete process.env['CLAUDE_CONFIG_DIR']
+    else process.env['CLAUDE_CONFIG_DIR'] = previous
+    await rm(config, { recursive: true, force: true })
+  }
+})
+
 test('the list keeps terminal and WebUI sessions but drops claude -p and other headless runs', async () => {
   const config = await mkdtemp(join(tmpdir(), 'ccw-projects-'))
   const previous = process.env['CLAUDE_CONFIG_DIR']

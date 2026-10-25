@@ -2,6 +2,7 @@ import { fuzzyFilter, type ProjectGroup, type SessionSummary, type UpdateProgres
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { sessionHref, useStore } from '../../store/session.ts'
+import { sessionTitle } from '../../utils/session-title.ts'
 import { DevicesDialog } from '../auth/DevicesDialog.tsx'
 import {
   BrandMark,
@@ -464,7 +465,7 @@ function SessionList(props: {
                 aria-current={session.sessionId === props.activeId ? 'page' : undefined}
               >
                 {session.live && <span className={styles.liveDot} />}
-                <span className={styles.itemTitle}>{session.summary || '新会话'}</span>
+                <span className={styles.itemTitle}>{sessionTitle(session.summary)}</span>
                 <span className={styles.itemAge}>{age(session.lastModified)}</span>
               </a>
               {session.live && (
@@ -525,7 +526,7 @@ function SearchResults(props: {
           >
             <span className={styles.hitTitleLine}>
               {hit.live && <span className={styles.liveDot} />}
-              <span className={styles.itemTitle}>{hit.summary || '新会话'}</span>
+              <span className={styles.itemTitle}>{sessionTitle(hit.summary)}</span>
               <span className={styles.itemAge}>{age(hit.lastModified)}</span>
             </span>
             <span className={styles.hitMeta}>
