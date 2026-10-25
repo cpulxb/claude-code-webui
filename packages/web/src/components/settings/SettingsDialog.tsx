@@ -15,6 +15,7 @@ import {
   type SettingsForm,
 } from '../../utils/settings.ts'
 import dialog from '../auth/Auth.module.css'
+import { ConfirmDialog } from '../ConfirmDialog.tsx'
 import { CodeEditor } from '../details/CodeEditor.tsx'
 import { ChevronRightIcon, EyeIcon, EyeOffIcon, XIcon } from '../Icons.tsx'
 import { ModelList } from './ModelList.tsx'
@@ -68,6 +69,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
   /** Set by a save, and shown until the next edit. */
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** Closing with unsaved edits, waiting on 放弃修改 / 继续编辑. */
+  const [discarding, setDiscarding] = useState(false)
 
   const show = (next: UserSettings, asJson: boolean): void => {
     setLoaded(next)
@@ -104,7 +107,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
   const canSave = loaded !== null && dirty && problems.length === 0 && !saving
 
   const close = (): void => {
-    if (!dirty || window.confirm('有未保存的修改，确定放弃吗？')) onClose()
+    if (dirty) setDiscarding(true)
+    else onClose()
   }
 
   const save = async (): Promise<void> => {
@@ -381,6 +385,18 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
           </button>
         </div>
       </div>
+
+      {discarding && (
+        <ConfirmDialog
+          title="放弃未保存的修改？"
+          message="设置里还有没保存的修改，关闭后会丢失。"
+          confirmLabel="放弃修改"
+          cancelLabel="继续编辑"
+          danger
+          onConfirm={onClose}
+          onCancel={() => setDiscarding(false)}
+        />
+      )}
     </div>
   )
 }

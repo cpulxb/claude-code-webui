@@ -3,6 +3,7 @@ import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
 
 import { createPairingCode, fetchAuthStatus, listDevices, revokeDevice } from '../../api/client.ts'
+import { ConfirmDialog } from '../ConfirmDialog.tsx'
 import { XIcon } from '../Icons.tsx'
 import styles from './Auth.module.css'
 import { describeAuthError } from './PairingScreen.tsx'
@@ -13,6 +14,8 @@ export function DevicesDialog({ onClose }: { onClose: () => void }): JSX.Element
   const [devices, setDevices] = useState<DeviceInfo[] | null>(null)
   const [pending, setPending] = useState<{ code: PairingCode; qr: string | null } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** This browser's own device, waiting on the confirm before it is revoked. */
+  const [revokingSelf, setRevokingSelf] = useState<DeviceInfo | null>(null)
   const now = useNow(pending !== null)
 
   const refresh = async (): Promise<void> => {
@@ -53,7 +56,6 @@ export function DevicesDialog({ onClose }: { onClose: () => void }): JSX.Element
   }
 
   const revoke = async (device: DeviceInfo): Promise<void> => {
-    if (device.current && !window.confirm('吊销本设备后，这个浏览器需要重新配对。确定吗？')) return
     setError(null)
     try {
       await revokeDevice(device.id)
@@ -93,7 +95,11 @@ export function DevicesDialog({ onClose }: { onClose: () => void }): JSX.Element
                   {ago(device.lastSeenAt)}活跃 · {device.lastIp} · 配对于 {new Date(device.createdAt).toLocaleDateString()}
                 </div>
               </div>
-              <button className={styles.revoke} onClick={() => void revoke(device)} type="button">
+              <button
+                className={styles.revoke}
+                onClick={() => (device.current ? setRevokingSelf(device) : void revoke(device))}
+                type="button"
+              >
                 吊销
               </button>
             </div>
@@ -122,6 +128,20 @@ export function DevicesDialog({ onClose }: { onClose: () => void }): JSX.Element
 
         {error && <div className={styles.error}>{error}</div>}
       </div>
+
+      {revokingSelf && (
+        <ConfirmDialog
+          title="吊销本设备？"
+          message="吊销后，这个浏览器需要重新配对才能继续使用。"
+          confirmLabel="吊销"
+          danger
+          onConfirm={() => {
+            setRevokingSelf(null)
+            void revoke(revokingSelf)
+          }}
+          onCancel={() => setRevokingSelf(null)}
+        />
+      )}
     </div>
   )
 }

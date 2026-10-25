@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/shallow'
 import { call } from '../../api/client.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import { SHOW_INFO_EVENT } from '../../utils/local-commands.ts'
+import { ConfirmDialog } from '../ConfirmDialog.tsx'
 import {
   CompassIcon,
   InfoIcon,
@@ -16,7 +17,7 @@ import {
   XIcon,
 } from '../Icons.tsx'
 import styles from './DetailsPanel.module.css'
-import { dirtyPaths, putDraft, subscribeDrafts } from './drafts.ts'
+import { dirtyPaths, getDraft, putDraft, subscribeDrafts } from './drafts.ts'
 import { ExplorerTree } from './ExplorerTree.tsx'
 import { FileTypeIcon, WorkspaceFolderIcon } from './FileTypeIcon.tsx'
 import { FileView } from './FileView.tsx'
@@ -111,6 +112,8 @@ export function DetailsPanel({
   const { tabs, active } = (cwd !== undefined ? tabsByCwd[cwd] : undefined) ?? INITIAL
   const stripRef = useRef<HTMLDivElement>(null)
   const dirty = useSyncExternalStore(subscribeDrafts, dirtyPaths)
+  /** The unsaved file tab whose close is waiting on 保存 / 不保存 / 取消. */
+  const [closing, setClosing] = useState<{ id: string; path: string; name: string } | null>(null)
 
   // Drafts live in this page's memory only, so a reload or a closed browser
   // tab — the reload after an update included — would drop them unannounced.
@@ -206,11 +209,8 @@ export function DetailsPanel({
     // closing it as well puts the panel away.
     if (tabs.length === 1 && tab.kind === 'start') return onCollapse()
     // Once its tab is gone nothing shows a file's unsaved buffer any more, so
-    // closing asks first and the buffer goes with the tab.
-    if (tab.kind === 'file' && dirty.has(tab.path)) {
-      if (!window.confirm(`${tab.name} 有未保存的修改，关闭会丢弃这些修改。确定关闭吗？`)) return
-      putDraft(tab.path, null)
-    }
+    // closing asks first, and the buffer is saved or goes with the tab.
+    if (tab.kind === 'file' && dirty.has(tab.path)) return setClosing({ id, path: tab.path, name: tab.name })
     update((set) => closeTab(set, id))
   }
 
@@ -347,7 +347,87 @@ export function DetailsPanel({
           }),
         )}
       </div>
+
+      {closing && (
+        <UnsavedDialog
+          path={closing.path}
+          name={closing.name}
+          onSaved={() => {
+            if (sessionId !== null) touchFs(sessionId)
+          }}
+          onClose={() => {
+            setClosing(null)
+            update((set) => closeTab(set, closing.id))
+          }}
+          onCancel={() => setClosing(null)}
+        />
+      )}
     </div>
+  )
+}
+
+/**
+ * Asked before an unsaved file's tab closes, as an editor asks: save, drop
+ * the edits, or keep the tab. Saving first checks the file still holds the
+ * text the edits started from, as the editor's own save does, so closing
+ * cannot write over what a turn changed meanwhile.
+ */
+function UnsavedDialog({
+  path,
+  name,
+  onSaved,
+  onClose,
+  onCancel,
+}: {
+  path: string
+  name: string
+  onSaved: () => void
+  onClose: () => void
+  onCancel: () => void
+}): JSX.Element {
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const save = async (): Promise<void> => {
+    const draft = getDraft(path)
+    setSaving(true)
+    setError(null)
+    try {
+      if (draft) {
+        const { preview } = await call('files.read', { path })
+        if (preview.kind !== 'text' || preview.content !== draft.base) {
+          setError('文件在磁盘上已经变了，保存会盖掉那些变化。请先取消，回到编辑器里处理。')
+          return
+        }
+        await call('files.write', { path, content: draft.text })
+        putDraft(path, null)
+        onSaved()
+      }
+      onClose()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <ConfirmDialog
+      title={`要保存对 ${name} 的修改吗？`}
+      message="不保存的话，这些修改会丢失。"
+      confirmLabel={saving ? '保存中…' : '保存'}
+      busy={saving}
+      error={error}
+      alternative={{
+        label: '不保存',
+        onClick: () => {
+          putDraft(path, null)
+          onClose()
+        },
+      }}
+      onConfirm={() => void save()}
+      onCancel={onCancel}
+    />
   )
 }
 

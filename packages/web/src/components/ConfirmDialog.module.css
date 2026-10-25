@@ -1,0 +1,22 @@
+/* On top of the shared dialog in Auth.module.css, narrowed to a question. */
+.dialog {
+  width: min(420px, 92vw);
+}
+
+.actions {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.danger {
+  color: #fff;
+  background: var(--ccw-danger);
+  border-color: var(--ccw-danger);
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--ccw-danger);
+  opacity: 0.88;
+}
