@@ -32,6 +32,7 @@
   position: relative;
   padding: var(--ccw-space-3) var(--ccw-space-4);
   margin: var(--ccw-space-5) 0 var(--ccw-space-4);
+  font-size: var(--ccw-text-prose);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   border: 1px solid var(--ccw-border-l1);
@@ -189,6 +190,24 @@
   background: var(--ccw-gray-300);
 }
 
+/* Replies get claude.ai's reading type: a serif for Latin, with CJK falling
+   through to the UI's sans. Thinking and code keep the interface's faces. */
+.prose {
+  font-family: var(--ccw-font-serif);
+  font-size: var(--ccw-text-prose);
+}
+
+/* Centred on the taller first line — which a leading thinking toggle is not. */
+.prose:not(:has(> .reasoning:first-child))::before {
+  top: 8.5px;
+}
+
+/* Semibold, not bold: the serif turns heavy at 700. Above 500 also keeps CJK
+   fonts without a medium cut on their bold rather than their regular. */
+.prose strong {
+  font-weight: 600;
+}
+
 @keyframes pulse {
   50% {
     opacity: 0.35;
@@ -205,6 +224,7 @@
 
 .reasoning {
   margin-bottom: var(--ccw-space-2);
+  font-family: var(--ccw-font-ui);
 }
 
 .reasoningToggle {

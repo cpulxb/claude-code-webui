@@ -23,17 +23,18 @@
   line-height: 1.35;
 }
 
+/* Relative, so headings stay above the body whatever size the host sets. */
 .markdown h1 {
-  font-size: 19px;
+  font-size: 1.35em;
 }
 
 .markdown h2 {
-  font-size: 16px;
+  font-size: 1.15em;
 }
 
 .markdown h3,
 .markdown h4 {
-  font-size: var(--ccw-text-md);
+  font-size: 1em;
 }
 
 .markdown ul,
@@ -106,6 +107,7 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--ccw-space-1) var(--ccw-space-2) var(--ccw-space-1) var(--ccw-space-3);
+  font-family: var(--ccw-font-ui);
   font-size: var(--ccw-text-xs);
   color: var(--ccw-text-muted);
   border-bottom: 1px solid var(--ccw-border-l2);

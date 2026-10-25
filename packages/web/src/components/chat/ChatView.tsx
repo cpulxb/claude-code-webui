@@ -460,7 +460,7 @@ const NodeView = memo(function NodeView({ node }: { node: Exclude<ChatNode, { ki
   switch (node.kind) {
     case 'assistant':
       return (
-        <div className={styles.row}>
+        <div className={`${styles.row} ${styles.prose}`}>
           {node.blocks.map((block, index) => (
             <BlockView key={index} block={block} />
           ))}
@@ -572,7 +572,7 @@ function CompactRow({ node }: { node: Extract<ChatNode, { kind: 'compact' }> }):
 
 function StreamingRow({ block }: { block: StreamingBlock }): JSX.Element {
   return (
-    <div className={`${styles.row} ${styles.rowPending}`}>
+    <div className={`${styles.row} ${styles.rowPending} ${styles.prose}`}>
       {block.type === 'thinking' ? (
         <ReasoningRow text={block.text} live />
       ) : (

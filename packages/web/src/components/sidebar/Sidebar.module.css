@@ -12,12 +12,15 @@
   padding: var(--ccw-space-3) var(--ccw-space-3) var(--ccw-space-2);
 }
 
+/* Set like claude.ai's wordmark. */
 .brand {
   display: flex;
   gap: 6px;
   align-items: center;
-  font-size: var(--ccw-text-md);
-  font-weight: 600;
+  font-family: var(--ccw-font-serif);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -53,17 +56,15 @@
   }
 }
 
+/* A plain row like the switcher above it, the way claude.ai lists "New". */
 .newButton {
   display: flex;
-  gap: 6px;
+  gap: var(--ccw-space-2);
   align-items: center;
-  justify-content: center;
   width: calc(100% - var(--ccw-space-4));
-  padding: 7px;
-  margin: 0 var(--ccw-space-2) var(--ccw-space-3);
-  font-size: var(--ccw-text-base);
-  background: var(--ccw-bg-base);
-  border: 1px solid var(--ccw-border-l1);
+  padding: 6px var(--ccw-space-3);
+  margin: 0 var(--ccw-space-2) var(--ccw-space-2);
+  font-size: var(--ccw-text-md);
   border-radius: var(--ccw-radius-md);
 }
 
@@ -112,7 +113,7 @@
   align-items: center;
   width: 100%;
   padding: 6px var(--ccw-space-3);
-  font-size: var(--ccw-text-base);
+  font-size: var(--ccw-text-md);
   font-weight: 500;
   color: var(--ccw-text-primary);
   text-align: left;
@@ -210,20 +211,23 @@
 /* 今天 / 昨天 / … headings over the session list. */
 .bucket {
   padding: var(--ccw-space-3) var(--ccw-space-3) var(--ccw-space-1);
-  font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-faint);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
 }
 
+/* Inset and rounded, so the selection reads as a pill rather than a band. */
 .item {
   position: relative;
   display: flex;
   gap: var(--ccw-space-2);
   align-items: baseline;
-  width: 100%;
-  padding: 5px var(--ccw-space-3);
-  font-size: var(--ccw-text-base);
+  width: calc(100% - var(--ccw-space-4));
+  padding: 4px var(--ccw-space-1);
+  margin: 0 var(--ccw-space-2);
+  font-size: var(--ccw-text-md);
   color: var(--ccw-text-secondary);
   text-align: left;
+  border-radius: var(--ccw-radius-md);
 }
 
 .itemOpen {
@@ -269,10 +273,10 @@
   background: var(--ccw-bg-hover);
 }
 
-.itemActive {
+.itemActive,
+.itemActive:hover {
   color: var(--ccw-text-primary);
-  background: var(--ccw-bg-hover);
-  box-shadow: inset 2px 0 0 var(--ccw-accent);
+  background: var(--ccw-bg-selected);
 }
 
 .itemTitle {
@@ -294,10 +298,12 @@
   display: flex;
   gap: var(--ccw-space-2);
   align-items: center;
-  width: 100%;
-  padding: 5px var(--ccw-space-3);
-  font-size: var(--ccw-text-base);
+  width: calc(100% - var(--ccw-space-4));
+  padding: 4px var(--ccw-space-1);
+  margin: 0 var(--ccw-space-2);
+  font-size: var(--ccw-text-md);
   color: var(--ccw-text-secondary);
+  border-radius: var(--ccw-radius-md);
 }
 
 @media (pointer: coarse) {

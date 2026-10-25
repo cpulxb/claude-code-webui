@@ -11,7 +11,7 @@
 
 .box {
   background: var(--ccw-bg-base);
-  border: 1px solid var(--ccw-border-strong);
+  border: 1px solid var(--ccw-border-l1);
   border-radius: var(--ccw-radius-lg);
   box-shadow: var(--ccw-shadow-composer);
   transition: border-color var(--ccw-duration-fast) var(--ccw-ease);
@@ -34,6 +34,7 @@
   padding: var(--ccw-space-3) var(--ccw-space-4) var(--ccw-space-2);
   overflow-y: auto;
   font: inherit;
+  font-size: var(--ccw-text-prose);
   color: inherit;
   resize: none;
   background: none;
