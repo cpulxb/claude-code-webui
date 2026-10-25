@@ -193,3 +193,94 @@ test('a newer page short of the read\'s end is cut from it; one that reaches the
   assert.deepEqual(last.messages.map((entry) => entry.uuid), [`${sessionId}-4`, `${sessionId}-5`, `${sessionId}-6`])
   assert.equal(last.hasNewer, false)
 })
+
+// A compaction as the CLI writes it: the boundary starts a new chain, pointing
+// back only through `logicalParentUuid`, and the summary hangs off it.
+type Line = { uuid: string; parentUuid: string | null; type: string; [key: string]: unknown }
+const line = (sessionId: string, n: number, parent: number | null, type: 'user' | 'assistant', text: string): Line => ({
+  uuid: `${sessionId}-${n}`, parentUuid: parent === null ? null : `${sessionId}-${parent}`, type, isSidechain: false,
+  sessionId, cwd: '/work/app', timestamp: `2026-10-01T00:00:${String(n).padStart(2, '0')}.000Z`,
+  message: type === 'user' ? { role: 'user', content: text } : { id: `m${n}`, role: 'assistant', content: [{ type: 'text', text }] },
+})
+const compaction = (sessionId: string, n: number, before: number, kept: number[] = []): Line[] => [
+  {
+    uuid: `${sessionId}-${n}`, parentUuid: null, logicalParentUuid: `${sessionId}-${before}`, type: 'system', subtype: 'compact_boundary',
+    content: 'Conversation compacted', isSidechain: false, sessionId, cwd: '/work/app', timestamp: `2026-10-01T00:00:${String(n).padStart(2, '0')}.000Z`,
+    compactMetadata: {
+      trigger: 'manual', preTokens: 100,
+      // Kept verbatim: relinked after the summary.
+      ...(kept.length > 0
+        ? { preservedMessages: { anchorUuid: `${sessionId}-${n + 1}`, uuids: kept.map((index) => `${sessionId}-${index}`) } }
+        : {}),
+    },
+  },
+  {
+    ...line(sessionId, n + 1, n, 'user', 'This session is being continued from a previous conversation.'),
+    isCompactSummary: true, isVisibleInTranscriptOnly: true,
+  },
+]
+async function writeLines(sessionId: string, lines: Line[]): Promise<void> {
+  await writeFile(join(project, `${sessionId}.jsonl`), lines.map((entry) => `${JSON.stringify(entry)}\n`).join(''))
+}
+
+test('what came before a compaction is read once a page reaches back past it', async () => {
+  const sessionId = '00000000-0000-4000-8000-0000000000a5'
+  await writeLines(sessionId, [
+    line(sessionId, 0, null, 'user', 'one'), line(sessionId, 1, 0, 'assistant', 'two'),
+    line(sessionId, 2, 1, 'user', 'three'), line(sessionId, 3, 2, 'assistant', 'four'),
+    ...compaction(sessionId, 4, 3),
+    line(sessionId, 6, 5, 'user', 'five'), line(sessionId, 7, 6, 'assistant', 'six'),
+  ])
+  const ids = (page: { messages: SessionMessage[] }) => page.messages.map((entry) => Number(entry.uuid.split('-').at(-1)))
+
+  // The newest page fits the stretch since the compaction, yet there is more.
+  const newest = await readMessagePage(sessionId, '/work/app', 10)
+  assert.deepEqual(ids(newest), [4, 5, 6, 7])
+  assert.equal(newest.hasMore, true)
+
+  const older = await readMessagePage(sessionId, '/work/app', 10, { before: newest.messages[0]!.uuid })
+  assert.deepEqual(ids(older), [0, 1, 2, 3])
+  assert.equal(older.hasMore, false)
+
+  // A link into the compacted part opens there.
+  const linked = await readMessagePage(sessionId, '/work/app', 2, { around: `${sessionId}-1` })
+  assert.ok(ids(linked).includes(1))
+})
+
+test('reading back past compactions follows the conversation, not a branch rewound away', async () => {
+  const sessionId = '00000000-0000-4000-8000-0000000000a6'
+  await writeLines(sessionId, [
+    line(sessionId, 0, null, 'user', 'one'), line(sessionId, 1, 0, 'assistant', 'two'),
+    line(sessionId, 2, 1, 'user', 'abandoned'), line(sessionId, 3, 2, 'assistant', 'abandoned'),
+    // Rewound to after 1 and asked again.
+    line(sessionId, 4, 1, 'user', 'three'), line(sessionId, 5, 4, 'assistant', 'four'),
+    ...compaction(sessionId, 6, 5),
+    line(sessionId, 8, 7, 'user', 'five'), line(sessionId, 9, 8, 'assistant', 'six'),
+    ...compaction(sessionId, 10, 9),
+    line(sessionId, 12, 11, 'user', 'seven'),
+  ])
+  let page = await readMessagePage(sessionId, '/work/app', 3)
+  const shown = page.messages.map((entry) => entry.uuid)
+  while (page.hasMore) {
+    page = await readMessagePage(sessionId, '/work/app', 3, { before: page.messages[0]!.uuid })
+    shown.unshift(...page.messages.map((entry) => entry.uuid))
+  }
+  assert.deepEqual(shown.map((uuid) => Number(uuid.split('-').at(-1))), [0, 1, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+})
+
+test('messages a compaction kept show once, after its summary, as the newest page put them', async () => {
+  const sessionId = '00000000-0000-4000-8000-0000000000a7'
+  await writeLines(sessionId, [
+    line(sessionId, 0, null, 'user', 'one'), line(sessionId, 1, 0, 'assistant', 'two'),
+    line(sessionId, 2, 1, 'user', 'three'), line(sessionId, 3, 2, 'assistant', 'four'),
+    ...compaction(sessionId, 4, 3, [2, 3]),
+    line(sessionId, 6, 5, 'user', 'five'), line(sessionId, 7, 6, 'assistant', 'six'),
+  ])
+  let page = await readMessagePage(sessionId, '/work/app', 2)
+  const shown = page.messages.map((entry) => entry.uuid)
+  while (page.hasMore) {
+    page = await readMessagePage(sessionId, '/work/app', 2, { before: page.messages[0]!.uuid })
+    shown.unshift(...page.messages.map((entry) => entry.uuid))
+  }
+  assert.deepEqual(shown.map((uuid) => Number(uuid.split('-').at(-1))), [0, 1, 4, 5, 2, 3, 6, 7])
+})

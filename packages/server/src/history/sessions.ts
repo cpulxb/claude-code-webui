@@ -9,6 +9,7 @@ import {
   listSessions,
   renameSession,
   type SDKSessionInfo,
+  type SessionStoreEntry,
 } from '@anthropic-ai/claude-agent-sdk'
 import type { PermissionMode, ProjectGroup, SessionMessage, SessionSummary, SubagentMeta, WorkflowRecord } from '@ccw/shared'
 import { mergeProjectSessions } from '@ccw/shared'
@@ -174,8 +175,11 @@ function dropInlineMedia(message: unknown): void {
  * a session is opened, and re-read. Dropped when unused for a while, as one
  * long text-only transcript can be large.
  */
-let lastRead: { sessionId: string; cwd: string | undefined; messages: SessionMessage[]; expiry: NodeJS.Timeout } | null = null
+let lastRead: (TranscriptRead & { sessionId: string; cwd: string | undefined; expiry: NodeJS.Timeout }) | null = null
 const LAST_READ_TTL_MS = 5 * 60_000
+
+/** A session's messages, and whether they include what came before its last compaction. */
+type TranscriptRead = { messages: SessionMessage[]; complete: boolean }
 
 /** Where a page sits: next to an entry already shown, or around one to open at. Without one, the newest page. */
 export type PageCursor = { before?: string | undefined; after?: string | undefined; around?: string | undefined }
@@ -192,17 +196,95 @@ export async function readMessagePage(
   const shown = cursor.before ?? cursor.after
   const cached =
     shown !== undefined && lastRead?.sessionId === sessionId && lastRead.cwd === cwd && lastRead.messages.some((entry) => entry.uuid === shown)
-      ? lastRead.messages
+      ? lastRead
       : null
-  let messages = cached ?? (await readMessages(sessionId, cwd))
-  let page = pageMessages(messages, limit, cursor)
+  let read: TranscriptRead = cached ?? (await readTranscriptAt(sessionId, cwd, cursor))
+  let page = pageMessages(read.messages, limit, cursor)
   if (cached && !page.hasNewer && cursor.after !== undefined) {
-    messages = await readMessages(sessionId, cwd)
-    page = pageMessages(messages, limit, cursor)
+    read = await readTranscriptAt(sessionId, cwd, cursor)
+    page = pageMessages(read.messages, limit, cursor)
+  }
+  // The SDK's read ends at the last compaction. Reading on past it costs a
+  // parse of the whole file, so a page only says there is more until the
+  // reader scrolls back there.
+  if (!page.hasMore && !read.complete && read.messages.some(isCompactSummary)) {
+    if (cursor.before === undefined) {
+      page.hasMore = true
+    } else {
+      read = { messages: await withEarlierMessages(sessionId, read.messages), complete: true }
+      page = pageMessages(read.messages, limit, cursor)
+    }
   }
   if (lastRead) clearTimeout(lastRead.expiry)
-  lastRead = { sessionId, cwd, messages, expiry: setTimeout(() => (lastRead = null), LAST_READ_TTL_MS).unref() }
+  lastRead = { sessionId, cwd, ...read, expiry: setTimeout(() => (lastRead = null), LAST_READ_TTL_MS).unref() }
   return page
+}
+
+/** The SDK's read, or the whole transcript when the cursor lies before the last compaction. */
+async function readTranscriptAt(sessionId: string, cwd: string | undefined, cursor: PageCursor): Promise<TranscriptRead> {
+  const messages = await readMessages(sessionId, cwd)
+  const at = cursor.before ?? cursor.after ?? cursor.around
+  if (at === undefined || messages.some((entry) => holds(entry, at)) || !messages.some(isCompactSummary)) {
+    return { messages, complete: false }
+  }
+  return { messages: await withEarlierMessages(sessionId, messages), complete: true }
+}
+
+/**
+ * `current` with the conversation before its compactions put back in front.
+ *
+ * `getSessionMessages` follows parent links back from the newest entry, and a
+ * compaction's boundary has none, so the walk ends there. What came before is
+ * still in the file. Handed only the entries written before a boundary, the
+ * SDK reads the transcript as it stood when that compaction began — by the
+ * same walk, so a branch rewound away stays out — and that read ends at the
+ * compaction before, in turn.
+ *
+ * Messages a compaction kept are relinked after its summary as well. They stay
+ * there, where the newest page — read without the rest — already showed them.
+ */
+async function withEarlierMessages(sessionId: string, current: SessionMessage[]): Promise<SessionMessage[]> {
+  const path = await findTranscript(sessionId)
+  if (!path) return current
+  const entries: SessionStoreEntry[] = []
+  for (const line of (await readFile(path, 'utf8')).split('\n')) {
+    if (!line.trim()) continue
+    try {
+      entries.push(JSON.parse(line) as SessionStoreEntry)
+    } catch {
+      continue // a trailing line the CLI is still writing
+    }
+  }
+  const boundaries = new Map<string, number>()
+  entries.forEach((entry, index) => {
+    if (entry.type === 'system' && entry['subtype'] === 'compact_boundary' && entry.uuid) boundaries.set(entry.uuid, index)
+  })
+  // A read holds one boundary: the one it starts from.
+  const startOf = (messages: SessionMessage[]) => messages.map((entry) => boundaries.get(entry.uuid)).find((index) => index !== undefined)
+
+  // Read newest first, so a kept message is placed by the newest read holding it.
+  const placed = new Set(current.map((entry) => entry.uuid))
+  const stretches: SessionMessage[][] = []
+  let boundary = startOf(current)
+  while (boundary !== undefined) {
+    const before = entries.slice(0, boundary)
+    const stretch = await getSessionMessages(sessionId, {
+      includeSystemMessages: true,
+      sessionStore: { append: async () => {}, load: async () => before },
+    })
+    stretches.push(stretch.filter((entry) => !placed.has(entry.uuid)))
+    for (const entry of stretch) placed.add(entry.uuid)
+    const next = startOf(stretch)
+    boundary = next !== undefined && next < boundary ? next : undefined
+  }
+  const earlier = stretches.reverse().flat()
+  for (const entry of earlier) dropInlineMedia(entry.message)
+  return [...earlier, ...current]
+}
+
+/** `getSessionMessages` passes the flag through, though `SessionMessage` does not declare it. */
+function isCompactSummary(entry: SessionMessage): boolean {
+  return (entry as { isCompactSummary?: boolean }).isCompactSummary === true
 }
 
 /**
