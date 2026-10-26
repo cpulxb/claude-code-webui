@@ -1,14 +1,30 @@
+// The stylesheet must come from the KaTeX that rehype-katex renders with —
+// class names change across minors (0.19 renamed `.sizing`), so keep the
+// `katex` dependency on the same range as rehype-katex's.
+import 'katex/dist/katex.min.css'
+
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Markdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
+import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 
 import styles from './AssistantMarkdown.module.css'
 
-const REMARK = [remarkGfm]
+// Only `$$` opens math: single dollars are far more often prices or shell
+// variables in prose ("$3/M input, $15/M output") than formulas.
+const REMARK = [remarkGfm, [remarkMath, { singleDollarTextMath: false }]] as never
+// KaTeX runs before highlighting so math fences never reach the highlighter.
+// `errorColor: inherit` lets a formula that does not parse — including one
+// still streaming in — read as plain source rather than flash red.
 // `detect: false` keeps unlabelled fences unhighlighted instead of letting the
 // language guesser mangle prose or shell transcripts.
-const REHYPE = [[rehypeHighlight, { detect: false, ignoreMissing: true }]] as never
+const REHYPE = [
+  rehypeLoneMathDisplay,
+  [rehypeKatex, { errorColor: 'inherit' }],
+  [rehypeHighlight, { detect: false, ignoreMissing: true }],
+] as never
 
 /** Upper bound on how often streaming text is re-parsed into markdown. */
 const THROTTLE_MS = 80
@@ -110,6 +126,29 @@ function CodeBlock({ children }: { children?: ReactNode }): JSX.Element {
       <pre ref={preRef}>{children}</pre>
     </div>
   )
+}
+
+type HastNode = { type: string; tagName?: string; properties?: { className?: unknown }; children?: HastNode[] }
+
+/**
+ * remark-math gives `$$` display treatment only when the delimiters sit on
+ * lines of their own; `$$x$$` written on one line comes out inline, in KaTeX's
+ * cramped text style. Models write it that way meaning display, so a paragraph
+ * holding nothing but one formula is promoted.
+ */
+function rehypeLoneMathDisplay() {
+  const promote = (node: HastNode): void => {
+    for (const child of node.children ?? []) {
+      const only = child.tagName === 'p' && child.children?.length === 1 ? child.children[0] : undefined
+      const classes = only?.properties?.className
+      if (only?.properties && Array.isArray(classes) && classes.includes('math-inline')) {
+        only.properties.className = ['language-math', 'math-display']
+      } else {
+        promote(child)
+      }
+    }
+  }
+  return promote
 }
 
 /** react-markdown passes the `<code>` element as `pre`'s only child. */

@@ -67,6 +67,11 @@
   border-collapse: collapse;
 }
 
+/* A wide display formula scrolls on its own instead of widening the column. */
+.markdown :global(.katex-display) {
+  overflow: auto hidden;
+}
+
 .markdown th,
 .markdown td {
   padding: 5px 10px;
