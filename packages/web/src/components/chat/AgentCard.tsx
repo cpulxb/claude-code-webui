@@ -20,7 +20,7 @@ export const STATUS_LABEL: Record<AgentStatus, string> = {
  * generic tool: what it was asked, what it is doing right now, what it handed
  * back, and the way into its own conversation.
  */
-export const AgentCard = memo(function AgentCard({ node }: { node: ToolNode }): JSX.Element {
+export const AgentCard = memo(function AgentCard({ node, stale }: { node: ToolNode; stale: boolean }): JSX.Element {
   const agent = useActiveSessionValue((session) => findAgent(session.transcript, node.toolUseId))
   const attached = useActiveSessionValue((session) => session.attached) ?? false
   const openAgent = useStore((state) => state.openAgent)
@@ -29,7 +29,13 @@ export const AgentCard = memo(function AgentCard({ node }: { node: ToolNode }): 
   const [busy, setBusy] = useState(false)
 
   const description = agent?.description || stringField(node.input, 'description') || '子代理'
-  const status: AgentStatus = agent?.status ?? (node.status === 'error' ? 'failed' : node.status === 'done' ? 'completed' : 'running')
+  const reported: AgentStatus =
+    agent?.status ?? (node.status === 'error' ? 'failed' : node.status === 'done' ? 'completed' : 'running')
+  // `stale` means the main thread was still blocked on this call when its
+  // runner died — so the subagent died with it. Mapping the status rather
+  // than the label also stops the timer and hides 停止 / 转入后台, which have
+  // nothing left to act on.
+  const status: AgentStatus = stale && reported === 'running' ? 'stopped' : reported
   const running = status === 'running'
   const elapsed = useElapsed(running)
 

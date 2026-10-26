@@ -122,6 +122,28 @@ export function emptyTranscript(): Transcript {
 }
 
 /**
+ * Index of the first node of the newest turn.
+ *
+ * A tool call cannot outlive the turn that made it, so a card still marked
+ * `running` *before* this point lost its runner — a crashed CLI never sends
+ * the tool_result that would settle it — no matter what the session is doing
+ * now. Without that, sending a follow-up after a crash would put 执行中 back
+ * on the cards the crash already ended.
+ *
+ * A `result` row closes a turn, and a prompt opens the next; history keeps no
+ * result rows, so there a prompt is the only boundary. The newest turn has no
+ * boundary after it yet — whether its calls are still alive is the session's
+ * state to answer, not the transcript's.
+ */
+export function lastTurnStart(nodes: ChatNode[]): number {
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    const kind = nodes[index]!.kind
+    if (kind === 'user' || kind === 'result') return index + 1
+  }
+  return 0
+}
+
+/**
  * Folds one SDK message into the transcript. Mutates in place — callers run it
  * inside Immer's draft.
  *

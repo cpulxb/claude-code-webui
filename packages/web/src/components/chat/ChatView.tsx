@@ -1,10 +1,10 @@
 import type { RewindFilesResult } from '@ccw/shared'
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { AssistantBlock, ChatNode, StreamingBlock } from '../../render/nodes.ts'
-import { AGENT_TOOLS, findAgent } from '../../render/nodes.ts'
+import { AGENT_TOOLS, findAgent, lastTurnStart } from '../../render/nodes.ts'
 import { WORKFLOW_TOOL } from '../../render/workflows.ts'
-import { useActiveSessionValue, useStore } from '../../store/session.ts'
+import { useActiveSessionValue, useSessionSettled, useStore } from '../../store/session.ts'
 import { parseQuestions } from '../../utils/questions.ts'
 import { ArrowDownIcon, BrandMark, CheckIcon, HistoryIcon, LinkIcon } from '../Icons.tsx'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
@@ -53,6 +53,7 @@ export function ChatView(): JSX.Element | null {
   const pendingPermissions = viewAgent ? allPermissions?.filter((request) => request.agentId === agentId) : allPermissions
   const error = useActiveSessionValue((session) => session.error)
   const running = useActiveSessionValue((session) => session.status === 'running') ?? false
+  const settled = useSessionSettled()
   // Only the main thread pages its history; a subagent's comes in one read.
   const historyCursor = useActiveSessionValue((session) => (session.viewAgent ? null : session.historyCursor)) ?? null
   const historyLoading = useActiveSessionValue((session) => session.historyLoading)
@@ -207,6 +208,13 @@ export function ChatView(): JSX.Element | null {
   const empty =
     nodes?.length === 0 && !streaming && !historyCursor && !historyError && !newerCursor && !newerError
   const streamShown = nodes !== undefined && !empty
+  const newestTurn = useMemo(() => (nodes ? lastTurnStart(nodes) : 0), [nodes])
+  // The newest turn was cut short: it leaves no result row and no
+  // `session_error` either — the process was simply gone — so without this the
+  // thread ends on a tool card with nothing saying why.
+  const interrupted =
+    settled &&
+    (nodes?.some((node, index) => index >= newestTurn && node.kind === 'tool' && node.status === 'running') ?? false)
 
   // The way back down, offered once the newest output is out of following
   // reach. Watched rather than measured on scroll: a session switch or a
@@ -352,7 +360,7 @@ export function ChatView(): JSX.Element | null {
               )}
             </div>
           )}
-          {nodes.map((node) =>
+          {nodes.map((node, index) =>
             node.kind === 'user' && viewAgent ? (
               // A subagent's prompt came from the parent model, not from a
               // checkpointed user message, so it has nothing to rewind to.
@@ -370,7 +378,7 @@ export function ChatView(): JSX.Element | null {
                 onCancel={cancelRewind}
               />
             ) : (
-              <NodeView key={node.id} node={node} />
+              <NodeView key={node.id} node={node} settled={settled || index < newestTurn} />
             ),
           )}
           {streaming && <StreamingRow block={streaming} />}
@@ -403,6 +411,11 @@ export function ChatView(): JSX.Element | null {
               <PermissionCard key={request.requestId} request={request} />
             )
           })}
+          {interrupted && (
+            <div className={`${styles.row} ${styles.rowMuted}`}>
+              <div className={styles.notice}>会话进程已退出，这一轮没有跑完。上面标记为「已中断」的工具不会再有结果。</div>
+            </div>
+          )}
           {error && <div className={`${styles.row} ${styles.rowError}`}>{error}</div>}
           {newerCursor && (
             <button className={styles.jumpLatest} onClick={() => activeId && void jumpToLatest(activeId)} type="button">
@@ -519,7 +532,13 @@ const UserTurn = memo(function UserTurn({
   )
 })
 
-const NodeView = memo(function NodeView({ node }: { node: Exclude<ChatNode, { kind: 'user' }> }): JSX.Element | null {
+const NodeView = memo(function NodeView({
+  node,
+  settled,
+}: {
+  node: Exclude<ChatNode, { kind: 'user' }>
+  settled: boolean
+}): JSX.Element | null {
   switch (node.kind) {
     case 'assistant':
       return (
@@ -530,26 +549,31 @@ const NodeView = memo(function NodeView({ node }: { node: Exclude<ChatNode, { ki
         </div>
       )
 
-    case 'tool':
+    case 'tool': {
+      // The call outlived whatever could have finished it: no pulsing dot, and
+      // each card reads itself as stopped rather than still working.
+      const stale = node.status === 'running' && settled
       return (
         <div
           className={[
             styles.row,
-            node.status === 'running' ? styles.rowPending : '',
+            node.status === 'running' && !stale ? styles.rowPending : '',
+            stale ? styles.rowMuted : '',
             node.status === 'error' ? styles.rowError : '',
           ]
             .filter(Boolean)
             .join(' ')}
         >
           {AGENT_TOOLS.has(node.name) ? (
-            <AgentCard node={node} />
+            <AgentCard node={node} stale={stale} />
           ) : node.name === WORKFLOW_TOOL ? (
-            <WorkflowCard node={node} />
+            <WorkflowCard node={node} stale={stale} />
           ) : (
-            <ToolCard node={node} />
+            <ToolCard node={node} stale={stale} />
           )}
         </div>
       )
+    }
 
     case 'localOutput':
       return (

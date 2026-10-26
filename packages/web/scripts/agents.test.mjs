@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 import { appendTranscript, applyHistoryMessage, prependTranscript } from '../src/render/history.ts'
-import { applyMessage, emptyTranscript, listAgents, parseHandBack } from '../src/render/nodes.ts'
+import { applyMessage, emptyTranscript, lastTurnStart, listAgents, parseHandBack } from '../src/render/nodes.ts'
 
 // A real CLI 2.1.293 run: the main thread spawns two general-purpose
 // subagents in parallel, each reads one file, and the main thread reports.
@@ -189,4 +189,61 @@ test('a newer page appended after the one shown adds up to the whole replay', ()
   assert.deepEqual(listAgents(paged).map((agent) => agent.status), ['completed'])
   assert.deepEqual(paged.pendingNotices, [])
   assert.deepEqual(Object.keys(paged.seen).sort(), Object.keys(whole.seen).sort())
+})
+
+// A runner that dies mid-call never sends the tool_result that would settle
+// its card, so the card is left reading 执行中 forever. `lastTurnStart` is the
+// half of the fix the transcript can answer on its own.
+function toolUse(uuid, id, name = 'Bash') {
+  return {
+    type: 'assistant',
+    uuid,
+    parent_tool_use_id: null,
+    message: { id: `m-${uuid}`, content: [{ type: 'tool_use', id, name, input: {} }], usage: {} },
+  }
+}
+
+function prompt(uuid, text) {
+  return { type: 'user', uuid, message: { role: 'user', content: text } }
+}
+
+/** A reloaded page: prompts only become nodes on the history path. */
+function reread(list) {
+  const transcript = emptyTranscript()
+  for (const entry of list) applyHistoryMessage(transcript, entry)
+  return transcript
+}
+
+test('a tool call with no result is left running, and its turn ends at the next prompt', () => {
+  const transcript = reread([prompt('u1', '跑一下'), toolUse('a1', 'tool-1')])
+  assert.deepEqual(kinds(transcript), ['user', 'tool:Bash'])
+  assert.equal(transcript.nodes[1].status, 'running')
+  // Nothing yet says the turn is over: the session's own state has to answer.
+  assert.equal(lastTurnStart(transcript.nodes), 1)
+
+  // A follow-up proves the crashed turn is over, whatever the session does next.
+  applyHistoryMessage(transcript, prompt('u2', '再试一次'))
+  applyHistoryMessage(transcript, toolUse('a2', 'tool-2'))
+  assert.deepEqual(kinds(transcript), ['user', 'tool:Bash', 'user', 'tool:Bash'])
+  assert.equal(lastTurnStart(transcript.nodes), 3)
+})
+
+test('a result row closes the turn it ends, so live cards before it cannot still be running', () => {
+  const transcript = reread([prompt('u1', '跑一下'), toolUse('a1', 'tool-1')])
+  applyMessage(transcript, {
+    type: 'result',
+    uuid: 'r1',
+    is_error: false,
+    duration_ms: 1,
+    num_turns: 1,
+    total_cost_usd: 0,
+    usage: { input_tokens: 1, output_tokens: 1 },
+  })
+  applyMessage(transcript, toolUse('a2', 'tool-2'))
+  assert.deepEqual(kinds(transcript), ['user', 'tool:Bash', 'result', 'tool:Bash'])
+  assert.equal(lastTurnStart(transcript.nodes), 3)
+})
+
+test('an empty transcript has no turn boundary to find', () => {
+  assert.equal(lastTurnStart([]), 0)
 })

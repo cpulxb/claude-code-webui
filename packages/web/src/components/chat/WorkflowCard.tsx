@@ -27,7 +27,7 @@ const AGENT_STATE_LABEL: Record<string, string> = {
  * the run's phases, every agent under its phase with its state and totals,
  * and each agent one click from its own conversation.
  */
-export const WorkflowCard = memo(function WorkflowCard({ node }: { node: ToolNode }): JSX.Element {
+export const WorkflowCard = memo(function WorkflowCard({ node, stale }: { node: ToolNode; stale: boolean }): JSX.Element {
   const run = useActiveSessionValue((session) => session.transcript.workflows[node.toolUseId])
   const attached = useActiveSessionValue((session) => session.attached) ?? false
   const openAgent = useStore((state) => state.openAgent)
@@ -35,7 +35,9 @@ export const WorkflowCard = memo(function WorkflowCard({ node }: { node: ToolNod
   const [busy, setBusy] = useState(false)
   const [showScript, setShowScript] = useState(false)
 
-  const status: AgentStatus = run?.status ?? (node.status === 'error' ? 'failed' : 'running')
+  const reported: AgentStatus = run?.status ?? (node.status === 'error' ? 'failed' : 'running')
+  // The run cannot outlive the runner that was still waiting on its call.
+  const status: AgentStatus = stale && reported === 'running' ? 'stopped' : reported
   const running = status === 'running'
   const agents = run?.agents ?? []
   const done = agents.filter((agent) => agent.state === 'done').length

@@ -1674,6 +1674,23 @@ export function useActiveSessionValue<T>(select: (session: SessionState) => T): 
 }
 
 /**
+ * Whether nothing in the open session can still be making progress.
+ *
+ * A card leaves `running` only when its tool_result arrives, and a runner that
+ * died mid-call — the server restarted, the container was recycled — never
+ * sends one, so the card would read as 执行中 forever. The session not running
+ * is what says so, but only once its runner has actually been asked about:
+ * between the history read and `adoptRunner` a live turn also looks idle, and
+ * claiming 已中断 there would flash it over output that is still coming.
+ */
+export function useSessionSettled(): boolean {
+  const running = useActiveSessionValue((session) => session.status === 'running') ?? false
+  const attached = useActiveSessionValue((session) => session.attached) ?? false
+  const closed = useActiveSessionValue((session) => session.closed) ?? false
+  return !running && (attached || closed)
+}
+
+/**
  * Folds a subagent's on-disk transcript into its view the first time it is
  * opened. A subagent still streaming into a live view is left alone: its
  * events already built the view, and the JSONL may lag behind them.

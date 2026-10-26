@@ -24,7 +24,7 @@ const CAP_LABEL: Record<Cap, string> = {
  * diff, reads get the file body — a JSON dump for everything else would be
  * unreadable for the three tools that carry most of a session's traffic.
  */
-export const ToolCard = memo(function ToolCard({ node }: { node: ToolNode }): JSX.Element {
+export const ToolCard = memo(function ToolCard({ node, stale }: { node: ToolNode; stale: boolean }): JSX.Element {
   const { title, subtitle } = describe(node)
 
   return (
@@ -37,17 +37,17 @@ export const ToolCard = memo(function ToolCard({ node }: { node: ToolNode }): JS
         )}
       </div>
       <div className={styles.body}>
-        <ToolBody node={node} />
+        <ToolBody node={node} stale={stale} />
       </div>
     </>
   )
 })
 
-function ToolBody({ node }: { node: ToolNode }): JSX.Element {
+function ToolBody({ node, stale }: { node: ToolNode; stale: boolean }): JSX.Element {
   const input = node.input
 
   if (node.name === 'Edit' || node.name === 'Write') {
-    return <EditBody node={node} />
+    return <EditBody node={node} stale={stale} />
   }
 
   const command = stringField(input, 'command')
@@ -58,12 +58,12 @@ function ToolBody({ node }: { node: ToolNode }): JSX.Element {
       ) : (
         <Line gutter="IN" text={summarizeInput(node.name, input)} />
       )}
-      <OutputLine node={node} />
+      <OutputLine node={node} stale={stale} />
     </>
   )
 }
 
-function EditBody({ node }: { node: ToolNode }): JSX.Element {
+function EditBody({ node, stale }: { node: ToolNode; stale: boolean }): JSX.Element {
   const path = stringField(node.input, 'file_path') ?? ''
   const oldText = stringField(node.input, 'old_string')
   const newText = stringField(node.input, 'new_string') ?? stringField(node.input, 'content')
@@ -85,12 +85,15 @@ function EditBody({ node }: { node: ToolNode }): JSX.Element {
             </div>
           ))}
       </div>
-      <OutputLine node={node} />
+      <OutputLine node={node} stale={stale} />
     </>
   )
 }
 
-function OutputLine({ node }: { node: ToolNode }): JSX.Element {
+function OutputLine({ node, stale }: { node: ToolNode; stale: boolean }): JSX.Element {
+  // `stale` means the runner that owed this call a result is gone, so the
+  // wait is over even though the card never got one.
+  if (stale) return <div className={styles.waiting}>已中断 · 没有结果</div>
   if (node.status === 'running') return <div className={styles.waiting}>执行中…</div>
   if (!node.output) return <div className={styles.waiting}>（无输出）</div>
   return <Line gutter="OUT" text={node.output} error={node.status === 'error'} />

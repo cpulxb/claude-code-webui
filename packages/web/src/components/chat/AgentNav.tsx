@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { emptyTranscript, findAgent, listAgents } from '../../render/nodes.ts'
-import { useActiveSessionValue, useStore } from '../../store/session.ts'
+import { emptyTranscript, findAgent, lastTurnStart, listAgents, type AgentRun } from '../../render/nodes.ts'
+import { useActiveSessionValue, useSessionSettled, useStore } from '../../store/session.ts'
 import { ChevronRightIcon } from '../Icons.tsx'
 import { AgentStats, STATUS_LABEL } from './AgentCard.tsx'
 import styles from './AgentCard.module.css'
@@ -42,9 +42,23 @@ export function AgentNav(): JSX.Element | null {
     }
   }
   const refreshAgent = useStore((state) => state.refreshAgent)
+  // The cards' rule, applied to the bar so the two cannot disagree about who
+  // is still working: a subagent from a turn that is already over is stopped,
+  // and the newest turn's are stopped once the session itself is.
+  const settled = useSessionSettled()
+  // The boundary is selected as the number it is, not as the node list it
+  // comes from: `nodes` changes identity on every heartbeat tick, and this
+  // bar must not re-render with them.
+  const newestTurn = useActiveSessionValue((session) => lastTurnStart(session.transcript.nodes)) ?? 0
+  const toolIndex = useActiveSessionValue((session) => session.transcript.toolIndex)
+  const stopped = (agent: AgentRun): AgentRun => {
+    if (agent.status !== 'running') return agent
+    const at = toolIndex?.[agent.toolUseId]
+    return settled || (at !== undefined && at < newestTurn) ? { ...agent, status: 'stopped' } : agent
+  }
 
   // A workflow agent's conversation never streams; poll its file while it runs.
-  const pollKey = current?.workflow && current.status === 'running' ? current.toolUseId : null
+  const pollKey = current?.workflow && current.status === 'running' && !settled ? current.toolUseId : null
   useEffect(() => {
     if (!pollKey) return
     const timer = setInterval(() => void refreshAgent(pollKey).catch(() => {}), 2000)
@@ -53,9 +67,9 @@ export function AgentNav(): JSX.Element | null {
 
   // Inside a workflow the chips are that run's agents; on the main thread
   // they are the subagents, and each workflow card lists its own.
-  const chips = current?.workflow
-    ? agents.filter((agent) => agent.workflow === current.workflow)
-    : agents.filter((agent) => !agent.workflow)
+  const chips = (
+    current?.workflow ? agents.filter((agent) => agent.workflow === current.workflow) : agents.filter((agent) => !agent.workflow)
+  ).map(stopped)
   const workflowCount = useActiveSessionValue((session) => Object.keys(session.transcript.workflows).length) ?? 0
 
   if (agents.length === 0) return null
@@ -81,7 +95,7 @@ export function AgentNav(): JSX.Element | null {
               </>
             )}
             <span className={styles.crumbCurrent}>{current.description || '子代理'}</span>
-            <span className={styles.navLabel}>{STATUS_LABEL[current.status]}</span>
+            <span className={styles.navLabel}>{STATUS_LABEL[stopped(current).status]}</span>
             <AgentStats agent={current} />
             <span className={styles.sep}>|</span>
           </>
