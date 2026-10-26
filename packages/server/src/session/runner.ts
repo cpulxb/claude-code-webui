@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import {
+  getSessionInfo,
   query,
   type AccountInfo,
   type McpServerStatus,
@@ -38,6 +39,9 @@ export type EmitEvent = (event: ServerEvent) => void
 /** Backlog cap — a runaway turn with hundreds of tool calls must not grow memory unbounded. */
 const BACKLOG_LIMIT = 500
 
+/** How often the transcript is re-read for the CLI's AI title while a turn runs without one. */
+const TITLE_POLL_MS = 2000
+
 /**
  * One WebUI session backed by one SDK `Query`, which in turn owns one Claude
  * Code subprocess. Prompts go in through {@link send}; everything the CLI
@@ -61,6 +65,8 @@ export class SessionRunner {
   #interrupted = false
   readonly #backlog: SDKMessage[] = []
   readonly #summary: SessionSummary
+  /** Re-reads the transcript for the CLI's AI title; see {@link #watchTitle}. */
+  #titleTimer: ReturnType<typeof setInterval> | undefined
 
   constructor(config: SessionConfig, emit: EmitEvent) {
     this.config = config
@@ -166,6 +172,9 @@ export class SessionRunner {
           // The turn is over, so nothing still in flight belongs to it: a later
           // top-level assistant frame is a new turn and may say `running` again.
           this.#interrupted = false
+          // The browser re-reads transcripts on this result, which picks up a title
+          // written by now; one written later is caught by the next turn's watch.
+          this.#unwatchTitle()
           // The switch has landed by the next result even when the command
           // was queued behind a running turn (CLI 2.1.304).
           if (this.#modelCommand) {
@@ -196,6 +205,7 @@ export class SessionRunner {
     } finally {
       this.#done = true
       this.#status = 'idle'
+      this.#unwatchTitle()
       for (const requestId of this.#permissions.drain()) {
         this.#emit({ type: 'permission_resolved', sessionId: this.sessionId, requestId })
       }
@@ -222,6 +232,35 @@ export class SessionRunner {
     if (message.type !== 'assistant' && message.type !== 'user' && message.type !== 'system') return
     this.#backlog.push(message)
     if (this.#backlog.length > BACKLOG_LIMIT) this.#backlog.shift()
+  }
+
+  /**
+   * The CLI names an untitled session with a Haiku call made when its first
+   * prompt lands, and appends the title to the transcript. The SDK stream never
+   * reports that write, and the browser only re-reads transcripts when a turn
+   * ends, so a long first turn would keep the prompt as the title. Reading one
+   * transcript's head and tail is cheap, so re-read it until the title shows or
+   * the turn ends.
+   */
+  #watchTitle(): void {
+    if (this.#done || this.#titleTimer || this.#summary.customTitle) return
+    this.#titleTimer = setInterval(() => void this.#readTitle(), TITLE_POLL_MS)
+  }
+
+  #unwatchTitle(): void {
+    clearInterval(this.#titleTimer)
+    this.#titleTimer = undefined
+  }
+
+  async #readTitle(): Promise<void> {
+    const info = await getSessionInfo(this.sessionId, { dir: this.config.cwd }).catch(() => undefined)
+    const title = info?.customTitle
+    // A read still in flight when the session closes must not announce anything.
+    if (this.#done || !title || title === this.#summary.customTitle) return
+    this.#summary.customTitle = title
+    this.#summary.summary = title
+    this.#unwatchTitle()
+    this.#emit({ type: 'session_updated', sessionId: this.sessionId, summary: this.summary })
   }
 
   get done(): boolean {
@@ -267,6 +306,7 @@ export class SessionRunner {
         this.#summary.firstPrompt = text.trim().slice(0, 2000) || '附件消息'
         this.#summary.summary = this.#summary.firstPrompt.replace(/\s+/g, ' ').slice(0, 160)
       }
+      this.#watchTitle()
       this.#emit({ type: 'session_updated', sessionId: this.sessionId, summary: this.summary })
     })
   }
