@@ -6,6 +6,7 @@ import { test } from 'node:test'
 
 import { mergeProjectSessions, type SessionSummary } from '@ccw/shared'
 
+import { coalesce } from '../src/history/session-list.ts'
 import { listProjects } from '../src/history/sessions.ts'
 
 const summary = (sessionId: string, cwd: string, lastModified: number, title = ''): SessionSummary => ({
@@ -120,4 +121,47 @@ test('the list keeps terminal and WebUI sessions but drops claude -p and other h
     else process.env['CLAUDE_CONFIG_DIR'] = previous
     await rm(config, { recursive: true, force: true })
   }
+})
+
+/** A run per call, each settled from the test. */
+function controlledRuns(): { run: () => Promise<number>; started: { resolve: (value: number) => void; reject: (error: Error) => void }[] } {
+  const started: { resolve: (value: number) => void; reject: (error: Error) => void }[] = []
+  const run = (): Promise<number> => new Promise((resolve, reject) => started.push({ resolve, reject }))
+  return { run, started }
+}
+
+const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
+
+test('calls made while the list is read share one read started after it', async () => {
+  const { run, started } = controlledRuns()
+  const read = coalesce(run)
+  const first = read()
+  const second = read()
+  const third = read()
+  assert.equal(started.length, 1)
+
+  started[0]?.resolve(1)
+  assert.equal(await first, 1)
+  await settle()
+  // The first read may predate what the later calls ask about: they get a fresh one.
+  assert.equal(started.length, 2)
+  started[1]?.resolve(2)
+  assert.deepEqual(await Promise.all([second, third]), [2, 2])
+
+  const fourth = read()
+  assert.equal(started.length, 3)
+  started[2]?.resolve(3)
+  assert.equal(await fourth, 3)
+})
+
+test('a failed read reaches its callers and does not stall the next', async () => {
+  const { run, started } = controlledRuns()
+  const read = coalesce(run)
+  const failing = read()
+  const queued = read()
+  started[0]?.reject(new Error('disk gone'))
+  await assert.rejects(failing, /disk gone/)
+  await settle()
+  started[1]?.resolve(7)
+  assert.equal(await queued, 7)
 })

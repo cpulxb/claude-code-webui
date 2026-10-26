@@ -6,13 +6,14 @@ import {
   forkSession,
   getSessionInfo,
   getSessionMessages,
-  listSessions,
   renameSession,
   type SDKSessionInfo,
   type SessionStoreEntry,
 } from '@anthropic-ai/claude-agent-sdk'
 import type { PermissionMode, ProjectGroup, SessionMessage, SessionSummary, SubagentMeta, WorkflowRecord } from '@ccw/shared'
 import { mergeProjectSessions } from '@ccw/shared'
+
+import { listSavedSessions } from './session-list.ts'
 
 /**
  * Reads the same on-disk transcripts the terminal's `/resume` picker reads
@@ -24,7 +25,7 @@ import { mergeProjectSessions } from '@ccw/shared'
  * — `claude -p` and the like — are filtered out here.
  */
 export async function listProjects(liveSessions: SessionSummary[] = []): Promise<ProjectGroup[]> {
-  const [sessions, headless] = await Promise.all([listSessions({ includeProgrammatic: true }), headlessSessionIds()])
+  const [sessions, headless] = await Promise.all([listSavedSessions(), headlessSessionIds()])
   const kept = sessions.filter((session) => !headless.has(session.sessionId))
   // The SDK omits a new session until its transcript contains a user prompt.
   // Merge runner metadata so an empty or still-streaming session is visible.
