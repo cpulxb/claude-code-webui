@@ -462,7 +462,8 @@ export type RpcMap = {
    * Lists the models a channel offers, with the page's unsaved address and
    * key. Asked from the server because the browser could not reach most
    * gateways (CORS), and requested the way the CLI would: same auth header,
-   * same proxy variables. Fails with the reason, the key never included.
+   * same proxy variables. A key refused there is tried in the other auth
+   * header. Fails with the reason, the key never included.
    */
   'settings.fetchModels': {
     params: { baseUrl: string; authField: 'ANTHROPIC_AUTH_TOKEN' | 'ANTHROPIC_API_KEY'; key: string }

@@ -81,6 +81,39 @@ test('the key goes in the header of the chosen auth field, and only there', asyn
   assert.equal(apiKey!['anthropic-version'], '2023-06-01')
 })
 
+test('a key refused in the chosen header is tried in the other, as a gateway listing models only for one needs', async (t) => {
+  const onlyBearer = await gateway(t, (req, res) => {
+    if (req.headers['authorization'] === 'Bearer sk-a') json({ data: [{ id: 'claude-opus-5-5' }] })(req, res)
+    else json({ error: { message: 'Invalid or revoked API key.' } }, 401)(req, res)
+  })
+  const models = await fetchUpstreamModels({ baseUrl: onlyBearer.url, authField: 'ANTHROPIC_API_KEY', key: 'sk-a' })
+  assert.deepEqual(models, [{ id: 'claude-opus-5-5' }])
+  assert.deepEqual(onlyBearer.seen.map((req) => [req.headers['x-api-key'], req.headers['authorization']]), [
+    ['sk-a', undefined],
+    [undefined, 'Bearer sk-a'],
+  ])
+
+  const onlyApiKey = await gateway(t, (req, res) => {
+    if (req.headers['x-api-key'] === 'sk-b') json({ data: [{ id: 'claude-haiku-5-5' }] })(req, res)
+    else json({ error: { message: 'missing x-api-key' } }, 403)(req, res)
+  })
+  const others = await fetchUpstreamModels({ baseUrl: onlyApiKey.url, authField: 'ANTHROPIC_AUTH_TOKEN', key: 'sk-b' })
+  assert.deepEqual(others, [{ id: 'claude-haiku-5-5' }])
+})
+
+test('refused in both headers, the chosen one is reported; without a key, nothing is retried', async (t) => {
+  const { url, seen } = await gateway(t, (req, res) => {
+    json({ error: { message: req.headers['x-api-key'] ? 'invalid x-api-key' : 'OAuth is not supported' } }, 401)(req, res)
+  })
+  const error = await fetchUpstreamModels({ baseUrl: url, authField: 'ANTHROPIC_API_KEY', key: 'sk-c' }).catch((cause: Error) => cause)
+  assert.ok(error instanceof Error)
+  assert.equal(error.message, `${url}/v1/models 返回 401：invalid x-api-key`)
+  assert.equal(seen.length, 2)
+
+  await fetchUpstreamModels({ baseUrl: url, authField: 'ANTHROPIC_API_KEY', key: ' ' }).catch(() => {})
+  assert.equal(seen.length, 3)
+})
+
 test('a base address with a path keeps it, trailing slashes dropped', async (t) => {
   const { url, seen } = await gateway(t, json({ data: [] }))
   await fetchUpstreamModels({ baseUrl: `${url}/anthropic//`, ...bearer })

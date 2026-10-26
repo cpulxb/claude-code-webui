@@ -13,6 +13,8 @@ type ProxiedAgentOptions = http.AgentOptions & { proxyEnv?: NodeJS.ProcessEnv }
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
+const ok = (status: number): boolean => status >= 200 && status < 300
+
 /**
  * Lists what `<baseUrl>/v1/models` offers, asked the way the CLI asks its
  * channel: the same auth header for the chosen field, and HTTPS_PROXY /
@@ -22,20 +24,29 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 export async function fetchUpstreamModels({ baseUrl, authField, key }: Channel, timeoutMs = TIMEOUT_MS): Promise<UpstreamModel[]> {
   const url = modelsUrl(baseUrl)
   const token = key.trim()
-  const headers: Record<string, string> = {
-    accept: 'application/json',
-    'anthropic-version': '2023-06-01',
-    ...(token ? (authField === 'ANTHROPIC_API_KEY' ? { 'x-api-key': token } : { authorization: `Bearer ${token}` }) : {}),
+  const ask = async (field: Channel['authField']): Promise<{ status: number; body: string }> => {
+    const headers: Record<string, string> = {
+      accept: 'application/json',
+      'anthropic-version': '2023-06-01',
+      ...(token ? (field === 'ANTHROPIC_API_KEY' ? { 'x-api-key': token } : { authorization: `Bearer ${token}` }) : {}),
+    }
+    try {
+      return await get(url, headers, timeoutMs)
+    } catch (error) {
+      throw new Error(`连不上 ${url.host}：${reason(error, timeoutMs)}`)
+    }
   }
 
-  let reply: { status: number; body: string }
-  try {
-    reply = await get(url, headers, timeoutMs)
-  } catch (error) {
-    throw new Error(`连不上 ${url.host}：${reason(error, timeoutMs)}`)
+  let reply = await ask(authField)
+  // Some gateways take x-api-key on /v1/messages, where the CLI uses it, but
+  // list models only for a Bearer token (all CC Switch ever sends), or the
+  // reverse. Refused in both, the chosen header's refusal is the one reported.
+  if (token && (reply.status === 401 || reply.status === 403)) {
+    const retry = await ask(authField === 'ANTHROPIC_API_KEY' ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY')
+    if (ok(retry.status)) reply = retry
   }
   const endpoint = `${url.origin}${url.pathname}`
-  if (reply.status < 200 || reply.status >= 300) throw new Error(`${endpoint} 返回 ${reply.status}${detail(reply.body)}`)
+  if (!ok(reply.status)) throw new Error(`${endpoint} 返回 ${reply.status}${detail(reply.body)}`)
 
   let json: unknown
   try {
