@@ -1,5 +1,5 @@
 import type { SettingsOverride, UserSettings } from '@ccw/shared'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 
 import { call } from '../../api/client.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
@@ -15,9 +15,8 @@ import {
   type SettingsForm,
 } from '../../utils/settings.ts'
 import dialog from '../auth/Auth.module.css'
-import { ConfirmDialog } from '../ConfirmDialog.tsx'
 import { CodeEditor } from '../details/CodeEditor.tsx'
-import { ChevronRightIcon, EyeIcon, EyeOffIcon, XIcon } from '../Icons.tsx'
+import { ArrowLeftIcon, ChevronRightIcon, EyeIcon, EyeOffIcon } from '../Icons.tsx'
 import { ModelList, type UpstreamAnswer } from './ModelList.tsx'
 import styles from './Settings.module.css'
 
@@ -50,19 +49,23 @@ function parseJson(text: string): Json {
 const showAsJson = (settings: Json): string => JSON.stringify(maskSecrets(settings), null, 2)
 
 /**
- * Edits the user-level settings.json: the channel and the model menu as a
- * form, everything else as JSON. Live sessions pick a saved channel up at
- * their next model refresh — the composer runs one every few seconds.
+ * The user-level settings.json at `/settings`: the channel and the model menu
+ * as a form, beside the whole file as JSON, each following the other's edits.
+ * Nothing is written until 保存, and leaving the page drops what was not
+ * saved. Live sessions pick a saved channel up at their next model refresh —
+ * the composer runs one every few seconds.
  */
-export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Element {
+export function SettingsPage({ onLeave }: { onLeave: () => void }): JSX.Element {
   const cwd = useActiveSessionValue((session) => session.cwd)
   const refreshModels = useStore((state) => state.refreshModels)
   const [loaded, setLoaded] = useState<UserSettings | null>(null)
-  /** What the form is applied over: the file, plus edits made in the JSON view. */
+  /** What the form is applied over: the file, or the JSON as last typed. */
   const [base, setBase] = useState<Json>({})
   const [form, setForm] = useState<SettingsForm>(() => toForm({}))
-  /** The JSON view's text; null while the form is shown. */
-  const [json, setJson] = useState<string | null>(null)
+  /** The JSON as typed, until the next form edit; null while it shows what the form makes of `base`. */
+  const [typed, setTyped] = useState<string | null>(null)
+  /** Why `typed` does not parse; the form waits until it does. */
+  const [jsonError, setJsonError] = useState<string | null>(null)
   const [showKey, setShowKey] = useState(false)
   const [rolesOpen, setRolesOpen] = useState(false)
   /** The last 获取模型列表, with the channel it was asked of. */
@@ -72,56 +75,55 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
   /** Set by a save, and shown until the next edit. */
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  /** Closing with unsaved edits, waiting on 放弃修改 / 继续编辑. */
-  const [discarding, setDiscarding] = useState(false)
+  const page = useRef<HTMLDivElement>(null)
+  /** Counts reads and writes, so a read still out cannot land over a later one. */
+  const requests = useRef(0)
 
-  const show = (next: UserSettings, asJson: boolean): void => {
+  const show = (next: UserSettings): void => {
     setLoaded(next)
     setBase(next.settings)
     setForm(toForm(next.settings))
-    setJson(asJson ? showAsJson(next.settings) : null)
+    setTyped(null)
+    setJsonError(null)
     setError(null)
   }
 
   const load = async (): Promise<void> => {
+    const request = ++requests.current
     try {
-      show(await call('settings.read', cwd ? { cwd } : {}), false)
+      const next = await call('settings.read', cwd ? { cwd } : {})
+      if (request !== requests.current) return
+      show(next)
       setSaved(false)
     } catch (cause) {
-      setError(describe(cause))
+      if (request === requests.current) setError(describe(cause))
     }
   }
 
-  useEffect(() => {
-    void load()
-    // Mount-only: switching sessions behind the dialog must not drop its edits.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  let draft: Json | null = null
-  let jsonError: string | null = null
-  try {
-    draft = json === null ? applyForm(base, form) : unmaskSecrets(parseJson(json), base)
-  } catch (cause) {
-    jsonError = describe(cause)
-  }
+  const draft: Json | null = jsonError !== null ? null : typed === null ? applyForm(base, form) : base
   const dirty = loaded !== null && (draft === null || JSON.stringify(draft) !== JSON.stringify(loaded.settings))
-  const problems = jsonError ? [`JSON 有误：${jsonError}`] : json === null ? formProblems(form) : []
+  const problems = jsonError !== null ? [`JSON 有误：${jsonError}`] : formProblems(form)
   const canSave = loaded !== null && dirty && problems.length === 0 && !saving
 
-  const close = (): void => {
-    if (dirty) setDiscarding(true)
-    else onClose()
-  }
+  // Read again as the session beneath changes, for the overrides its project
+  // adds — a reload of this page opens that session a moment later. Never
+  // over edits.
+  useEffect(() => {
+    if (!dirty) void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cwd])
+
+  useEffect(() => page.current?.focus(), [])
 
   const save = async (): Promise<void> => {
     if (!canSave || !draft) return
+    requests.current += 1
     setSaving(true)
     setError(null)
     try {
       const next = await call('settings.write', { settings: draft, revision: loaded.revision, ...(cwd ? { cwd } : {}) })
       void refreshModels()
-      show(next, json !== null)
+      show(next)
       setSaved(true)
     } catch (cause) {
       setError(describe(cause))
@@ -130,34 +132,34 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
     }
   }
 
-  const keys = useRef({ close, save })
-  keys.current = { close, save }
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') keys.current.close()
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-        event.preventDefault()
-        void keys.current.save()
-      }
+  // Keys stay on the page: the workspace beneath listens on the window for
+  // its own shortcuts, such as Ctrl+P for its file tree.
+  const onKeyDown = (event: KeyboardEvent): void => {
+    event.stopPropagation()
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+      event.preventDefault()
+      void save()
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
-  const showJson = (): void => {
-    const next = applyForm(base, form)
-    setBase(next)
-    setJson(showAsJson(next))
   }
 
-  const showForm = (): void => {
-    if (!draft) return
-    setBase(draft)
-    setForm(toForm(draft))
-    setJson(null)
+  const patch = (next: Partial<SettingsForm>): void => {
+    setForm((current) => ({ ...current, ...next }))
+    // The JSON shows what the form makes again, in place of the text typed there.
+    setTyped(null)
   }
 
-  const patch = (next: Partial<SettingsForm>): void => setForm((current) => ({ ...current, ...next }))
+  const editJson = (text: string): void => {
+    setTyped(text)
+    try {
+      // A masked key stands for the one the form holds now.
+      const next = unmaskSecrets(parseJson(text), draft ?? base)
+      setBase(next)
+      setForm(toForm(next))
+      setJsonError(null)
+    } catch (cause) {
+      setJsonError(describe(cause))
+    }
+  }
 
   // A list fetched with another address or key belongs to another channel: it is dropped once those change.
   const channel = JSON.stringify([form.baseUrl.trim(), form.authField, form.key])
@@ -198,52 +200,26 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
   } else if (saved && !dirty) {
     status = <span className={styles.statusSaved}>已保存。渠道和模型列表在会话空闲时切换，其他设置对新会话生效。</span>
   } else if (dirty) {
-    status = <span className={styles.statusDirty}>有未保存的修改</span>
+    status = <span className={styles.statusDirty}>有未保存的修改，离开这个页面就会丢弃</span>
   }
 
   return (
-    <div className={dialog.backdrop} onMouseDown={close}>
-      <div
-        className={`${dialog.dialog} ${styles.dialog}`}
-        onMouseDown={(event) => event.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="设置"
-      >
-        <div className={dialog.dialogHead}>
-          <span className={dialog.dialogTitle}>设置</span>
-          <div className={styles.tabs} role="tablist">
-            <button
-              className={json === null ? styles.tabActive : styles.tab}
-              onClick={json === null ? undefined : showForm}
-              disabled={!loaded || jsonError !== null}
-              type="button"
-              role="tab"
-              aria-selected={json === null}
-              title={jsonError ? 'JSON 有误，改好才能切回表单' : undefined}
-            >
-              表单
-            </button>
-            <button
-              className={json !== null ? styles.tabActive : styles.tab}
-              onClick={json === null ? showJson : undefined}
-              disabled={!loaded}
-              type="button"
-              role="tab"
-              aria-selected={json !== null}
-            >
-              JSON
-            </button>
-          </div>
-          <span className={dialog.spacer} />
-          <button className={dialog.close} onClick={close} type="button" aria-label="关闭">
-            <XIcon />
-          </button>
-        </div>
+    <div ref={page} className={styles.page} tabIndex={-1} onKeyDown={onKeyDown} role="region" aria-label="设置">
+      <div className={styles.head}>
+        <button className={styles.back} onClick={onLeave} type="button" title="回到会话，没保存的修改会丢弃">
+          <ArrowLeftIcon size={15} />
+          返回
+        </button>
+        <span className={styles.title}>设置</span>
+        {loaded && (
+          <span className={styles.path} title={loaded.path}>
+            {loaded.path}
+          </span>
+        )}
+      </div>
 
-        {loaded && <div className={styles.path}>{loaded.path}</div>}
-
-        <div className={styles.body}>
+      <div className={styles.panes}>
+        <div className={styles.formPane}>
           {loaded && loaded.overrides.length > 0 && (
             <div className={styles.warning}>
               下面这些设置被优先级更高的配置覆盖，在这里修改不会生效：
@@ -258,19 +234,12 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
             </div>
           )}
 
+          {jsonError !== null && <div className={styles.warning}>JSON 有误，改好之前表单停在上一次能解析的内容，不能编辑。</div>}
+
           {!loaded ? (
             !error && <div className={dialog.muted}>读取中…</div>
-          ) : json !== null ? (
-            <>
-              <div className={dialog.muted}>
-                密钥显示为 {SECRET_MASK}，保持不变就不会修改；要查看或修改密钥，回到表单。这里的大多数设置对新会话生效。
-              </div>
-              <div className={styles.editor}>
-                <CodeEditor path="settings.json" value={json} readOnly={false} dirty={false} onChange={setJson} />
-              </div>
-            </>
           ) : (
-            <>
+            <fieldset className={styles.form} disabled={jsonError !== null}>
               <section className={styles.section}>
                 <div className={dialog.sectionTitle}>渠道</div>
                 <div className={styles.field}>
@@ -387,40 +356,43 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
                   </>
                 )}
               </section>
-            </>
+            </fieldset>
           )}
         </div>
 
-        <div className={styles.footer}>
-          <div className={styles.status} role="status">
-            {status}
+        <div className={styles.jsonPane}>
+          <div className={dialog.sectionTitle}>settings.json</div>
+          <div className={dialog.muted}>
+            和左边的表单互相同步。密钥显示为 {SECRET_MASK}，保持不变就不会修改；要查看或修改密钥，在表单里改。这里的大多数设置对新会话生效。
           </div>
-          <button className={dialog.button} onClick={close} type="button">
-            {dirty ? '取消' : '关闭'}
-          </button>
-          <button
-            className={`${dialog.button} ${dialog.primary}`}
-            onClick={() => void save()}
-            disabled={!canSave}
-            type="button"
-            title="Ctrl/⌘ + S"
-          >
-            {saving ? '保存中…' : '保存'}
-          </button>
+          {loaded && (
+            <div className={styles.editor}>
+              <CodeEditor
+                path="settings.json"
+                value={typed ?? (draft ? showAsJson(draft) : '')}
+                readOnly={false}
+                dirty={false}
+                onChange={editJson}
+              />
+            </div>
+          )}
         </div>
       </div>
 
-      {discarding && (
-        <ConfirmDialog
-          title="放弃未保存的修改？"
-          message="设置里还有没保存的修改，关闭后会丢失。"
-          confirmLabel="放弃修改"
-          cancelLabel="继续编辑"
-          danger
-          onConfirm={onClose}
-          onCancel={() => setDiscarding(false)}
-        />
-      )}
+      <div className={styles.footer}>
+        <div className={styles.status} role="status">
+          {status}
+        </div>
+        <button
+          className={`${dialog.button} ${dialog.primary}`}
+          onClick={() => void save()}
+          disabled={!canSave}
+          type="button"
+          title="Ctrl/⌘ + S"
+        >
+          {saving ? '保存中…' : '保存'}
+        </button>
+      </div>
     </div>
   )
 }

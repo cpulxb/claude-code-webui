@@ -17,7 +17,7 @@ export function ModelPicker(props: {
   rootRef?: React.Ref<HTMLDivElement>
   onSelect: (model: ModelInfo) => void
   onHover: (index: number) => void
-  /** Opens the settings dialog, where the menu's rows are configured. */
+  /** Opens the settings page, where the menu's rows are configured. */
   onManage: () => void
 }): JSX.Element {
   const activeRef = useRef<HTMLButtonElement>(null)

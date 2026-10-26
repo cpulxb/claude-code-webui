@@ -1,5 +1,5 @@
 /**
- * The settings dialog's form, and how it maps onto `~/.claude/settings.json`.
+ * The settings page's form, and how it maps onto `~/.claude/settings.json`.
  * Everything the form does not edit is carried over untouched.
  */
 

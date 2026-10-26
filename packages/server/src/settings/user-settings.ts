@@ -7,7 +7,7 @@ import type { SettingsOverride, UserSettings } from '@ccw/shared'
 
 import { claudeConfigDir } from '../history/sessions.ts'
 
-/** The env names the dialog's form edits; overrides of any other are not reported. */
+/** The env names the settings page's form edits; overrides of any other are not reported. */
 const FORM_ENV = /^(?:ANTHROPIC_(?:BASE_URL|AUTH_TOKEN|API_KEY|MODEL|SMALL_FAST_MODEL|DEFAULT_\w+_MODEL)|CLAUDE_CODE_SUBAGENT_MODEL)$/
 
 export async function readUserSettings(cwd?: string): Promise<UserSettings> {
@@ -101,7 +101,7 @@ function validate(settings: unknown): asserts settings is Record<string, unknown
 }
 
 /**
- * Sources above the user file that set a field the form edits, so the dialog
+ * Sources above the user file that set a field the form edits, so the page
  * can say why a saved value has no effect. Without a cwd only the user and
  * policy tiers are read: the server's own directory is no project of the user's.
  */

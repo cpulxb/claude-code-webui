@@ -293,6 +293,16 @@ export function ArrowUpIcon(props: { size?: number }): JSX.Element {
   )
 }
 
+/** 设置页左上角的「返回」。 */
+export function ArrowLeftIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="m12 19-7-7 7-7" />
+      <path d="M19 12H5" />
+    </Icon>
+  )
+}
+
 /** 对话往上翻时的「回到底部」。 */
 export function ArrowDownIcon(props: { size?: number }): JSX.Element {
   return (

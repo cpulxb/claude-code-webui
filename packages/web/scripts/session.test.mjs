@@ -30,7 +30,7 @@ globalThis.fetch = async (_url, options) => {
   return new Response(JSON.stringify({ ok: true, result: await rpc(method, params) }))
 }
 
-const { followAddressBar, useStore } = await import('../src/store/session.ts')
+const { followAddressBar, leaveSettings, useStore } = await import('../src/store/session.ts')
 
 function deferred() {
   let resolve
@@ -432,8 +432,9 @@ function conversation(sessionId, turns) {
 const texts = (sessionId) => JSON.stringify(useStore.getState().sessions[sessionId].transcript.nodes)
 
 /** A history stack behind `window.history`, starting on `path`; `back` fires popstate as a browser does. */
-function addressBar(t, path, { remount = false } = {}) {
+function addressBar(t, path, { remount = false, state = null } = {}) {
   const entries = [path]
+  const states = [state]
   let index = 0
   const listeners = new Set()
   const show = (url) => {
@@ -441,16 +442,25 @@ function addressBar(t, path, { remount = false } = {}) {
     Object.assign(window.location, { origin, pathname, search, hash })
   }
   show(path)
+  const back = () => {
+    index -= 1
+    show(entries[index])
+    navigated()
+  }
   window.history = {
-    pushState: (_state, _title, url) => {
+    get state() { return states[index] },
+    pushState: (state, _title, url) => {
       entries.splice(index + 1, Infinity, url)
+      states.splice(index + 1, Infinity, state)
       index += 1
       show(url)
     },
-    replaceState: (_state, _title, url) => {
+    replaceState: (state, _title, url) => {
       entries[index] = url
+      states[index] = state
       show(url)
     },
+    back,
   }
   window.addEventListener = (_type, listener) => listeners.add(listener)
   window.removeEventListener = (_type, listener) => listeners.delete(listener)
@@ -462,11 +472,7 @@ function addressBar(t, path, { remount = false } = {}) {
   }
   return {
     entries: () => [...entries],
-    back() {
-      index -= 1
-      show(entries[index])
-      navigated()
-    },
+    back,
     forward() {
       index += 1
       show(entries[index])
@@ -684,4 +690,77 @@ test('back and forward between a message and the end move the view between them'
   assert.equal(session.anchor.id, null)
   assert.equal(session.newerCursor, null)
   assert.deepEqual(bar.entries(), [`/s/${A}#m-u10`, `/s/${A}`])
+})
+
+test('the settings page is a step over the session, and leaving it steps back', async (t) => {
+  saved({ [A]: '/a' })
+  const bar = addressBar(t, `/s/${A}`)
+  await drain()
+  useStore.getState().setSettingsOpen(true)
+  assert.deepEqual(bar.entries(), [`/s/${A}`, '/settings'])
+  leaveSettings()
+  await drain()
+  assert.equal(useStore.getState().settingsOpen, false)
+  assert.equal(useStore.getState().activeId, A)
+  assert.equal(window.location.pathname, `/s/${A}`)
+  assert.deepEqual(bar.entries(), [`/s/${A}`, '/settings'])
+})
+
+test('back and forward step off and onto the settings page', async (t) => {
+  saved({ [A]: '/a' })
+  const bar = addressBar(t, `/s/${A}`)
+  await drain()
+  useStore.getState().setSettingsOpen(true)
+  bar.back()
+  await drain()
+  assert.equal(useStore.getState().settingsOpen, false)
+  bar.forward()
+  await drain()
+  assert.equal(useStore.getState().settingsOpen, true)
+  assert.equal(useStore.getState().activeId, A)
+  assert.deepEqual(bar.entries(), [`/s/${A}`, '/settings'])
+})
+
+test('a reload on the settings page shows it over the session last open', async (t) => {
+  const located = saved({ [A]: '/a' })
+  storage.set('ccw.activeSession', JSON.stringify({ sessionId: A, cwd: '/a' }))
+  const bar = addressBar(t, '/settings')
+  await drain()
+  assert.equal(useStore.getState().settingsOpen, true)
+  assert.equal(useStore.getState().activeId, A)
+  assert.deepEqual(located, [])
+  assert.deepEqual(bar.entries(), ['/settings'])
+  // Nothing behind it in this tab to step back to: leaving opens the session.
+  leaveSettings()
+  await drain()
+  assert.equal(useStore.getState().settingsOpen, false)
+  assert.deepEqual(bar.entries(), ['/settings', `/s/${A}`])
+})
+
+test('a reload keeps a settings page opened within the tab stepping back', async (t) => {
+  saved({ [A]: '/a' })
+  const bar = addressBar(t, `/s/${A}`)
+  await drain()
+  useStore.getState().setSettingsOpen(true)
+  // The reload: a fresh mount on the same entry, whose state the browser keeps.
+  t.after(followAddressBar())
+  await drain()
+  leaveSettings()
+  await drain()
+  assert.equal(useStore.getState().settingsOpen, false)
+  assert.equal(window.location.pathname, `/s/${A}`)
+  assert.deepEqual(bar.entries(), [`/s/${A}`, '/settings'])
+})
+
+test('a session closing beneath the settings page leaves the address on it', async (t) => {
+  saved({ [A]: '/a', [B]: '/b' })
+  const bar = addressBar(t, `/s/${A}`)
+  await drain()
+  await useStore.getState().openSession(B, '/b')
+  await drain()
+  useStore.getState().setSettingsOpen(true)
+  await useStore.getState().closeSession(B)
+  assert.equal(useStore.getState().activeId, A)
+  assert.equal(window.location.pathname, '/settings')
+  assert.deepEqual(bar.entries(), [`/s/${A}`, `/s/${B}`, '/settings'])
 })

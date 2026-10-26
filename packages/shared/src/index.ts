@@ -248,7 +248,7 @@ export type UpdateStatus = {
   progress: UpdateProgress | null
 }
 
-/** A field the settings dialog edits that a higher-precedence source also sets. */
+/** A field the settings page edits that a higher-precedence source also sets. */
 export type SettingsOverride = {
   /** `model`, `modelPicker`, or `env.<NAME>`. */
   key: string
@@ -256,7 +256,7 @@ export type SettingsOverride = {
   path?: string
 }
 
-/** The user-level `settings.json` the settings dialog edits. */
+/** The user-level `settings.json` the settings page edits. */
 export type UserSettings = {
   path: string
   /** `{}` while the file does not exist. */
@@ -459,7 +459,7 @@ export type RpcMap = {
     result: UserSettings
   }
   /**
-   * Lists the models a channel offers, with the dialog's unsaved address and
+   * Lists the models a channel offers, with the page's unsaved address and
    * key. Asked from the server because the browser could not reach most
    * gateways (CORS), and requested the way the CLI would: same auth header,
    * same proxy variables. Fails with the reason, the key never included.

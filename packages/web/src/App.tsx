@@ -9,9 +9,9 @@ import { ChatView } from './components/chat/ChatView.tsx'
 import { Composer } from './components/composer/Composer.tsx'
 import { DetailsPanel } from './components/details/DetailsPanel.tsx'
 import { BrandMark, MoonIcon, PanelLeftIcon, PanelRightIcon, SunIcon } from './components/Icons.tsx'
-import { SettingsDialog } from './components/settings/SettingsDialog.tsx'
+import { SettingsPage } from './components/settings/SettingsPage.tsx'
 import { Sidebar } from './components/sidebar/Sidebar.tsx'
-import { followAddressBar, useActiveSessionValue, useStore } from './store/session.ts'
+import { followAddressBar, leaveSettings, useActiveSessionValue, useStore } from './store/session.ts'
 import { sessionTitle } from './utils/session-title.ts'
 
 /** Phone widths, where the side panels become drawers. Matches the 640px media queries in the CSS modules. */
@@ -63,7 +63,6 @@ function Workspace(): JSX.Element {
   const activeId = useStore((state) => state.activeId)
   const summary = useStore(activeSummary)
   const settingsOpen = useStore((state) => state.settingsOpen)
-  const setSettingsOpen = useStore((state) => state.setSettingsOpen)
   const narrow = useNarrow()
 
   // A phone opens on the conversation; the session list is a drawer away.
@@ -158,8 +157,8 @@ function Workspace(): JSX.Element {
           </div>
         }
       />
-      {/* Outside the frame: a drawer's stacking context would cap the dialog on phones. */}
-      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+      {/* Over the frame, which stays mounted beneath so its sessions keep running; outside it, as a drawer's stacking context would cap the page on phones. */}
+      {settingsOpen && <SettingsPage onLeave={leaveSettings} />}
     </>
   )
 }

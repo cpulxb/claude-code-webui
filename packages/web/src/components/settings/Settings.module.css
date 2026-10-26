@@ -1,54 +1,99 @@
-/* Layout on top of the shared dialog in Auth.module.css: the head and the
-   buttons stay put while the form scrolls between them. */
-.dialog {
-  width: min(980px, 94vw);
-  max-height: min(860px, 92vh);
-  overflow: hidden;
-}
-
-.body {
+/* The settings page: a layer over the workspace, which stays mounted beneath
+   so its sessions keep running. The form and the JSON sit side by side as
+   cards, each scrolling on its own, between the head and the save bar. */
+.page {
+  position: fixed;
+  inset: 0;
+  z-index: 90; /* over the workspace, under dialogs (100) and the model menu (110) */
   display: flex;
-  flex: 1;
   flex-direction: column;
-  gap: var(--ccw-space-5);
-  min-height: 0;
-  padding-right: var(--ccw-space-1);
-  overflow-y: auto;
+  background: var(--ccw-bg-sidebar);
+  outline: none;
 }
 
-.tabs {
+.head {
   display: flex;
-  gap: 2px;
-  padding: 2px;
-  margin-left: var(--ccw-space-4);
-  background: var(--ccw-bg-sunken);
-  border-radius: var(--ccw-radius-pill);
-}
-
-.tab,
-.tabActive {
-  padding: 2px 12px;
-  font-size: var(--ccw-text-sm);
-  color: var(--ccw-text-muted);
-  border-radius: var(--ccw-radius-pill);
-}
-
-.tab:hover:not(:disabled) {
-  color: var(--ccw-text-primary);
-}
-
-.tabActive {
-  color: var(--ccw-text-primary);
+  gap: var(--ccw-space-3);
+  align-items: center;
+  padding: var(--ccw-space-3) var(--ccw-space-4);
   background: var(--ccw-bg-base);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+  border-bottom: 1px solid var(--ccw-border-l2);
+}
+
+.back {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 10px 4px 6px;
+  font-size: var(--ccw-text-base);
+  color: var(--ccw-text-secondary);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.back:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.title {
+  flex: none;
+  font-size: var(--ccw-text-md);
+  font-weight: 600;
 }
 
 .path {
-  margin-top: calc(-1 * var(--ccw-space-3));
+  min-width: 0;
+  overflow: hidden;
   font-family: var(--ccw-font-mono);
   font-size: var(--ccw-text-xs);
   color: var(--ccw-text-faint);
-  word-break: break-all;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panes {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: var(--ccw-space-4);
+  min-height: 0;
+  padding: var(--ccw-space-4) var(--ccw-space-5);
+}
+
+.formPane,
+.jsonPane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ccw-space-4);
+  min-height: 0;
+  padding: var(--ccw-space-5);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-lg);
+}
+
+.formPane {
+  overflow-y: auto;
+}
+
+.jsonPane {
+  gap: var(--ccw-space-2);
+}
+
+/* A fieldset, so a JSON that does not parse disables the whole form at once. */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ccw-space-5);
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.form:disabled {
+  opacity: 0.5;
 }
 
 .warning {
@@ -72,7 +117,12 @@
 .section {
   display: flex;
   flex-direction: column;
-  gap: var(--ccw-space-2);
+  gap: var(--ccw-space-3);
+}
+
+.section + .section {
+  padding-top: var(--ccw-space-5);
+  border-top: 1px solid var(--ccw-border-l2);
 }
 
 .sectionHead {
@@ -80,17 +130,18 @@
   align-items: center;
 }
 
+/* Label above, input across the whole width. */
 .field {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: var(--ccw-space-2);
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .label {
   overflow: hidden;
   font-size: var(--ccw-text-base);
-  color: var(--ccw-text-secondary);
+  font-weight: 500;
+  color: var(--ccw-text-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -98,7 +149,7 @@
 .input {
   width: 100%;
   min-width: 0;
-  padding: 6px 10px;
+  padding: 7px 12px;
   font-size: var(--ccw-text-base);
   color: inherit;
   background: var(--ccw-bg-base);
@@ -200,7 +251,7 @@
   min-width: 0;
 }
 
-/* Placed by the component, from its field's position, on the page above the dialog's backdrop. */
+/* Placed by the component, from its field's position, on the document above the page. */
 .menu {
   position: fixed;
   z-index: 110;
@@ -423,10 +474,11 @@
   transform: rotate(90deg);
 }
 
-/* --- JSON view and footer ------------------------------------------------ */
+/* --- JSON and save bar -------------------------------------------------- */
 
 .editor {
-  height: min(520px, 56vh);
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid var(--ccw-border-l1);
   border-radius: var(--ccw-radius-md);
@@ -436,6 +488,9 @@
   display: flex;
   gap: var(--ccw-space-2);
   align-items: center;
+  padding: var(--ccw-space-3) var(--ccw-space-5);
+  background: var(--ccw-bg-base);
+  border-top: 1px solid var(--ccw-border-l2);
 }
 
 .status {
@@ -456,19 +511,43 @@
   color: var(--ccw-text-muted);
 }
 
-/* Phones: the dialog takes the screen, and each model row stacks its fields. */
-@media (max-width: 640px) {
-  .dialog {
-    width: 100vw;
-    height: 100dvh;
-    max-height: none;
-    padding: var(--ccw-space-4);
-    border-radius: 0;
+/* Too narrow for two columns: the JSON follows the form, and the page scrolls as one. */
+@media (max-width: 1024px) {
+  .panes {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
   }
 
-  .field {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
+  .formPane {
+    flex: none;
+    overflow-y: visible;
+  }
+
+  .jsonPane {
+    flex: none;
+    height: 70vh;
+  }
+}
+
+/* Phones: the cards meet the screen's edges, and each model row stacks its fields. */
+@media (max-width: 640px) {
+  .head {
+    padding: var(--ccw-space-2) var(--ccw-space-3);
+  }
+
+  .panes {
+    gap: var(--ccw-space-3);
+    padding: var(--ccw-space-3);
+  }
+
+  .formPane,
+  .jsonPane {
+    padding: var(--ccw-space-4);
+  }
+
+  .footer {
+    padding: var(--ccw-space-2) var(--ccw-space-3);
   }
 
   .roles {

@@ -129,7 +129,10 @@ type Store = {
   defaultCwd: string
   /** The server's release status; null until the first connect answers. */
   update: UpdateStatus | null
-  /** The settings dialog, opened from the sidebar and from the model menu. */
+  /**
+   * The settings page at `/settings`, opened from the sidebar and from the
+   * model menu. It covers the workspace, whose sessions keep running beneath.
+   */
   settingsOpen: boolean
 
   connect: () => () => void
@@ -944,11 +947,37 @@ export function sessionHref(sessionId: string): string {
   return `/s/${sessionId}`
 }
 
+const SETTINGS_HREF = '/settings'
+
 /**
- * What the tab shows, as an address: the session, the subagent whose
- * conversation is open, or else the user message the view was sent to.
+ * The `history.state` of a settings page entry pushed from within the tab:
+ * leaving the page steps back to the entry behind it rather than adding one.
+ * Kept by the browser across a reload, unlike anything in memory.
+ */
+const OPENED_HERE = { settings: 'opened-here' }
+
+const onSettingsPage = (): boolean => /^\/settings\/?$/.test(window.location.pathname)
+
+/**
+ * Leaves the settings page for the session beneath it, as the browser's back
+ * would when the page was opened from within the tab.
+ */
+export function leaveSettings(): void {
+  const state: unknown = window.history.state
+  if (typeof state === 'object' && state !== null && 'settings' in state && state.settings === OPENED_HERE.settings) {
+    window.history.back()
+  } else {
+    useStore.getState().setSettingsOpen(false)
+  }
+}
+
+/**
+ * What the tab shows, as an address: the settings page, the session, the
+ * subagent whose conversation is open, or else the user message the view was
+ * sent to.
  */
 function addressOf(state: Store): string {
+  if (state.settingsOpen) return SETTINGS_HREF
   const session = state.activeId ? state.sessions[state.activeId] : undefined
   if (!session) return '/'
   if (session.viewAgent) return `${sessionHref(session.sessionId)}?${new URLSearchParams({ agent: session.viewAgent })}`
@@ -967,12 +996,15 @@ function readAddress(): Address | null {
  * Keeps the address bar on what the tab shows, and the tab on what the bar
  * names. A reload or a link opens that session in this tab whatever the
  * others are on, and back/forward step through what was viewed. A bare `/`
- * opens the session this browser last had open. Returns the teardown.
+ * opens the session this browser last had open, and so does `/settings`,
+ * beneath its page. Returns the teardown.
  */
 export function followAddressBar(): () => void {
-  const follow = async (address: Address | null): Promise<void> => {
+  const follow = async (address: Address | null, settings: boolean): Promise<void> => {
     const remembered = readRememberedSession()
     following += 1
+    // At once: the page does not wait for the session beneath it.
+    useStore.getState().setSettingsOpen(settings)
     try {
       // The remembered cwd spares asking the server on a plain reload.
       await openAddress(address, remembered?.sessionId === address?.sessionId ? remembered?.cwd : undefined)
@@ -983,10 +1015,16 @@ export function followAddressBar(): () => void {
       following -= 1
     }
     // The bar may name something that did not open; the last open to settle
-    // puts what did in its place.
-    if (following === 0) window.history.replaceState(null, '', addressOf(useStore.getState()))
+    // puts what did in its place. Its state stays: it may be OPENED_HERE.
+    if (following === 0) window.history.replaceState(window.history.state, '', addressOf(useStore.getState()))
   }
-  const onPopState = (): void => void follow(readAddress())
+  const onPopState = (): void => {
+    if (!onSettingsPage()) return void follow(readAddress(), false)
+    // Forward onto the settings page: the session beneath stays as it is.
+    following += 1
+    useStore.getState().setSettingsOpen(true)
+    following -= 1
+  }
 
   const unsubscribe = useStore.subscribe((state, previous) => {
     if (following > 0) return
@@ -995,10 +1033,11 @@ export function followAddressBar(): () => void {
     // Moving off a session that was just closed: no place to come back to.
     const closed = previous.activeId !== null && !state.sessions[previous.activeId]
     if (closed) window.history.replaceState(null, '', address)
-    else window.history.pushState(null, '', address)
+    else window.history.pushState(state.settingsOpen ? OPENED_HERE : null, '', address)
   })
   window.addEventListener('popstate', onPopState)
-  void follow(readAddress() ?? readRememberedSession())
+  const settings = onSettingsPage()
+  void follow(settings ? readRememberedSession() : (readAddress() ?? readRememberedSession()), settings)
   return () => {
     unsubscribe()
     window.removeEventListener('popstate', onPopState)

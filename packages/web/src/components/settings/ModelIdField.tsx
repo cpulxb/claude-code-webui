@@ -45,7 +45,7 @@ export function ModelIdField({
       const target = event.target as Node
       if (!root.current?.contains(target) && !menu.current?.contains(target)) setOpen(false)
     }
-    // Caught on its way down, so the dialog behind does not close with the menu.
+    // Caught on its way down, so nothing behind closes with the menu.
     const onKey = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape') return
       event.stopPropagation()
@@ -105,8 +105,8 @@ const MENU_ROOM = 200
 const MENU_MARGIN = 8
 
 /**
- * Drawn on the page rather than in the dialog: the dialog's body scrolls and
- * would cut it off, and a long list should reach past the dialog's edge.
+ * Drawn on the document rather than in the form: the form's pane scrolls and
+ * would cut it off, and a long list should reach past the pane's edge.
  */
 function ModelMenu({
   anchor,
@@ -126,7 +126,7 @@ function ModelMenu({
   const [query, setQuery] = useState('')
   const [place, setPlace] = useState<CSSProperties>({})
 
-  // Under the field, or above it when the room below is short; kept there as the dialog scrolls or resizes.
+  // Under the field, or above it when the room below is short; kept there as the pane scrolls or resizes.
   useLayoutEffect(() => {
     const update = (): void => {
       const rect = anchor.current?.getBoundingClientRect()
@@ -142,7 +142,7 @@ function ModelMenu({
         ...(up ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
       })
     }
-    // A row just added may sit below the fold of the dialog's body.
+    // A row just added may sit below the fold of the form's pane.
     anchor.current?.scrollIntoView({ block: 'nearest' })
     update()
     window.addEventListener('scroll', update, true)
