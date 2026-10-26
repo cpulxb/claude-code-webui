@@ -19,6 +19,7 @@ import {
 } from '../history/sessions.ts'
 import { scmDiff, scmDiscard, scmStatus, shadowBaseline } from '../scm/git.ts'
 import type { SessionManager } from '../session/manager.ts'
+import { fetchUpstreamModels } from '../settings/upstream-models.ts'
 import { readUserSettings, writeUserSettings } from '../settings/user-settings.ts'
 import type { Updater } from '../update/updater.ts'
 
@@ -216,6 +217,8 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
 
     'settings.write': async ({ settings, revision, cwd }) =>
       writeUserSettings(settings, revision, await workspaceOrNothing(cwd)),
+
+    'settings.fetchModels': async (channel) => ({ models: await fetchUpstreamModels(channel) }),
   }
 }
 

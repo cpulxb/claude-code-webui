@@ -157,6 +157,124 @@
 
 /* --- model rows --------------------------------------------------------- */
 
+/* Fetch models: a quiet pill beside the section's checkbox. */
+.action {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 10px;
+  margin-right: var(--ccw-space-3);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-secondary);
+  border: 1px solid var(--ccw-border-strong);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.action:hover:not(:disabled) {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.action:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.fetched {
+  margin-right: var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
+}
+
+/* Beside .hint, which sets its own colour further down. */
+.hint.fetchError {
+  color: var(--ccw-danger);
+  word-break: break-word;
+}
+
+/* The id input, with a chevron that opens the menu of fetched models. */
+.idField {
+  display: flex;
+  gap: var(--ccw-space-1);
+  align-items: center;
+  min-width: 0;
+}
+
+/* Placed by the component, from its field's position, on the page above the dialog's backdrop. */
+.menu {
+  position: fixed;
+  z-index: 110;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-strong);
+  border-radius: var(--ccw-radius-md);
+  box-shadow: var(--ccw-shadow-popover);
+}
+
+.menuFilter {
+  flex: none;
+  width: auto;
+  margin: 6px;
+}
+
+.menuList {
+  padding-bottom: 4px;
+  overflow-y: auto;
+}
+
+.menuGroup {
+  position: sticky;
+  top: 0;
+  padding: 6px 12px 2px;
+  font-size: var(--ccw-text-xs);
+  font-weight: 600;
+  color: var(--ccw-text-muted);
+  background: var(--ccw-bg-base);
+}
+
+.menuItem {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 5px 12px;
+  font-size: var(--ccw-text-base);
+  color: var(--ccw-text-primary);
+  text-align: left;
+}
+
+.menuItem:hover:not(:disabled),
+.menuItem:focus-visible {
+  background: var(--ccw-bg-hover);
+}
+
+.menuItem:disabled {
+  color: var(--ccw-text-faint);
+  cursor: default;
+}
+
+.menuId {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuNote,
+.menuEmpty {
+  flex: none;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+}
+
+.menuEmpty {
+  padding: 8px 12px;
+  font-size: var(--ccw-text-sm);
+}
+
 .grid {
   display: flex;
   flex-direction: column;

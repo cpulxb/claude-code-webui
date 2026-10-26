@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { applyForm, formProblems, maskSecrets, rowsFromRoles, SECRET_MASK, shadowedModels, toForm, unmaskSecrets } from '../src/utils/settings.ts'
+import { applyForm, formProblems, groupModels, maskSecrets, rowsFromRoles, SECRET_MASK, shadowedModels, toForm, unmaskSecrets } from '../src/utils/settings.ts'
 
 // The file from the request: one gateway, every role on the same model.
 const gateway = {
@@ -119,4 +119,26 @@ test('rows that share a role id are reported as hidden until the built-in rows a
 test('a file that only maps roles can seed the list from them, aliases left out', () => {
   const form = toForm({ model: 'opus', env: { ANTHROPIC_DEFAULT_OPUS_MODEL: 'big[1M]', ANTHROPIC_DEFAULT_SONNET_MODEL: 'big[1m]', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'small' } })
   assert.deepEqual(rowsFromRoles(form).map((row) => [row.model, row.oneM]), [['big', true], ['small', false]])
+})
+
+test('upstream models are grouped under their owners A→Z, unowned ones first, upstream order kept inside', () => {
+  const models = [
+    { id: 'qwen-plus', owner: 'alibaba' },
+    { id: 'claude-opus-4-8' },
+    { id: 'jamba-1-5-mini', owner: 'ai21' },
+    { id: 'qwen-flash', owner: 'alibaba' },
+    { id: 'jamba-1-5-large', owner: 'ai21' },
+  ]
+  assert.deepEqual(groupModels(models, '').map(({ owner, models: ids }) => [owner, ids.map((model) => model.id)]), [
+    ['', ['claude-opus-4-8']],
+    ['ai21', ['jamba-1-5-mini', 'jamba-1-5-large']],
+    ['alibaba', ['qwen-plus', 'qwen-flash']],
+  ])
+})
+
+test('the model filter matches id or owner, ignoring case and surrounding blanks', () => {
+  const models = [{ id: 'qwen-plus', owner: 'alibaba' }, { id: 'Jamba-Large', owner: 'ai21' }, { id: 'claude-opus-4-8' }]
+  assert.deepEqual(groupModels(models, ' JAMBA ').map((group) => group.owner), ['ai21'])
+  assert.deepEqual(groupModels(models, 'alibaba').map((group) => group.models[0].id), ['qwen-plus'])
+  assert.deepEqual(groupModels(models, 'nothing'), [])
 })

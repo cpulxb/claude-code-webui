@@ -3,6 +3,8 @@
  * Everything the form does not edit is carried over untouched.
  */
 
+import type { UpstreamModel } from '@ccw/shared'
+
 type Json = Record<string, unknown>
 
 export type AuthField = 'ANTHROPIC_AUTH_TOKEN' | 'ANTHROPIC_API_KEY'
@@ -78,6 +80,24 @@ export function shadowedModels(form: SettingsForm): string[] {
 export function rowsFromRoles(form: SettingsForm): PickerRow[] {
   const ids = [...new Set([form.defaultModel, ...Object.values(form.roles)].map(normalize))].filter((id) => id && !ALIAS.test(id))
   return ids.map((id) => ({ model: id.replace(ONE_M, ''), oneM: ONE_M.test(id), label: '', description: '', behavesAs: '' }))
+}
+
+export type ModelGroup = { owner: string; models: UpstreamModel[] }
+
+/**
+ * The upstream models whose id or owner contains `query`, grouped under their
+ * owners A→Z; the ones with no owner come first, as a group named ''. Within
+ * a group the upstream's own order stands: Anthropic lists newest first.
+ */
+export function groupModels(models: UpstreamModel[], query: string): ModelGroup[] {
+  const needle = query.trim().toLowerCase()
+  const groups = new Map<string, UpstreamModel[]>()
+  for (const model of models) {
+    if (needle && !`${model.id} ${model.owner ?? ''}`.toLowerCase().includes(needle)) continue
+    const owner = model.owner ?? ''
+    groups.set(owner, [...(groups.get(owner) ?? []), model])
+  }
+  return [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([owner, grouped]) => ({ owner, models: grouped }))
 }
 
 /** The role env names a file's form shows, in display order. */

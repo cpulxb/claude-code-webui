@@ -18,7 +18,7 @@ import dialog from '../auth/Auth.module.css'
 import { ConfirmDialog } from '../ConfirmDialog.tsx'
 import { CodeEditor } from '../details/CodeEditor.tsx'
 import { ChevronRightIcon, EyeIcon, EyeOffIcon, XIcon } from '../Icons.tsx'
-import { ModelList } from './ModelList.tsx'
+import { ModelList, type UpstreamAnswer } from './ModelList.tsx'
 import styles from './Settings.module.css'
 
 type Json = Record<string, unknown>
@@ -65,6 +65,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
   const [json, setJson] = useState<string | null>(null)
   const [showKey, setShowKey] = useState(false)
   const [rolesOpen, setRolesOpen] = useState(false)
+  /** The last 获取模型列表, with the channel it was asked of. */
+  const [asked, setAsked] = useState<(UpstreamAnswer & { channel: string }) | null>(null)
+  const [fetching, setFetching] = useState(false)
   const [saving, setSaving] = useState(false)
   /** Set by a save, and shown until the next edit. */
   const [saved, setSaved] = useState(false)
@@ -156,7 +159,28 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
 
   const patch = (next: Partial<SettingsForm>): void => setForm((current) => ({ ...current, ...next }))
 
+  // A list fetched with another address or key belongs to another channel: it is dropped once those change.
+  const channel = JSON.stringify([form.baseUrl.trim(), form.authField, form.key])
+  const upstream = asked?.channel === channel ? asked : null
+
+  const fetchModels = async (): Promise<void> => {
+    setFetching(true)
+    try {
+      const { models } = await call('settings.fetchModels', { baseUrl: form.baseUrl, authField: form.authField, key: form.key })
+      setAsked({ channel, models, error: null })
+    } catch (cause) {
+      setAsked({ channel, models: [], error: describe(cause) })
+    } finally {
+      setFetching(false)
+    }
+  }
+
   const pickerIds = form.models.filter((row) => row.model.trim()).map((row) => ({ id: fullModelId(row), label: row.label }))
+  const known = new Set(pickerIds.map(({ id }) => id))
+  const roleChoices = [
+    ...pickerIds,
+    ...(upstream?.models ?? []).filter(({ id }) => !known.has(id)).map(({ id, owner }) => ({ id, label: owner ?? '' })),
+  ]
   const rolesSet = Object.values(form.roles).filter((value) => value.trim()).length
 
   let status: JSX.Element | null = null
@@ -304,7 +328,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
                 </div>
               </section>
 
-              <ModelList form={form} onChange={patch} />
+              <ModelList form={form} onChange={patch} upstream={upstream} fetching={fetching} onFetch={() => void fetchModels()} />
 
               <section className={styles.section}>
                 <button
@@ -354,7 +378,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
                       ))}
                     </div>
                     <datalist id="ccw-picker-models">
-                      {pickerIds.map(({ id, label }) => (
+                      {roleChoices.map(({ id, label }) => (
                         <option key={id} value={id}>
                           {label}
                         </option>

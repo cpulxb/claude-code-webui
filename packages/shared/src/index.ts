@@ -266,6 +266,13 @@ export type UserSettings = {
   overrides: SettingsOverride[]
 }
 
+/** One entry of an upstream channel's `/v1/models`. */
+export type UpstreamModel = {
+  id: string
+  /** OpenAI-style `owned_by`; Anthropic's own list has none. */
+  owner?: string
+}
+
 /**
  * Every RPC the server answers over `POST /api/rpc`, keyed by method name.
  * The client's `call()` derives both argument and return types from this map.
@@ -450,6 +457,16 @@ export type RpcMap = {
   'settings.write': {
     params: { settings: Record<string, unknown>; revision: string; cwd?: string }
     result: UserSettings
+  }
+  /**
+   * Lists the models a channel offers, with the dialog's unsaved address and
+   * key. Asked from the server because the browser could not reach most
+   * gateways (CORS), and requested the way the CLI would: same auth header,
+   * same proxy variables. Fails with the reason, the key never included.
+   */
+  'settings.fetchModels': {
+    params: { baseUrl: string; authField: 'ANTHROPIC_AUTH_TOKEN' | 'ANTHROPIC_API_KEY'; key: string }
+    result: { models: UpstreamModel[] }
   }
 }
 

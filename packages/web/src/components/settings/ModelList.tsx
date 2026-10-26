@@ -1,8 +1,10 @@
+import type { UpstreamModel } from '@ccw/shared'
 import { useState } from 'react'
 
 import { fullModelId, rowsFromRoles, shadowedModels, type PickerRow, type SettingsForm } from '../../utils/settings.ts'
 import dialog from '../auth/Auth.module.css'
-import { GripVerticalIcon, PlusIcon, XIcon } from '../Icons.tsx'
+import { ArrowDownIcon, GripVerticalIcon, PlusIcon, XIcon } from '../Icons.tsx'
+import { ModelIdField } from './ModelIdField.tsx'
 import styles from './Settings.module.css'
 
 /** Ids this CLI knows, offered for behavesAs; any other can be typed. */
@@ -10,13 +12,23 @@ const KNOWN_MODELS = ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5'
 
 const EMPTY_ROW: PickerRow = { model: '', oneM: false, label: '', description: '', behavesAs: '' }
 
+/** What the channel in the form answered when its models were last asked for. */
+export type UpstreamAnswer = { models: UpstreamModel[]; error: string | null }
+
 /** The `modelPicker` rows, edited in place and dragged into menu order. */
 export function ModelList({
   form,
   onChange,
+  upstream,
+  fetching,
+  onFetch,
 }: {
   form: SettingsForm
   onChange: (next: Partial<SettingsForm>) => void
+  /** Null until asked, and again once the address or key changes. */
+  upstream: UpstreamAnswer | null
+  fetching: boolean
+  onFetch: () => void
 }): JSX.Element {
   /** A row just added, whose id field takes the focus as it mounts. */
   const [added, setAdded] = useState<number | null>(null)
@@ -66,6 +78,21 @@ export function ModelList({
         <span className={dialog.sectionTitle}>模型列表</span>
         {form.models.length > 0 && <span className={styles.count}>{form.models.length}</span>}
         <span className={dialog.spacer} />
+        {upstream && !upstream.error && (
+          <span className={styles.fetched}>
+            {upstream.models.length > 0 ? `已获取 ${upstream.models.length} 个` : '上游返回了空列表，检查 Key 和请求地址'}
+          </span>
+        )}
+        <button
+          className={styles.action}
+          onClick={onFetch}
+          disabled={fetching || !form.baseUrl.trim()}
+          type="button"
+          title={form.baseUrl.trim() ? '用上面的请求地址和 Key 向上游查询它提供的模型（/v1/models）' : '先填写请求地址'}
+        >
+          <ArrowDownIcon size={14} />
+          {fetching ? '获取中…' : '获取模型列表'}
+        </button>
         <label className={styles.check} title="勾选后菜单只有 Default 和这里的模型，Claude Code 内置的几行不再显示">
           <input
             type="checkbox"
@@ -76,6 +103,8 @@ export function ModelList({
         </label>
       </div>
       <div className={dialog.muted}>按顺序显示在输入框的模型菜单里，拖动左边的手柄调整顺序。选为「默认」的是新会话开始时用的模型。</div>
+
+      {upstream?.error && <div className={`${styles.hint} ${styles.fetchError}`}>获取模型列表失败：{upstream.error}</div>}
 
       {shadowed.length > 0 && (
         <div className={styles.hint}>
@@ -172,15 +201,16 @@ export function ModelList({
                   title="新会话默认用这个模型"
                   aria-label="设为默认模型"
                 />
-                <input
-                  className={`${styles.input} ${styles.cellId} ${problem ? styles.invalid : ''}`}
+                <ModelIdField
+                  className={styles.cellId}
                   value={row.model}
-                  onChange={(event) => editRow(index, { model: event.target.value })}
+                  onChange={(model) => editRow(index, { model })}
+                  models={upstream?.models ?? []}
+                  isTaken={(id) => ids.some((other, at) => at !== index && other === fullModelId({ model: id, oneM: row.oneM }))}
+                  invalid={problem !== null}
                   placeholder={problem ?? '模型 ID'}
-                  aria-label="模型 ID"
                   title={problem ?? undefined}
                   autoFocus={index === added}
-                  spellCheck={false}
                 />
                 <input
                   className={`${styles.input} ${styles.cellLabel}`}
