@@ -95,8 +95,11 @@
 
 /* --- phone: the panels become drawers over the conversation ------------ */
 
+/* Clipped, not hidden: a hidden frame can still be scrolled, and scrollIntoView
+   on a row inside a parked drawer would slide the whole frame sideways into view. */
 .frame[data-narrow] {
   grid-template-columns: minmax(0, 1fr);
+  overflow: clip;
 }
 
 /* Out of the grid flow, which leaves the conversation the only track. */
