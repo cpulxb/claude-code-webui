@@ -1,4 +1,4 @@
-import { fuzzyFilter, type ProjectGroup, type SessionSummary, type UpdateProgress } from '@ccw/shared'
+import { fuzzyFilter, type ProjectGroup, type SessionSummary, type UpdateProgress, UNKNOWN_CWD } from '@ccw/shared'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { call } from '../../api/client.ts'
@@ -146,6 +146,11 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
   const startSession = (cwd: string): void => {
     setPicking(false)
     setQuery('')
+    // The placeholder group is not a directory, so no session can start in it.
+    if (cwd === UNKNOWN_CWD) {
+      setError('这个分组的工作目录找不到，无法在这里新建会话')
+      return
+    }
     setSelectedCwd(cwd)
     run(createSession(cwd), '新建会话失败')
   }

@@ -1,3 +1,5 @@
+import { stat } from 'node:fs/promises'
+
 import type { RpcMethod, RpcParams, RpcResult } from '@ccw/shared'
 
 import { browseDirectory } from '../files/browse.ts'
@@ -27,9 +29,16 @@ export type RpcHandlers = {
   [M in RpcMethod]: (params: RpcParams<M>) => Promise<RpcResult<M>>
 }
 
+async function isDirectory(path: string): Promise<boolean> {
+  return stat(path).then((info) => info.isDirectory(), () => false)
+}
+
 export function createRpcHandlers(manager: SessionManager, updater: Updater): RpcHandlers {
   return {
     'session.create': async (config) => {
+      // Checked before the CLI starts: a missing directory makes its spawn fail
+      // with ENOENT, and the SDK reports that as a missing native binary.
+      if (!(await isDirectory(config.cwd))) throw new Error(`工作目录不存在：${config.cwd}`)
       // The picked cwd becomes a legitimate root for the file RPCs. Trusted:
       // the user chose this directory, even if it is `~` itself.
       registerRoot(config.cwd, { trusted: true })

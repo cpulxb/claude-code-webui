@@ -1,3 +1,4 @@
+import { createReadStream } from 'node:fs'
 import { access, open, readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -34,8 +35,13 @@ import { turnTotals } from './turns.ts'
  * — `claude -p` and the like — are filtered out here.
  */
 export async function listProjects(liveSessions: SessionSummary[] = []): Promise<ProjectGroup[]> {
-  const [sessions, headless] = await Promise.all([listSavedSessions(), headlessSessionIds()])
-  const kept = sessions.filter((session) => !headless.has(session.sessionId))
+  const [sessions, transcripts] = await Promise.all([listSavedSessions(), transcriptPaths()])
+  const headless = await headlessSessionIds(transcripts)
+  const kept = await Promise.all(
+    sessions
+      .filter((session) => !headless.has(session.sessionId))
+      .map(async (session) => (session.cwd ? session : { ...session, cwd: await transcriptCwd(session.sessionId, transcripts) })),
+  )
   // The SDK omits a new session until its transcript contains a user prompt.
   // Merge runner metadata so an empty or still-streaming session is visible.
   return mergeProjectSessions([], [...kept.map(toSummary), ...liveSessions])
@@ -64,16 +70,29 @@ const headlessVerdicts = new Map<string, boolean>()
  * Sessions started by `claude -p`, the Python SDK or a daemon. The SDK's
  * summaries do not carry the entrypoint, so each transcript's head is read.
  */
-async function headlessSessionIds(): Promise<Set<string>> {
+async function headlessSessionIds(transcripts: Map<string, string>): Promise<Set<string>> {
+  const unread = [...transcripts].filter(([sessionId]) => !headlessVerdicts.has(sessionId))
+  for (let i = 0; i < unread.length; i += HEAD_BATCH) {
+    await Promise.all(
+      unread.slice(i, i + HEAD_BATCH).map(async ([sessionId, path]) => {
+        const verdict = await readHeadless(path)
+        if (verdict !== null) headlessVerdicts.set(sessionId, verdict)
+      }),
+    )
+  }
+  return new Set([...headlessVerdicts].filter(([, headless]) => headless).map(([sessionId]) => sessionId))
+}
+
+/** Every transcript on disk, by session id: `<projects>/<encoded-cwd>/<id>.jsonl`. */
+async function transcriptPaths(): Promise<Map<string, string>> {
   const root = join(claudeConfigDir(), 'projects')
+  const paths = new Map<string, string>()
   let dirs
   try {
     dirs = await readdir(root, { withFileTypes: true })
   } catch {
-    return new Set()
+    return paths
   }
-
-  const unread: { sessionId: string; path: string }[] = []
   for (const dir of dirs) {
     if (!dir.isDirectory()) continue
     let names: string[]
@@ -83,21 +102,53 @@ async function headlessSessionIds(): Promise<Set<string>> {
       continue
     }
     for (const name of names) {
-      if (!name.endsWith('.jsonl')) continue
-      const sessionId = name.slice(0, -'.jsonl'.length)
-      if (!headlessVerdicts.has(sessionId)) unread.push({ sessionId, path: join(root, dir.name, name) })
+      if (name.endsWith('.jsonl')) paths.set(name.slice(0, -'.jsonl'.length), join(root, dir.name, name))
     }
   }
+  return paths
+}
 
-  for (let i = 0; i < unread.length; i += HEAD_BATCH) {
-    await Promise.all(
-      unread.slice(i, i + HEAD_BATCH).map(async ({ sessionId, path }) => {
-        const verdict = await readHeadless(path)
-        if (verdict !== null) headlessVerdicts.set(sessionId, verdict)
-      }),
-    )
+/** A session's cwd once read from its transcript. It is fixed when the session starts, so it is kept. */
+const transcriptCwds = new Map<string, string>()
+
+/** A `cwd` field's key, and the JSON string value after it. */
+const CWD_KEY = '"cwd":"'
+const CWD_VALUE = /^"cwd":"((?:[^"\\]|\\.)*)"/
+
+/**
+ * The SDK takes a session's cwd from the first 64 KB of its transcript. A first
+ * prompt with a screenshot in it pushes the first `"cwd"` past that, so the
+ * session lists with no directory and falls under `(unknown)` once it is closed.
+ * Read on to the first `"cwd"` instead, keeping only the text from the last key on.
+ */
+async function transcriptCwd(sessionId: string, transcripts: Map<string, string>): Promise<string | undefined> {
+  const known = transcriptCwds.get(sessionId)
+  if (known !== undefined) return known
+  const path = transcripts.get(sessionId)
+  if (path === undefined) return undefined
+  try {
+    let text = ''
+    for await (const chunk of createReadStream(path, { encoding: 'utf8' })) {
+      text += chunk
+      const start = text.indexOf(CWD_KEY)
+      if (start === -1) {
+        // Only the tail can be the start of a key split across two chunks.
+        text = text.slice(-CWD_KEY.length)
+        continue
+      }
+      const match = CWD_VALUE.exec(text.slice(start))
+      if (match) {
+        const cwd = JSON.parse(`"${match[1]}"`) as string
+        transcriptCwds.set(sessionId, cwd)
+        return cwd
+      }
+      // The value runs past this chunk: wait for more, keeping it from the key on.
+      text = text.slice(start)
+    }
+  } catch {
+    // Unreadable, or a value JSON will not decode: the session keeps no directory.
   }
-  return new Set([...headlessVerdicts].filter(([, headless]) => headless).map(([sessionId]) => sessionId))
+  return undefined
 }
 
 /**
@@ -454,7 +505,8 @@ export async function hasTranscript(sessionId: string): Promise<boolean> {
 
 /** The directory a saved session ran in, for opening it by id alone. Null for an unknown or malformed id. */
 export async function locateSession(sessionId: string): Promise<string | null> {
-  return (await getSessionInfo(sessionId))?.cwd ?? null
+  const cwd = (await getSessionInfo(sessionId))?.cwd
+  return cwd ?? (await transcriptCwd(sessionId, await transcriptPaths())) ?? null
 }
 
 /**

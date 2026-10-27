@@ -29,7 +29,7 @@ export type {
 export type ContextUsage = SDKControlGetContextUsageResponse
 
 export { fuzzyFilter, fuzzyScore } from './fuzzy.ts'
-export { mergeProjectSessions } from './projects.ts'
+export { mergeProjectSessions, UNKNOWN_CWD } from './projects.ts'
 
 /** Every permission mode the CLI accepts, in the order the Modes popover lists them. */
 export const PERMISSION_MODES = [

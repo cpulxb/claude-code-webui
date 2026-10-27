@@ -1,5 +1,8 @@
 import type { ProjectGroup, SessionSummary } from './index.ts'
 
+/** The group of a session whose directory cannot be found. A label, not a path. */
+export const UNKNOWN_CWD = '(unknown)'
+
 /** Merge live activity with saved history, keeping one row per session. */
 export function mergeProjectSessions(projects: ProjectGroup[], updates: SessionSummary[]): ProjectGroup[] {
   const sessions = new Map(projects.flatMap((project) =>
@@ -10,7 +13,7 @@ export function mergeProjectSessions(projects: ProjectGroup[], updates: SessionS
     sessions.set(update.sessionId, {
       ...saved,
       ...update,
-      cwd: update.cwd ?? saved?.cwd ?? '(unknown)',
+      cwd: update.cwd ?? saved?.cwd ?? UNKNOWN_CWD,
       // Live entries start with an empty title, then the first prompt. Saved
       // custom titles and summaries remain authoritative after persistence.
       summary: update.customTitle ?? saved?.customTitle ?? (saved?.summary || update.summary),

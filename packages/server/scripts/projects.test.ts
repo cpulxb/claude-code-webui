@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import { mergeProjectSessions, type SessionSummary } from '@ccw/shared'
 
 import { coalesce } from '../src/history/session-list.ts'
-import { listProjects } from '../src/history/sessions.ts'
+import { listProjects, locateSession } from '../src/history/sessions.ts'
 
 const summary = (sessionId: string, cwd: string, lastModified: number, title = ''): SessionSummary => ({
   sessionId, cwd, lastModified, summary: title,
@@ -116,6 +116,37 @@ test('the list keeps terminal and WebUI sessions but drops claude -p and other h
       projects[0]?.sessions.map((session) => session.summary).sort(),
       ['hello from cli', 'hello from sdk-ts'],
     )
+  } finally {
+    if (previous === undefined) delete process.env['CLAUDE_CONFIG_DIR']
+    else process.env['CLAUDE_CONFIG_DIR'] = previous
+    await rm(config, { recursive: true, force: true })
+  }
+})
+
+test('a session whose first prompt carries a screenshot still lists under its project and locates there', async () => {
+  const config = await mkdtemp(join(tmpdir(), 'ccw-projects-'))
+  const previous = process.env['CLAUDE_CONFIG_DIR']
+  process.env['CLAUDE_CONFIG_DIR'] = config
+  try {
+    const project = join(config, 'projects', '-work-app')
+    await mkdir(project, { recursive: true })
+    const sessionId = '40000000-0000-4000-8000-000000000001'
+    // The SDK reads a session's cwd from the first 64 KB only, and this image pushes the first `cwd` past it.
+    const screenshot = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'A'.repeat(200_000) } }
+    const lines = [
+      { type: 'queue-operation', operation: 'enqueue', timestamp: '2026-10-01T00:00:00.000Z', sessionId },
+      {
+        parentUuid: null, isSidechain: false, type: 'user', uuid: 'u1',
+        message: { role: 'user', content: [screenshot, { type: 'text', text: '新建一个项目文件夹' }] },
+        timestamp: '2026-10-01T00:00:01.000Z', userType: 'external', entrypoint: 'sdk-ts', cwd: '/work/app', sessionId,
+      },
+      { parentUuid: 'u1', isSidechain: false, type: 'attachment', attachment: { type: 'environment' }, cwd: '/work/app', sessionId },
+    ]
+    await writeFile(join(project, `${sessionId}.jsonl`), `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`)
+
+    const projects = await listProjects()
+    assert.deepEqual(projects.map((group) => group.cwd), ['/work/app'])
+    assert.equal(await locateSession(sessionId), '/work/app')
   } finally {
     if (previous === undefined) delete process.env['CLAUDE_CONFIG_DIR']
     else process.env['CLAUDE_CONFIG_DIR'] = previous
