@@ -6,7 +6,8 @@ import { AGENT_TOOLS, findAgent, lastTurnStart } from '../../render/nodes.ts'
 import { WORKFLOW_TOOL } from '../../render/workflows.ts'
 import { useActiveSessionValue, useSessionSettled, useStore } from '../../store/session.ts'
 import { parseQuestions } from '../../utils/questions.ts'
-import { ArrowDownIcon, BrandMark, CheckIcon, HistoryIcon, LinkIcon } from '../Icons.tsx'
+import { turnReplyText } from '../../utils/transcript-markdown.ts'
+import { ArrowDownIcon, BrandMark, CheckIcon, CopyIcon, HistoryIcon, LinkIcon } from '../Icons.tsx'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 import styles from './ChatView.module.css'
 import { PermissionCard } from './PermissionCard.tsx'
@@ -593,19 +594,50 @@ const NodeView = memo(function NodeView({
       return <CompactRow node={node} />
 
     case 'result':
-      return (
-        <div className={`${styles.stats} ${node.isError ? styles.statsError : ''}`}>
-          <span>{node.numTurns} 轮</span>
-          <span>{(node.durationMs / 1000).toFixed(1)}s</span>
-          <span>
-            输入 {formatTokens(node.inputTokens)} · 输出 {formatTokens(node.outputTokens)}
-          </span>
-          {node.cacheReadTokens > 0 && <span>缓存命中 {formatTokens(node.cacheReadTokens)}</span>}
-          <span>${node.totalCostUsd.toFixed(4)}</span>
-        </div>
-      )
+      return <ResultRow node={node} />
   }
 })
+
+/** A finished turn's footer: `/copy` for its reply, then the figures the CLI reported for it. */
+function ResultRow({ node }: { node: Extract<ChatNode, { kind: 'result' }> }): JSX.Element {
+  const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const copyReply = (): void => {
+    // Read on click rather than subscribed to: the row would otherwise
+    // re-render with every node the transcript gains.
+    const { activeId, sessions } = useStore.getState()
+    const nodes = activeId ? (sessions[activeId]?.transcript.nodes ?? []) : []
+    const index = nodes.findIndex((entry) => entry.id === node.id)
+    const text = index < 0 ? null : turnReplyText(nodes, index)
+    void (text ? navigator.clipboard.writeText(text) : Promise.reject(new Error('no reply')))
+      .then(
+        () => 'copied' as const,
+        () => 'failed' as const,
+      )
+      .then((result) => {
+        setCopied(result)
+        setTimeout(() => setCopied('idle'), 1400)
+      })
+  }
+
+  return (
+    <div className={`${styles.stats} ${node.isError ? styles.statsError : ''}`}>
+      <button
+        className={`${styles.turnAction} ${copied === 'failed' ? styles.turnActionFailed : ''}`}
+        onClick={copyReply}
+        type="button"
+        title={copied === 'copied' ? '已复制' : copied === 'failed' ? '这一轮没有可复制的回复' : '复制这一轮的回复'}
+      >
+        {copied === 'copied' ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+      </button>
+      <span>{formatDuration(node.durationMs)}</span>
+      <span>{node.numTurns} 轮</span>
+      <span>
+        输入 {formatTokens(node.inputTokens)} · 输出 {formatTokens(node.outputTokens)}
+      </span>
+      {node.cacheReadTokens > 0 && <span>缓存命中 {formatTokens(node.cacheReadTokens)}</span>}
+    </div>
+  )
+}
 
 function BlockView({ block }: { block: AssistantBlock }): JSX.Element {
   return block.type === 'thinking' ? <ReasoningRow text={block.text} /> : <AssistantMarkdown text={block.text} />
@@ -675,6 +707,15 @@ function StreamingRow({ block }: { block: StreamingBlock }): JSX.Element {
 /** Where `element` sits in the scroller's content, however far it is scrolled. */
 function contentOffset(scroller: HTMLElement, element: Element): number {
   return element.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
+}
+
+/** Whole seconds, as the terminal's "Worked for 1m 47s" reads. */
+function formatDuration(ms: number): string {
+  const seconds = Math.round(ms / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
 
 function formatTokens(count: number): string {

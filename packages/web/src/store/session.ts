@@ -15,6 +15,7 @@ import type {
   SessionSummary,
   SlashCommand,
   SubagentMeta,
+  TurnTotals,
   UpdateStatus,
 } from '@ccw/shared'
 import { mergeProjectSessions, PERMISSION_MODES } from '@ccw/shared'
@@ -23,7 +24,7 @@ import { immer } from 'zustand/middleware/immer'
 
 import { call, connectEvents, type ConnectionStatus } from '../api/client.ts'
 import { bashDisplay, bashEcho, bashPrompt } from '../render/bash.ts'
-import { appendTranscript, applyHistoryMessage, listUserPromptUuids, prependTranscript } from '../render/history.ts'
+import { appendTranscript, applyHistoryMessage, applyTurnTotals, listUserPromptUuids, prependTranscript } from '../render/history.ts'
 import { applyMessage, emptyTranscript, findAgent, type AgentRun, type Transcript } from '../render/nodes.ts'
 import { applyWorkflowRecord } from '../render/workflows.ts'
 
@@ -477,11 +478,11 @@ export const useStore = create<Store>()(
         state.sessions[sessionId]!.historyLoading = true
       })
       try {
-        const [{ messages, hasMore }, subagents] = await Promise.all([
+        const [{ messages, hasMore, turns }, subagents] = await Promise.all([
           call('history.messages', { sessionId, cwd: session.cwd, limit: HISTORY_PAGE, before }),
           call('history.subagents', { sessionId }).catch(() => ({ agents: [] })),
         ])
-        const older = await replayHistory(sessionId, messages, subagents.agents)
+        const older = await replayHistory(sessionId, messages, subagents.agents, turns)
         set((state) => {
           const current = state.sessions[sessionId]
           // Reopened meanwhile: that replay owns the transcript now.
@@ -511,11 +512,11 @@ export const useStore = create<Store>()(
         state.sessions[sessionId]!.newerLoading = true
       })
       try {
-        const [{ messages, hasNewer }, subagents] = await Promise.all([
+        const [{ messages, hasNewer, turns }, subagents] = await Promise.all([
           call('history.messages', { sessionId, cwd: session.cwd, limit: HISTORY_PAGE, after }),
           call('history.subagents', { sessionId }).catch(() => ({ agents: [] })),
         ])
-        const newer = await replayHistory(sessionId, messages, subagents.agents)
+        const newer = await replayHistory(sessionId, messages, subagents.agents, turns)
         set((state) => {
           const current = state.sessions[sessionId]
           // Moved meanwhile: that replay owns the transcript now.
@@ -1509,14 +1510,14 @@ async function loadHistory(set: Setter, get: () => Store, sessionId: string, cwd
 
 /** Replaces the transcript with the newest page of history, or the page around `at`. */
 async function readWindow(set: Setter, get: () => Store, sessionId: string, cwd: string, at?: string): Promise<void> {
-  const [{ messages, hasMore, hasNewer, permissionMode }, subagents] = await Promise.all([
+  const [{ messages, hasMore, hasNewer, turns, permissionMode }, subagents] = await Promise.all([
     call('history.messages', { sessionId, cwd, limit: HISTORY_PAGE, ...(at ? { around: at } : {}) }),
     // Optional: without it the cards still render, they just cannot open
     // a conversation until a live event names the agent.
     call('history.subagents', { sessionId }).catch(() => ({ agents: [] })),
   ])
   if (!get().sessions[sessionId]) return
-  const transcript = await replayHistory(sessionId, messages, subagents.agents)
+  const transcript = await replayHistory(sessionId, messages, subagents.agents, turns)
   set((state) => {
     const session = state.sessions[sessionId]
     if (!session) return
@@ -1564,9 +1565,19 @@ function holdsEntry(transcript: Transcript, id: string): boolean {
 }
 
 /** One page of history as a transcript of its own, its cards filled in from their saved records. */
-async function replayHistory(sessionId: string, messages: SessionMessage[], subagents: SubagentMeta[]): Promise<Transcript> {
+async function replayHistory(
+  sessionId: string,
+  messages: SessionMessage[],
+  subagents: SubagentMeta[],
+  turns: TurnTotals[] = [],
+): Promise<Transcript> {
   const transcript = emptyTranscript()
-  for (const entry of messages) applyHistoryMessage(transcript, entry)
+  const ends = new Map(turns.map((turn) => [turn.after, turn]))
+  for (const entry of messages) {
+    applyHistoryMessage(transcript, entry)
+    const turn = ends.get(entry.uuid)
+    if (turn) applyTurnTotals(transcript, turn)
+  }
   // Workflow cards: the saved run record has the phases and every agent.
   await Promise.all(
     Object.values(transcript.workflows).map(async (run) => {

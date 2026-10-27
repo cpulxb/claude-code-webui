@@ -10,10 +10,19 @@ import {
   type SDKSessionInfo,
   type SessionStoreEntry,
 } from '@anthropic-ai/claude-agent-sdk'
-import type { PermissionMode, ProjectGroup, SessionMessage, SessionSummary, SubagentMeta, WorkflowRecord } from '@ccw/shared'
+import type {
+  PermissionMode,
+  ProjectGroup,
+  SessionMessage,
+  SessionSummary,
+  SubagentMeta,
+  TurnTotals,
+  WorkflowRecord,
+} from '@ccw/shared'
 import { mergeProjectSessions } from '@ccw/shared'
 
 import { listSavedSessions } from './session-list.ts'
+import { turnTotals } from './turns.ts'
 
 /**
  * Reads the same on-disk transcripts the terminal's `/resume` picker reads
@@ -187,13 +196,18 @@ export type PageCursor = { before?: string | undefined; after?: string | undefin
 
 export type MessagePage = { messages: SessionMessage[]; hasMore: boolean; hasNewer: boolean }
 
-/** `pageMessages` over the session's transcript, read once per run of pages. */
+/**
+ * `pageMessages` over the session's transcript, read once per run of pages,
+ * with the stats of the turns that end on the page. `open`: the session is
+ * running, so its newest turn has not ended.
+ */
 export async function readMessagePage(
   sessionId: string,
   cwd: string | undefined,
   limit: number,
   cursor: PageCursor = {},
-): Promise<MessagePage> {
+  open = false,
+): Promise<MessagePage & { turns: TurnTotals[] }> {
   const shown = cursor.before ?? cursor.after
   const cached =
     shown !== undefined && lastRead?.sessionId === sessionId && lastRead.cwd === cwd && lastRead.messages.some((entry) => entry.uuid === shown)
@@ -218,7 +232,9 @@ export async function readMessagePage(
   }
   if (lastRead) clearTimeout(lastRead.expiry)
   lastRead = { sessionId, cwd, ...read, expiry: setTimeout(() => (lastRead = null), LAST_READ_TTL_MS).unref() }
-  return page
+  // Over the whole read: a turn that ends on this page may have begun pages back.
+  const onPage = new Set(page.messages.map((entry) => entry.uuid))
+  return { ...page, turns: turnTotals(read.messages, open).filter((turn) => onPage.has(turn.after)) }
 }
 
 /** The SDK's read, or the whole transcript when the cursor lies before the last compaction. */

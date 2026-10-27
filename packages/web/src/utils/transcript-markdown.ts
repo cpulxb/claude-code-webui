@@ -1,4 +1,4 @@
-import type { ChatNode } from '../render/nodes.ts'
+import { lastTurnStart, type ChatNode } from '../render/nodes.ts'
 
 /** Input fields that name what a tool call acted on, most telling first. */
 const TOOL_DETAIL_KEYS = ['command', 'file_path', 'path', 'pattern', 'url', 'query', 'skill', 'description']
@@ -12,6 +12,12 @@ export function lastReplyText(nodes: ChatNode[]): string | null {
     if (text) return text
   }
   return null
+}
+
+/** `/copy` for the turn whose result row is at `resultIndex`: its own last reply, none from a turn before. */
+export function turnReplyText(nodes: ChatNode[], resultIndex: number): string | null {
+  const before = nodes.slice(0, resultIndex)
+  return lastReplyText(before.slice(lastTurnStart(before)))
 }
 
 /**

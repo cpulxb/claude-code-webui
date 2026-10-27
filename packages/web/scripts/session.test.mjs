@@ -600,6 +600,29 @@ test('a link to a message opens the session there, with newer pages below it', a
   assert.deepEqual(prompts, Array.from({ length: 140 }, (_, i) => `u${i + 10}`))
 })
 
+test('every finished turn read back gets its stats row, after its last entry, page by page', async (t) => {
+  saved({ [A]: '/a' }, { [A]: conversation(A, 150) })
+  // As the server rebuilds them: one per turn that ends on the page.
+  const read = rpc
+  rpc = async (method, params) => {
+    const answer = await read(method, params)
+    if (method !== 'history.messages') return answer
+    const turns = answer.messages
+      .filter((message) => message.type === 'assistant')
+      .map((message) => ({ after: message.uuid, durationMs: 1000, numTurns: 1, inputTokens: 1, outputTokens: 1, cacheReadTokens: 0 }))
+    return { ...answer, turns }
+  }
+  addressBar(t, `/s/${A}`)
+  await drain()
+  while (useStore.getState().sessions[A].historyCursor) await useStore.getState().loadOlderHistory(A)
+  const nodes = useStore.getState().sessions[A].transcript.nodes
+  assert.deepEqual(
+    nodes.map((node) => node.kind),
+    Array.from({ length: 150 }, () => ['user', 'assistant', 'result']).flat(),
+  )
+  assert.equal(nodes.at(-1).id, 'a149:result')
+})
+
 test('live output is held back while an older stretch is shown, then replayed at the end', async (t) => {
   const streamed = {
     type: 'assistant', uuid: 'live', session_id: A, parent_tool_use_id: null,

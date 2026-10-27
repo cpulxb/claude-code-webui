@@ -48,7 +48,6 @@ export type ChatNode =
       isError: boolean
       durationMs: number
       numTurns: number
-      totalCostUsd: number
       inputTokens: number
       outputTokens: number
       cacheReadTokens: number
@@ -130,8 +129,9 @@ export function emptyTranscript(): Transcript {
  * now. Without that, sending a follow-up after a crash would put 执行中 back
  * on the cards the crash already ended.
  *
- * A `result` row closes a turn, and a prompt opens the next; history keeps no
- * result rows, so there a prompt is the only boundary. The newest turn has no
+ * A `result` row closes a turn, and a prompt opens the next; a turn without a
+ * model call has no result row, and history rebuilds none for a turn still
+ * running, so a prompt can be the only boundary. The newest turn has no
  * boundary after it yet — whether its calls are still alive is the session's
  * state to answer, not the transcript's.
  */
@@ -275,13 +275,17 @@ function applyLocal(transcript: Transcript, message: SDKMessage, inAgent: boolea
       for (const agent of Object.values(transcript.agents)) {
         if (agent.status === 'running' && !agent.backgrounded) agent.status = 'completed'
       }
+      // A slash command the CLI ran itself made no model call — nothing to
+      // report, and nothing a reload could rebuild the row from.
+      if (message.num_turns === 0) return
+      // `total_cost_usd` is left out: it is the session's running total, not
+      // this turn's, and the transcript keeps no cost to rebuild it from.
       transcript.nodes.push({
         kind: 'result',
         id: message.uuid,
         isError: message.is_error,
         durationMs: message.duration_ms,
         numTurns: message.num_turns,
-        totalCostUsd: message.total_cost_usd,
         inputTokens: message.usage.input_tokens,
         outputTokens: message.usage.output_tokens,
         cacheReadTokens: message.usage.cache_read_input_tokens ?? 0,

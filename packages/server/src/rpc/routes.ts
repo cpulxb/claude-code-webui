@@ -147,10 +147,12 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
     }),
 
     'history.messages': async ({ sessionId, cwd, limit, before, after, around }) => {
+      // A running turn's figures come with its live `result`.
+      const running = manager.has(sessionId) && manager.require(sessionId).status === 'running'
       const [page, permissionMode] = await Promise.all([
         limit === undefined
           ? readMessages(sessionId, cwd).then((messages) => ({ messages, hasMore: false, hasNewer: false }))
-          : readMessagePage(sessionId, cwd, limit, { before, after, around }),
+          : readMessagePage(sessionId, cwd, limit, { before, after, around }, running),
         // Pages next to one shown only add to it; the one opened at set the mode.
         before === undefined && after === undefined ? readPermissionMode(sessionId) : null,
       ])

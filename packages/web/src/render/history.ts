@@ -1,4 +1,4 @@
-import type { SDKMessage, SessionMessage } from '@ccw/shared'
+import type { SDKMessage, SessionMessage, TurnTotals } from '@ccw/shared'
 
 import { bashEcho, parseBashInput, parseBashOutput } from './bash.ts'
 import { applyMessage, findAgent, findAgentById, userText, type Transcript } from './nodes.ts'
@@ -59,6 +59,24 @@ export function applyHistoryMessage(transcript: Transcript, entry: SessionMessag
     .join('\n')
   const images = blocks.filter((block) => block.type === 'image' || block.type === 'document').length
   if (text || images) applyUserText(transcript, entry.uuid, text, images)
+}
+
+/**
+ * The row a finished turn's live `result` drew, from the figures the server
+ * rebuilt out of the transcript. Goes in right after the turn's last entry.
+ */
+export function applyTurnTotals(transcript: Transcript, turn: TurnTotals): void {
+  transcript.nodes.push({
+    kind: 'result',
+    id: `${turn.after}:result`,
+    // The transcript does not say whether the turn ended on an error.
+    isError: false,
+    durationMs: turn.durationMs,
+    numTurns: turn.numTurns,
+    inputTokens: turn.inputTokens,
+    outputTokens: turn.outputTokens,
+    cacheReadTokens: turn.cacheReadTokens,
+  })
 }
 
 /** `getSessionMessages` passes the jsonl flag through, though `SessionMessage` does not declare it. */

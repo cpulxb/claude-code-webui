@@ -434,6 +434,7 @@
 .stats {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--ccw-space-3);
   padding-top: var(--ccw-space-2);
   margin: var(--ccw-space-2) 0 var(--ccw-space-5);

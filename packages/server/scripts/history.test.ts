@@ -7,6 +7,7 @@ import { test } from 'node:test'
 import type { SessionMessage } from '@ccw/shared'
 
 import { locateSession, pageMessages, readMessagePage, readMessages } from '../src/history/sessions.ts'
+import { turnTotals } from '../src/history/turns.ts'
 
 const entry = (type: 'user' | 'assistant', uuid: string, message: unknown): SessionMessage => ({
   type,
@@ -112,6 +113,65 @@ test('newer pages from a page around an entry cover the rest once, in order', ()
   const all = uuids({ messages: transcript })
   assert.deepEqual(shown, all.slice(all.indexOf(shown[0]!)))
   assert.equal(shown.at(-1), 'a5')
+})
+
+// A turn's figures as the CLI writes them: every response's usage, and when each entry landed.
+const timed = (message: SessionMessage, second: number): SessionMessage =>
+  ({ ...message, timestamp: `2026-10-01T00:00:${String(second).padStart(2, '0')}.000Z` }) as SessionMessage
+const usage = (input: number, output: number, cacheRead = 0) => ({ input_tokens: input, output_tokens: output, cache_read_input_tokens: cacheRead })
+const response = (uuid: string, id: string, block: unknown, used: object, model = 'claude-opus-5-5'): SessionMessage =>
+  entry('assistant', uuid, { id, model, role: 'assistant', content: [block], usage: used })
+const text = (value: string) => ({ type: 'text', text: value })
+
+test('a turn counts each response once, however many entries it was written as', () => {
+  const turn = [
+    timed(prompt('p', 'go'), 0),
+    timed(response('r1', 'm1', text('looking'), usage(2, 10, 100)), 2),
+    timed(response('r2', 'm1', { type: 'tool_use', id: 't1', name: 'Bash', input: {} }, usage(2, 10, 100)), 3),
+    timed(result('o1', 't1'), 4),
+    timed(response('r3', 'm2', text('done'), usage(3, 20, 200)), 7),
+  ]
+  assert.deepEqual(turnTotals(turn, false), [
+    { after: 'r3', durationMs: 7000, numTurns: 2, inputTokens: 5, outputTokens: 30, cacheReadTokens: 300 },
+  ])
+})
+
+test('while the session runs its newest turn has no totals yet, and the ones before it do', () => {
+  const turns = [
+    timed(prompt('p1', 'one'), 0),
+    timed(response('r1', 'm1', text('two'), usage(1, 1)), 1),
+    timed(prompt('p2', 'three'), 5),
+    timed(response('r2', 'm2', text('four'), usage(1, 1)), 6),
+  ]
+  assert.deepEqual(turnTotals(turns, true).map((turn) => turn.after), ['r1'])
+  assert.deepEqual(turnTotals(turns, false).map((turn) => turn.after), ['r1', 'r2'])
+})
+
+test('a message the CLI wrote itself is no model call, and a turn without one has no totals', () => {
+  const turns = [
+    timed(prompt('c', '<command-name>/usage</command-name>'), 0),
+    timed(prompt('p', 'go'), 1),
+    timed(response('r', 'm1', text('half'), usage(1, 2)), 2),
+    timed(response('e', 'x1', text('API Error: Connection dropped'), usage(0, 0), '<synthetic>'), 3),
+  ]
+  // The row still follows the turn's last entry.
+  assert.deepEqual(turnTotals(turns, false), [
+    { after: 'e', durationMs: 1000, numTurns: 1, inputTokens: 1, outputTokens: 2, cacheReadTokens: 0 },
+  ])
+})
+
+test('a compaction inside a turn does not split it, and a turn begun before the read has no totals', () => {
+  const boundary = { type: 'system', uuid: 'b', session_id: 's', message: null, parent_tool_use_id: null, parent_agent_id: null }
+  const turn = [
+    timed(prompt('p', 'go'), 0),
+    timed(response('r1', 'm1', text('working'), usage(1, 1)), 1),
+    timed(boundary as SessionMessage, 2),
+    { ...timed(prompt('s', 'This session is being continued from a previous conversation.'), 3), isCompactSummary: true } as SessionMessage,
+    timed(response('r2', 'm2', text('done'), usage(1, 1)), 5),
+  ]
+  assert.deepEqual(turnTotals(turn, false).map(({ after, numTurns, durationMs }) => [after, numTurns, durationMs]), [['r2', 2, 5000]])
+  // The read since the compaction lacks the prompt: the figures would be partial.
+  assert.deepEqual(turnTotals(turn.slice(2), false), [])
 })
 
 // Transcripts on disk, in the shape the CLI writes, for the readers above.
@@ -283,4 +343,31 @@ test('messages a compaction kept show once, after its summary, as the newest pag
     shown.unshift(...page.messages.map((entry) => entry.uuid))
   }
   assert.deepEqual(shown.map((uuid) => Number(uuid.split('-').at(-1))), [0, 1, 4, 5, 2, 3, 6, 7])
+})
+
+test('a page carries the totals of the turns that end on it, counted from where each began', async () => {
+  const sessionId = '00000000-0000-4000-8000-0000000000a8'
+  const answer = (id: string, block: unknown, used: object) => ({ type: 'assistant' as const, message: { id, role: 'assistant', content: [block], usage: used } })
+  // One entry a second.
+  await writeTranscript(sessionId, [
+    said('one'),
+    answer('m1', { type: 'tool_use', id: 't1', name: 'Bash', input: {} }, usage(2, 10)),
+    { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] } },
+    answer('m2', text('two'), usage(3, 20)),
+    said('three'),
+    answer('m3', text('four'), usage(1, 5)),
+  ])
+  const newest = await readMessagePage(sessionId, '/work/app', 2)
+  assert.deepEqual(newest.turns, [
+    { after: `${sessionId}-5`, durationMs: 1000, numTurns: 1, inputTokens: 1, outputTokens: 5, cacheReadTokens: 0 },
+  ])
+
+  // The first turn ends on the older page, while its prompt is a page further back.
+  const older = await readMessagePage(sessionId, '/work/app', 2, { before: newest.messages[0]!.uuid })
+  assert.deepEqual(older.messages.map((entry) => entry.uuid), [`${sessionId}-1`, `${sessionId}-2`, `${sessionId}-3`])
+  assert.deepEqual(older.turns, [
+    { after: `${sessionId}-3`, durationMs: 3000, numTurns: 2, inputTokens: 5, outputTokens: 30, cacheReadTokens: 0 },
+  ])
+
+  assert.deepEqual((await readMessagePage(sessionId, '/work/app', 2, {}, true)).turns, [])
 })

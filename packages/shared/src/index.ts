@@ -87,6 +87,21 @@ export type WorkflowRecord = {
   durationMs?: number
 }
 
+/**
+ * A finished turn's figures, rebuilt from the transcript for the row its live
+ * `result` drew; see `history/turns.ts`.
+ */
+export type TurnTotals = {
+  /** The turn's last entry, which the row follows. */
+  after: string
+  durationMs: number
+  /** Model responses — what `result.num_turns` counts. */
+  numTurns: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+}
+
 /** A subagent transcript found next to a session's JSONL. */
 export type SubagentMeta = {
   agentId: string
@@ -378,10 +393,17 @@ export type RpcMap = {
     params: { sessionId: string; cwd?: string; limit?: number; before?: string; after?: string; around?: string }
     /**
      * `hasMore` / `hasNewer`: entries remain before / after this page.
+     * `turns`: the stats rows of turns that end on this page, paged reads only.
      * `permissionMode` is absent when the session's mode was never toggled,
      * and is only read for the page a session opens at.
      */
-    result: { messages: SessionMessage[]; hasMore: boolean; hasNewer: boolean; permissionMode?: PermissionMode }
+    result: {
+      messages: SessionMessage[]
+      hasMore: boolean
+      hasNewer: boolean
+      turns?: TurnTotals[]
+      permissionMode?: PermissionMode
+    }
   }
   /**
    * The directory a session runs in, for opening one known only by its id —
