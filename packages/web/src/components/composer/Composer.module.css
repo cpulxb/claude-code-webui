@@ -72,13 +72,16 @@
   background: var(--ccw-bg-hover);
 }
 
+/* Never squeezed: a shrinking toolbar would break the label one glyph per line, so the model pill gives way instead. */
 .modeButton {
   display: flex;
+  flex: none;
   gap: 5px;
   align-items: center;
   padding: 3px 9px;
   font-size: var(--ccw-text-sm);
   color: var(--ccw-text-secondary);
+  white-space: nowrap;
   border-radius: var(--ccw-radius-sm);
 }
 
@@ -123,6 +126,25 @@
 @media (pointer: coarse) {
   .hint {
     display: none;
+  }
+}
+
+/* --- phone: the toolbar keeps one row beside the model pill ------------ */
+
+@media (max-width: 640px) {
+  .wrap {
+    padding: 0 var(--ccw-space-3) var(--ccw-space-4);
+  }
+
+  .toolbar {
+    gap: var(--ccw-space-1);
+  }
+}
+
+/* iOS zooms into any field set below 16px, and this field is where a phone user lands. */
+@media (pointer: coarse) {
+  .textarea {
+    font-size: 16px;
   }
 }
 
