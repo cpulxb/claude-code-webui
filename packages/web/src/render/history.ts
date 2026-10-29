@@ -1,7 +1,7 @@
 import type { SDKMessage, SessionMessage, TurnTotals } from '@ccw/shared'
 
 import { bashEcho, parseBashInput, parseBashOutput } from './bash.ts'
-import { applyMessage, findAgent, findAgentById, userText, type Transcript } from './nodes.ts'
+import { applyMessage, dropToolsUsedLine, findAgent, findAgentById, userText, type Transcript } from './nodes.ts'
 import { applyWorkflowEvent, parseTaskNotification, unframeWorkflowPrompt, type TaskNotice } from './workflows.ts'
 
 /**
@@ -34,7 +34,7 @@ export function applyHistoryMessage(transcript: Transcript, entry: SessionMessag
   // divider is drawn here, without the token counts only the live event has.
   if (isCompactSummary(entry)) {
     transcript.seen[entry.uuid] = true
-    transcript.nodes.push({ kind: 'compact', id: entry.uuid, summary: userText(content) })
+    transcript.nodes.push({ kind: 'compact', id: entry.uuid, summary: dropToolsUsedLine(userText(content)) })
     return
   }
   if (typeof content === 'string') {

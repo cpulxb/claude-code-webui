@@ -226,7 +226,7 @@ function applyLocal(transcript: Transcript, message: SDKMessage, inAgent: boolea
       // A compaction's summary follows its boundary as a synthetic prompt.
       const last = transcript.nodes.at(-1)
       if (message.isSynthetic && last?.kind === 'compact' && last.summary === undefined) {
-        last.summary = userText(content)
+        last.summary = dropToolsUsedLine(userText(content))
         return
       }
       // The parent's prompt arrives as the subagent's first user message; it
@@ -399,6 +399,22 @@ export function userText(content: unknown): string {
     .join('\n')
 }
 
+/**
+ * A line the CLI writes for the model, naming tools it has not seen used: it
+ * opens a subagent's hand-back (2.1.312) and sits in a compaction summary,
+ * bare on 2.1.310 and alone in a reminder on 2.1.312. The CLI escapes the tag
+ * anywhere else, so such a line is always this one.
+ */
+const TOOLS_USED = String.raw`<tools-used-before-summary>[^<\n]*</tools-used-before-summary>`
+const TOOLS_USED_LINE = new RegExp(
+  String.raw`^[ \t]*(?:<system-reminder>\n[ \t]*${TOOLS_USED}[ \t]*\n</system-reminder>|${TOOLS_USED})[ \t]*\n?`,
+  'gm',
+)
+
+export function dropToolsUsedLine(text: string): string {
+  return text.replace(TOOLS_USED_LINE, '')
+}
+
 function flattenToolResult(content: unknown): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
@@ -567,7 +583,11 @@ function settleAgent(agent: AgentRun, isError: boolean, output: string, structur
   if (result.totalToolUseCount !== undefined) agent.toolUses = result.totalToolUseCount
   if (result.totalDurationMs !== undefined) agent.durationMs = result.totalDurationMs
   if (result.resolvedModel) agent.model = result.resolvedModel
-  const text = result.content?.filter((block) => block.type === 'text').map((block) => block.text ?? '').join('\n')
+  const text = result.content
+    ?.filter((block) => block.type === 'text')
+    .map((block) => dropToolsUsedLine(block.text ?? ''))
+    .filter(Boolean)
+    .join('\n')
   if (!launched) {
     const report = text || parseHandBack(output)
     if (report) agent.summary = report

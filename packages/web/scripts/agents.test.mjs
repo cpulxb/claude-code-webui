@@ -86,6 +86,34 @@ test('history replay rebuilds the cards from the model-facing hand-back text', (
   assert.ok(agents.every((agent) => /^a[0-9a-f]+$/.test(agent.agentId)))
 })
 
+// CLI 2.1.312 opens each hand-back with the tools the subagent used, for the
+// model: a block of its own in the structured result, a line above the frame
+// in the text.
+const TOOLS_USED = '<tools-used-before-summary>Read</tools-used-before-summary>'
+const withToolsUsed = messages.map((message) => {
+  if (!message.tool_use_result?.agentId) return message
+  const content = message.message.content.map((block) =>
+    block.type === 'tool_result' ? { ...block, content: [{ type: 'text', text: `  ${TOOLS_USED}\n  \n${block.content[0].text}` }] } : block,
+  )
+  const result = message.tool_use_result
+  return {
+    ...message,
+    message: { ...message.message, content },
+    tool_use_result: { ...result, toolsUsed: ['Read'], content: [{ type: 'text', text: `${TOOLS_USED}\n` }, ...result.content] },
+  }
+})
+
+test("the tools-used line a CLI 2.1.312 hand-back opens with stays out of the report", () => {
+  assert.deepEqual(listAgents(replay(withToolsUsed)).map((agent) => agent.summary), ['MANGO', 'TEAL'])
+
+  const history = withToolsUsed
+    .filter((message) => (message.type === 'assistant' || message.type === 'user') && message.parent_tool_use_id === null)
+    .map(({ tool_use_result: _dropped, ...entry }) => entry)
+  const transcript = emptyTranscript()
+  for (const entry of history) applyHistoryMessage(transcript, entry)
+  assert.deepEqual(listAgents(transcript).map((agent) => agent.summary), ['MANGO', 'TEAL'])
+})
+
 test('parseHandBack strips the frame, the indent and the agentId trailer', () => {
   const output =
     '[Subagent hand-back] Frame text. The report follows:\n  line one\n    indented\nagentId: abc123 (use SendMessage …)'

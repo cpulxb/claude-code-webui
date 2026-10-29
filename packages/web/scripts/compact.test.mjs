@@ -86,3 +86,21 @@ test('a compaction read from history is a divider with its summary, not a prompt
   assert.equal(transcript.nodes[0].summary, SUMMARY)
   assert.deepEqual(listUserPromptUuids(history), ['next'])
 })
+
+test('the tools-used line a summary carries for the model is not shown', () => {
+  // Between the preamble and the summary, the CLI names the tools used before
+  // the compaction: a bare line on 2.1.310, inside a reminder on 2.1.312.
+  const line = '<tools-used-before-summary>Agent, Bash</tools-used-before-summary>'
+  for (const toolsUsed of [line, `<system-reminder>\n${line}\n</system-reminder>`]) {
+    const withToolsUsed = SUMMARY.replace('\n\nSummary:', `\n\n${toolsUsed}\nSummary:`)
+    const withSummary = (list) => list.map((message, at) => (at === 1 ? { ...message, message: { ...message.message, content: withToolsUsed } } : message))
+
+    const live2 = emptyTranscript()
+    for (const message of withSummary(live)) applyMessage(live2, message)
+    assert.equal(live2.nodes[0].summary, SUMMARY)
+
+    const history2 = emptyTranscript()
+    for (const entry of withSummary(history)) applyHistoryMessage(history2, entry)
+    assert.equal(history2.nodes[0].summary, SUMMARY)
+  }
+})
