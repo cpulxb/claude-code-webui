@@ -18,14 +18,19 @@ import type {
   PermissionDecision,
   PermissionMode,
   PermissionRequest,
+  PluginAction,
+  PluginInfo,
   ServerEvent,
   SessionConfig,
   SessionFlags,
   SessionStatus,
   SessionSummary,
+  SkillInfo,
+  SkillState,
 } from '@ccw/shared'
 
 import { resolveClaudeExecutable } from '../config.ts'
+import { editSkillState, listPlugins, runPluginAction } from './extensions.ts'
 import { InputQueue } from './input-queue.ts'
 import { SessionModels } from './models.ts'
 import { PermissionBroker } from './permission.ts'
@@ -421,6 +426,31 @@ export class SessionRunner {
   async reconnectMcp(name: string): Promise<McpServerStatus[]> {
     await this.#query.reconnectMcpServer(name)
     return this.#query.mcpServerStatus()
+  }
+
+  /** The terminal's `/skills` rows. `getSkillsDialog` is internal, so not in the SDK's typings. */
+  async skills(): Promise<SkillInfo[]> {
+    const query = this.#query as unknown as { getSkillsDialog(): Promise<{ skills: SkillInfo[] }> }
+    return (await query.getSkillsDialog()).skills
+  }
+
+  /** The CLI watches its settings files, so this session picks the edit up by itself. */
+  async setSkillState(name: string, state: SkillState): Promise<SkillInfo[]> {
+    // The row's other names let the CLI place a skill its own scan cannot see, like an MCP server's.
+    const handles = (await this.skills()).find((skill) => skill.name === name)?.handles
+    await editSkillState(this.config.cwd, { name, state, ...(handles ? { handles } : {}) })
+    return this.skills()
+  }
+
+  plugins(): Promise<PluginInfo[]> {
+    return listPlugins(this.config.cwd)
+  }
+
+  /** Settings changes reach the CLI only through a reload, unlike skill states. */
+  async pluginAction(id: string, scope: string, action: PluginAction): Promise<{ plugins: PluginInfo[]; notice?: string }> {
+    const notice = await runPluginAction(this.config.cwd, id, scope, action)
+    await this.#query.reloadPlugins()
+    return { plugins: await this.plugins(), ...(notice ? { notice } : {}) }
   }
 
   async account(): Promise<AccountInfo> {

@@ -348,6 +348,58 @@
   overflow-wrap: anywhere;
 }
 
+.note {
+  padding: 0 0 4px;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+  overflow-wrap: anywhere;
+}
+
+.filter {
+  width: 100%;
+  margin: 2px 0 var(--ccw-space-2);
+  padding: 4px 8px;
+  font-size: var(--ccw-text-sm);
+  color: inherit;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-strong);
+  border-radius: var(--ccw-radius-sm);
+  outline: none;
+}
+
+.filter:focus {
+  border-color: var(--ccw-accent);
+}
+
+.filter::placeholder {
+  color: var(--ccw-text-faint);
+}
+
+.skillOff {
+  color: var(--ccw-text-faint);
+}
+
+.skillState {
+  flex: none;
+  padding: 1px 2px;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-secondary);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-strong);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.skillState:disabled {
+  opacity: 0.5;
+}
+
+.skillLocked {
+  flex: none;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+  cursor: help;
+}
+
 .empty {
   padding: var(--ccw-space-4) 0;
   font-size: var(--ccw-text-sm);

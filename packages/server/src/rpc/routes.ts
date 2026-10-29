@@ -136,6 +136,17 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
       servers: await manager.require(sessionId).reconnectMcp(name),
     }),
 
+    'session.skills': async ({ sessionId }) => ({ skills: await manager.require(sessionId).skills() }),
+
+    'session.setSkillState': async ({ sessionId, name, state }) => ({
+      skills: await manager.require(sessionId).setSkillState(name, state),
+    }),
+
+    'session.plugins': async ({ sessionId }) => ({ plugins: await manager.require(sessionId).plugins() }),
+
+    'session.pluginAction': async ({ sessionId, id, scope, action }) =>
+      manager.require(sessionId).pluginAction(id, scope, action),
+
     'session.account': async ({ sessionId }) => ({ account: await manager.require(sessionId).account() }),
 
     'session.rename': async ({ sessionId, title, cwd }) => {

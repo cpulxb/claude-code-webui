@@ -15,6 +15,8 @@ export const LOCAL_COMMANDS: SlashCommand[] = [
   { name: 'export', description: '把对话导出为 Markdown 文件', argumentHint: '[文件名]' },
   { name: 'copy', description: '复制 Claude 的最后一条回复', argumentHint: '' },
   { name: 'mcp', description: '查看并管理 MCP 服务器', argumentHint: '' },
+  { name: 'skills', description: '查看 skills，设置各自的开关', argumentHint: '' },
+  { name: 'plugins', aliases: ['plugin'], description: '查看并管理已安装的插件', argumentHint: '' },
   { name: 'status', description: '查看版本、账号与运行状态', argumentHint: '' },
 ]
 
@@ -84,6 +86,8 @@ export async function runLocalCommand(command: LocalCommand): Promise<void> {
     }
 
     case 'mcp':
+    case 'skills':
+    case 'plugins':
     case 'status':
       window.dispatchEvent(new CustomEvent(SHOW_INFO_EVENT, { detail: command.name }))
       return

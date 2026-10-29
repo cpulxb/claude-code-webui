@@ -188,13 +188,12 @@ test('/branch opens the fork and leaves the original untouched', async () => {
   assert.ok(state.sessions[f.sessionId])
 })
 
-test('/mcp and /status ask the details panel for their section', async () => {
+test('/mcp, /skills, /plugins and /status ask the details panel for their section', async () => {
   await fixture()
   const seen = []
   const listener = (event) => seen.push(event.detail)
   window.addEventListener(SHOW_INFO_EVENT, listener)
-  await runLocalCommand({ name: 'mcp', args: '' })
-  await runLocalCommand({ name: 'status', args: '' })
+  for (const text of ['/mcp', '/skills', '/plugin', '/status']) await runLocalCommand(parseLocalCommand(text))
   window.removeEventListener(SHOW_INFO_EVENT, listener)
-  assert.deepEqual(seen, ['mcp', 'status'])
+  assert.deepEqual(seen, ['mcp', 'skills', 'plugins', 'status'])
 })

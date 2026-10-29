@@ -22,7 +22,9 @@ import { ExplorerTree } from './ExplorerTree.tsx'
 import { FileTypeIcon, WorkspaceFolderIcon } from './FileTypeIcon.tsx'
 import { FileView } from './FileView.tsx'
 import { McpSection } from './McpSection.tsx'
+import { PluginsSection } from './PluginsSection.tsx'
 import { ScmSection } from './ScmPanel.tsx'
+import { SkillsSection } from './SkillsSection.tsx'
 import { StartPage } from './StartPage.tsx'
 import { TerminalView } from './TerminalView.tsx'
 
@@ -174,7 +176,7 @@ export function DetailsPanel({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onReveal, update, openTerminal])
 
-  // `/mcp` and `/status` from the composer: bring up 详情 at that section.
+  // `/mcp`, `/skills`, `/plugins` and `/status` from the composer: bring up 详情 at that section.
   useEffect(() => {
     const onShow = (event: Event): void => {
       onReveal()
@@ -546,6 +548,10 @@ function InfoPane({
       </div>
 
       <McpSection sessionId={sessionId} attached={attached} snapshot={init?.mcpServers ?? null} />
+
+      {/* Keyed by session: a list read for one must not show under another. */}
+      <SkillsSection key={`skills-${sessionId}`} sessionId={sessionId} attached={attached} />
+      <PluginsSection key={`plugins-${sessionId}`} sessionId={sessionId} attached={attached} />
 
       {contextUsage && <ContextSection usage={contextUsage} />}
     </>

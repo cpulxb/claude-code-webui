@@ -28,6 +28,41 @@ export type {
 /** The `/context` breakdown: per-category tokens plus the CLI's own grid rows. */
 export type ContextUsage = SDKControlGetContextUsageResponse
 
+/** The states the terminal's `/skills` menu cycles through. */
+export type SkillState = 'on' | 'name-only' | 'user-invocable-only' | 'off'
+
+/**
+ * One row of the terminal's `/skills` menu, from the CLI's internal
+ * `get_skills_dialog` request — the rows the VS Code extension draws.
+ */
+export type SkillInfo = {
+  /** The settings key. */
+  name: string
+  display_name: string
+  description: string
+  /** `user`, `project`, `plugin`, `built-in`, … */
+  source: string
+  /** Estimated cost of the skill's listing in the system prompt. */
+  tokens: number
+  state: SkillState
+  /** Set when a local setting cannot change the state. */
+  locked_by?: 'author' | 'plugin' | 'policy' | 'flag' | 'reserved-name'
+  advertised: boolean
+  handles: { unqualified_name?: string; aliases?: string[]; bare_name_reserved?: boolean }
+}
+
+/** One installed plugin, as `claude plugin list --json` reports it. */
+export type PluginInfo = {
+  /** `name@marketplace`. */
+  id: string
+  version?: string
+  scope: string
+  enabled: boolean
+  installPath?: string
+}
+
+export type PluginAction = 'enable' | 'disable' | 'update' | 'uninstall'
+
 export { fuzzyFilter, fuzzyScore } from './fuzzy.ts'
 export { mergeProjectSessions, UNKNOWN_CWD } from './projects.ts'
 
@@ -364,6 +399,20 @@ export type RpcMap = {
     result: { servers: McpServerStatus[] }
   }
   'session.mcpReconnect': { params: { sessionId: string; name: string }; result: { servers: McpServerStatus[] } }
+  /** `/skills`: the terminal menu's rows for this session. */
+  'session.skills': { params: { sessionId: string }; result: { skills: SkillInfo[] } }
+  /** Saved where the terminal's `/skills` saves: the project's `.claude/settings.local.json`. */
+  'session.setSkillState': {
+    params: { sessionId: string; name: string; state: SkillState }
+    result: { skills: SkillInfo[] }
+  }
+  /** `/plugins`: every installed plugin, enabled or not. */
+  'session.plugins': { params: { sessionId: string }; result: { plugins: PluginInfo[] } }
+  /** Also applied to the running session, as `/reload-plugins` would; `notice` reports an update. */
+  'session.pluginAction': {
+    params: { sessionId: string; id: string; scope: string; action: PluginAction }
+    result: { plugins: PluginInfo[]; notice?: string }
+  }
   /** `/status`: who the CLI is logged in as. */
   'session.account': { params: { sessionId: string }; result: { account: AccountInfo } }
   /**
