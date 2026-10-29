@@ -367,6 +367,32 @@ export type UserSettings = {
   overrides: SettingsOverride[]
 }
 
+/** The tiers above the user's own settings.json, as they rank in the CLI. */
+export type CliConfigOverride = { source: 'project' | 'local' | 'flag' | 'managed'; path?: string }
+
+/**
+ * One setting the CLI's `/config key=value` takes, under the CLI's own key.
+ * Which keys there are, and their options, is the CLI's answer in the
+ * session's directory; the value is read from the files it reads them from.
+ */
+export type CliConfigRow = {
+  key: string
+  /** `text` takes any value, such as a language name. */
+  kind: 'boolean' | 'choice' | 'text'
+  /** What a `choice` takes; empty for the other kinds. */
+  options: string[]
+  /**
+   * Null when nothing sets it and the CLI picks by account, plan or model, or
+   * when the key is one this server cannot read (a plugin's option, a key
+   * newer than this server).
+   */
+  value: boolean | string | null
+  /** Where the CLI saves a change; absent for a key this server cannot read. */
+  target?: 'user' | 'local' | 'global'
+  /** A higher tier sets the key, so a change saved here does not take effect. */
+  overriddenBy?: CliConfigOverride
+}
+
 /** One entry of an upstream channel's `/v1/models`. */
 export type UpstreamModel = {
   id: string
@@ -626,6 +652,14 @@ export type RpcMap = {
     params: { baseUrl: string; authField: 'ANTHROPIC_AUTH_TOKEN' | 'ANTHROPIC_API_KEY'; key: string }
     result: { models: UpstreamModel[] }
   }
+  /** The terminal's `/config` rows in `cwd`, which decides the project's own settings. Takes a few seconds: the CLI is asked. */
+  'config.read': { params: { cwd: string }; result: { rows: CliConfigRow[] } }
+  /**
+   * Runs `/config key=value` in a one-off CLI in `cwd`, so the change lands
+   * where the terminal's would, the CLI's checks included. Resolves with the
+   * CLI's confirmation; a refusal fails with its words.
+   */
+  'config.write': { params: { cwd: string; key: string; value: string }; result: { message: string } }
 }
 
 export type RpcMethod = keyof RpcMap

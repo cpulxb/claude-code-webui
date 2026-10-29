@@ -4,7 +4,7 @@ import { useShallow } from 'zustand/shallow'
 
 import { call } from '../../api/client.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
-import { SHOW_INFO_EVENT } from '../../utils/local-commands.ts'
+import { SHOW_CONFIG_EVENT, SHOW_INFO_EVENT } from '../../utils/local-commands.ts'
 import { ConfirmDialog } from '../ConfirmDialog.tsx'
 import {
   CompassIcon,
@@ -14,9 +14,11 @@ import {
   MinimizeIcon,
   PanelRightIcon,
   PlusIcon,
+  SlidersIcon,
   TerminalIcon,
   XIcon,
 } from '../Icons.tsx'
+import { ConfigView } from './ConfigView.tsx'
 import styles from './DetailsPanel.module.css'
 import { dirtyPaths, getDraft, putDraft, subscribeDrafts } from './drafts.ts'
 import { ExplorerTree } from './ExplorerTree.tsx'
@@ -39,6 +41,7 @@ type Tab =
   | { kind: 'files' }
   | { kind: 'info' }
   | { kind: 'scm' }
+  | { kind: 'config' }
   | { kind: 'file'; path: string; name: string }
   /** `cwd` is where the shell started; `title` is the shell's name once it is up. */
   | { kind: 'terminal'; id: string; cwd: string; title: string }
@@ -236,6 +239,16 @@ export function DetailsPanel({
     }
   }, [onReveal, update])
 
+  // `/config` from the composer.
+  useEffect(() => {
+    const onShow = (): void => {
+      onReveal()
+      update((set) => openTab(set, { kind: 'config' }))
+    }
+    window.addEventListener(SHOW_CONFIG_EVENT, onShow)
+    return () => window.removeEventListener(SHOW_CONFIG_EVENT, onShow)
+  }, [onReveal, update])
+
   useEffect(() => {
     stripRef.current?.querySelector('[data-active]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [active, cwd])
@@ -337,6 +350,7 @@ export function DetailsPanel({
                       onNewTerminal={openTerminal}
                       onOpenInfo={() => update((set) => openTab(set, { kind: 'info' }))}
                       onOpenScm={() => update((set) => openTab(set, { kind: 'scm' }))}
+                      onOpenConfig={() => update((set) => openTab(set, { kind: 'config' }))}
                     />
                   </div>
                 )
@@ -375,6 +389,12 @@ export function DetailsPanel({
                       active={!hidden}
                       onFilesChanged={() => touchFs(sessionId)}
                     />
+                  </div>
+                )
+              case 'config':
+                return (
+                  <div key={id} className={styles.pane} hidden={hidden}>
+                    <ConfigView key={initCwd ?? cwd} cwd={initCwd ?? cwd} active={!hidden} />
                   </div>
                 )
               case 'file':
@@ -506,6 +526,8 @@ function tabLabel(tab: Tab): string {
       return '详情'
     case 'scm':
       return '源代码管理'
+    case 'config':
+      return '配置'
     case 'file':
       return tab.name
     case 'terminal':
@@ -523,6 +545,8 @@ function tabIcon(tab: Tab): ReactNode {
       return <InfoIcon size={14} />
     case 'scm':
       return <GitBranchIcon size={14} />
+    case 'config':
+      return <SlidersIcon size={14} />
     case 'file':
       return <FileTypeIcon name={tab.name} size={14} />
     case 'terminal':

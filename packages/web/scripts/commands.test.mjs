@@ -28,7 +28,7 @@ globalThis.fetch = async (_url, options) => {
 }
 
 const { useStore } = await import('../src/store/session.ts')
-const { exportFileName, parseLocalCommand, runLocalCommand, SHOW_INFO_EVENT } = await import('../src/utils/local-commands.ts')
+const { exportFileName, parseLocalCommand, runLocalCommand, SHOW_CONFIG_EVENT, SHOW_INFO_EVENT } = await import('../src/utils/local-commands.ts')
 const { lastReplyText, transcriptMarkdown } = await import('../src/utils/transcript-markdown.ts')
 const { applyHistoryMessage, listUserPromptUuids } = await import('../src/render/history.ts')
 const { emptyTranscript } = await import('../src/render/nodes.ts')
@@ -67,6 +67,9 @@ test('local commands parse by name or alias and leave everything else alone', ()
   assert.equal(parseLocalCommand('/renamed x'), null)
   assert.equal(parseLocalCommand('/context'), null)
   assert.equal(parseLocalCommand('please /rename this'), null)
+  // A bare /config opens the panel; with a pair it goes to the CLI, which applies it to the session too.
+  assert.deepEqual(parseLocalCommand('/config'), { name: 'config', args: '' })
+  assert.equal(parseLocalCommand('/config autoCompact=false'), null)
 })
 
 test('export file names keep a given name and default to a timestamp', () => {
@@ -196,4 +199,15 @@ test('/mcp, /skills, /plugins and /status ask the details panel for their sectio
   for (const text of ['/mcp', '/skills', '/plugin', '/status']) await runLocalCommand(parseLocalCommand(text))
   window.removeEventListener(SHOW_INFO_EVENT, listener)
   assert.deepEqual(seen, ['mcp', 'skills', 'plugins', 'status'])
+})
+
+test('/config asks the details panel for its 配置 tab', async () => {
+  await fixture()
+  let shown = 0
+  const listener = () => (shown += 1)
+  window.addEventListener(SHOW_CONFIG_EVENT, listener)
+  await runLocalCommand(parseLocalCommand('/config'))
+  window.removeEventListener(SHOW_CONFIG_EVENT, listener)
+  assert.equal(shown, 1)
+  assert.deepEqual(calls, [])
 })

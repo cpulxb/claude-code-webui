@@ -35,6 +35,7 @@ import {
   scmUnstage,
 } from '../scm/repo.ts'
 import type { SessionManager } from '../session/manager.ts'
+import { readCliConfig, writeCliConfig } from '../settings/cli-config.ts'
 import { fetchUpstreamModels } from '../settings/upstream-models.ts'
 import { readUserSettings, writeUserSettings } from '../settings/user-settings.ts'
 import type { Updater } from '../update/updater.ts'
@@ -299,6 +300,12 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
       writeUserSettings(settings, revision, await workspaceOrNothing(cwd)),
 
     'settings.fetchModels': async (channel) => ({ models: await fetchUpstreamModels(channel) }),
+
+    'config.read': async ({ cwd }) => ({ rows: await readCliConfig(await resolveInWorkspace(cwd)) }),
+
+    'config.write': async ({ cwd, key, value }) => ({
+      message: await writeCliConfig(await resolveInWorkspace(cwd), key, value),
+    }),
   }
 }
 

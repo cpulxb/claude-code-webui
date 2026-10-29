@@ -293,6 +293,15 @@ export function GitBranchIcon(props: { size?: number }): JSX.Element {
   )
 }
 
+/** 右侧面板「配置」，即 CLI 的 `/config`。 */
+export function SlidersIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M10 5H3M21 5h-7M12 12H3M21 12h-5M8 19H3M21 19h-9M14 3v4M16 10v4M8 17v4" />
+    </Icon>
+  )
+}
+
 export function ArrowUpIcon(props: { size?: number }): JSX.Element {
   return (
     <Icon size={props.size}>

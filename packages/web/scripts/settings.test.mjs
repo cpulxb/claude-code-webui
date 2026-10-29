@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { applyForm, formProblems, groupModels, maskSecrets, rowsFromRoles, SECRET_MASK, shadowedModels, toForm, unmaskSecrets } from '../src/utils/settings.ts'
+import { configMeta, configRows } from '../src/utils/cli-config.ts'
 
 // The file from the request: one gateway, every role on the same model.
 const gateway = {
@@ -141,4 +142,17 @@ test('the model filter matches id or owner, ignoring case and surrounding blanks
   assert.deepEqual(groupModels(models, ' JAMBA ').map((group) => group.owner), ['ai21'])
   assert.deepEqual(groupModels(models, 'alibaba').map((group) => group.models[0].id), ['qwen-plus'])
   assert.deepEqual(groupModels(models, 'nothing'), [])
+})
+
+test('/config rows sort into their group in panel order, and search by name or key', () => {
+  const row = (key) => ({ key, kind: 'boolean', options: [], value: true, target: 'user' })
+  const rows = ['theme', 'autoCompact', 'acme.mode', 'model', 'zeta', 'verbose'].map(row)
+  const keys = (group, query = '') => configRows(rows, group, query).map((entry) => entry.key)
+  assert.deepEqual(keys('session'), ['model', 'autoCompact'])
+  assert.deepEqual(keys('terminal'), ['theme', 'verbose'])
+  // Keys the panel has no name for keep the CLI's, A→Z.
+  assert.deepEqual(keys('other'), ['acme.mode', 'zeta'])
+  assert.equal(configMeta('zeta').label, 'zeta')
+  assert.deepEqual(keys('session', '压缩'), ['autoCompact'])
+  assert.deepEqual(keys('terminal', 'VERB'), ['verbose'])
 })

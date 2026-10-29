@@ -50,7 +50,7 @@ function parseResult(stdout: string): CliResult | undefined {
  * Runs in `cwd`, where the CLI reads project and local scopes from. A refusal
  * rejects with the CLI's own words: the result line's message, else stderr.
  */
-function runClaude(args: string[], cwd: string, input = ''): Promise<string> {
+export function runClaude(args: string[], cwd: string, input = ''): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = execFile(claudeBinary(), args, { cwd, timeout: TIMEOUT_MS }, (error, stdout, stderr) => {
       if (!error) return resolve(stdout)

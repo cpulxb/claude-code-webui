@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import { CompassIcon, GitBranchIcon, InfoIcon, TerminalIcon } from '../Icons.tsx'
+import { CompassIcon, GitBranchIcon, InfoIcon, SlidersIcon, TerminalIcon } from '../Icons.tsx'
 import { WorkspaceFolderIcon } from './FileTypeIcon.tsx'
 import styles from './StartPage.module.css'
 
@@ -14,11 +14,13 @@ export function StartPage({
   onNewTerminal,
   onOpenInfo,
   onOpenScm,
+  onOpenConfig,
 }: {
   onOpenFiles: () => void
   onNewTerminal: () => void
   onOpenInfo: () => void
   onOpenScm: () => void
+  onOpenConfig: () => void
 }): JSX.Element {
   return (
     <div className={styles.root}>
@@ -66,6 +68,16 @@ export function StartPage({
             title="源代码管理"
             subtitle="暂存与提交、历史、分支、推送拉取"
             onClick={onOpenScm}
+          />
+          <Card
+            icon={
+              <span className={styles.blueIcon}>
+                <SlidersIcon size={20} />
+              </span>
+            }
+            title="配置"
+            subtitle="Claude Code 的 /config 设置"
+            onClick={onOpenConfig}
           />
         </div>
       </div>

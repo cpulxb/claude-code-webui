@@ -1,0 +1,105 @@
+/* Search box and refresh on one line, the box taking the room. */
+.head {
+  display: flex;
+  gap: var(--ccw-space-1);
+  align-items: center;
+  margin: 2px 0 var(--ccw-space-1);
+}
+
+.filter {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: var(--ccw-text-sm);
+  color: inherit;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-strong);
+  border-radius: var(--ccw-radius-sm);
+  outline: none;
+}
+
+.filter:focus {
+  border-color: var(--ccw-accent);
+}
+
+.filter::placeholder {
+  color: var(--ccw-text-faint);
+}
+
+.saved,
+.error {
+  padding: 0 0 6px;
+  font-size: var(--ccw-text-xs);
+  overflow-wrap: anywhere;
+}
+
+.saved {
+  color: var(--ccw-success);
+}
+
+.error {
+  color: var(--ccw-danger);
+}
+
+.row {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: flex-start;
+  padding: 5px 0;
+  font-size: var(--ccw-text-base);
+}
+
+.text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.key {
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+}
+
+.hint,
+.warn {
+  font-size: var(--ccw-text-xs);
+}
+
+.hint {
+  color: var(--ccw-text-faint);
+}
+
+.warn {
+  color: var(--ccw-warning);
+  cursor: help;
+}
+
+/* Long options (a theme name, "Switch automatically") must leave the label room. */
+.control {
+  max-width: 48%;
+  margin-top: 1px;
+}
+
+.input {
+  flex: none;
+  width: 120px;
+  padding: 1px 6px;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-secondary);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-strong);
+  border-radius: var(--ccw-radius-sm);
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--ccw-accent);
+}
+
+.input:disabled {
+  opacity: 0.5;
+}

@@ -7,7 +7,8 @@ import { lastReplyText, transcriptMarkdown } from './transcript-markdown.ts'
  * Terminal commands the SDK leaves out of `supportedCommands()` — sent to the
  * CLI they only answer "isn't available in this environment" — rebuilt in the
  * browser. They join the CLI's own in the `/` palette; submitting one runs it
- * here instead of sending it.
+ * here instead of sending it. A bare `/config` is here too: outside a terminal
+ * the CLI answers it with a usage line instead of its panel.
  */
 export const LOCAL_COMMANDS: SlashCommand[] = [
   { name: 'rename', description: '重命名当前会话', argumentHint: '<名称>' },
@@ -18,10 +19,14 @@ export const LOCAL_COMMANDS: SlashCommand[] = [
   { name: 'skills', description: '查看 skills，设置各自的开关', argumentHint: '' },
   { name: 'plugins', aliases: ['plugin'], description: '查看并管理已安装的插件', argumentHint: '' },
   { name: 'status', description: '查看版本、账号与运行状态', argumentHint: '' },
+  { name: 'config', description: '查看并修改 Claude Code 的设置', argumentHint: '[key=value]' },
 ]
 
 /** Asks the details panel to bring up its 详情 tab; `detail` names the section to scroll to. */
 export const SHOW_INFO_EVENT = 'ccw:show-info'
+
+/** Asks the details panel to bring up its 配置 tab. */
+export const SHOW_CONFIG_EVENT = 'ccw:show-config'
 
 export type LocalCommand = { name: string; args: string }
 
@@ -31,7 +36,10 @@ export function parseLocalCommand(text: string): LocalCommand | null {
   const typed = match?.[1]
   if (!typed) return null
   const command = LOCAL_COMMANDS.find((entry) => entry.name === typed || entry.aliases?.includes(typed))
-  return command ? { name: command.name, args: (match[2] ?? '').trim() } : null
+  const args = (match[2] ?? '').trim()
+  // `/config key=value` stays the CLI's: there it also applies to the running session, as in the terminal.
+  if (command?.name === 'config' && args) return null
+  return command ? { name: command.name, args } : null
 }
 
 /** `/export` names: the given one with `.md` ensured, else a timestamped default. */
@@ -90,6 +98,10 @@ export async function runLocalCommand(command: LocalCommand): Promise<void> {
     case 'plugins':
     case 'status':
       window.dispatchEvent(new CustomEvent(SHOW_INFO_EVENT, { detail: command.name }))
+      return
+
+    case 'config':
+      window.dispatchEvent(new CustomEvent(SHOW_CONFIG_EVENT))
       return
   }
 }
