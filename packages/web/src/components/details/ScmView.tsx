@@ -58,9 +58,11 @@ export function ScmView({
   }, [cwd])
 
   // A turn ending, a rewind, and coming back to the tab are when the repo can
-  // have moved — a commit made in a terminal meanwhile included.
+  // have moved — a commit made in a terminal meanwhile included. The first
+  // read does not wait for a running turn: until it lands there is nothing
+  // to show, not even the refresh button.
   useEffect(() => {
-    if (active && turnStatus === 'idle') void refresh()
+    if (active && (turnStatus === 'idle' || repo === undefined)) void refresh()
   }, [active, turnStatus, fsVersion, refresh])
 
   const act: Act = async (label, op, options) => {

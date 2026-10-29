@@ -42,9 +42,10 @@ export function ExplorerTree({
   }, [])
 
   // A turn ending is when the tree can have changed; re-read the root and
-  // whatever is expanded. The mount pass doubles as the initial read.
+  // whatever is expanded. The mount pass doubles as the initial read, and
+  // goes ahead mid-turn — the tree would sit empty until the turn ended.
   useEffect(() => {
-    if (turnStatus !== 'idle') return
+    if (turnStatus !== 'idle' && children[cwd]) return
     void loadDir(cwd)
     for (const dir of openRef.current) void loadDir(dir)
   }, [turnStatus, fsVersion, cwd, loadDir])

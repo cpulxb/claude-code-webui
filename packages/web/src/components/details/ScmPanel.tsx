@@ -79,9 +79,10 @@ export function ScmSection({
   }, [cwd, loadDiff])
 
   // A turn ending is the moment the working tree can have changed; the mount
-  // pass (status is already `idle`) doubles as the initial read.
+  // pass doubles as the initial read, mid-turn too — waiting for the turn to
+  // end would leave the section on 读取中… until then.
   useEffect(() => {
-    if (turnStatus === 'idle') void refresh()
+    if (turnStatus === 'idle' || status === null) void refresh()
   }, [turnStatus, fsVersion, refresh])
 
   const baseline = async (): Promise<void> => {
