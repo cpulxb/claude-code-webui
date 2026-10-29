@@ -37,6 +37,12 @@ export function DirectoryPicker(props: {
       })
   }
 
+  /** Lists `path`; while the path is being edited, the input follows along. */
+  const navigate = (path: string): void => {
+    load(path)
+    if (editing !== null) setEditing(withSlash(path))
+  }
+
   // Re-list on mount and whenever the hidden-file filter flips.
   useEffect(() => {
     load(listing?.path ?? props.initialPath)
@@ -44,6 +50,12 @@ export function DirectoryPicker(props: {
   }, [showHidden])
 
   const current = listing?.path ?? ''
+  const parent = listing?.parent
+  // Like VS Code's folder picker: the text after the last slash narrows the
+  // listing of the directory before it, and Enter/Tab open the first match.
+  const prefix = editing === null ? '' : (splitTyped(editing)?.prefix.toLowerCase() ?? '')
+  const entries = (listing?.entries ?? []).filter((entry) => entry.name.toLowerCase().startsWith(prefix))
+  const match = prefix ? entries[0] : undefined
 
   return (
     <div className={styles.backdrop} onMouseDown={props.onCancel}>
@@ -54,7 +66,12 @@ export function DirectoryPicker(props: {
           {editing === null ? (
             <>
               <Breadcrumbs path={current} home={listing?.home ?? ''} onNavigate={load} />
-              <button className={styles.iconButton} onClick={() => setEditing(current)} type="button" title="直接输入路径">
+              <button
+                className={styles.iconButton}
+                onClick={() => setEditing(withSlash(current))}
+                type="button"
+                title="直接输入路径"
+              >
                 <PencilIcon />
               </button>
             </>
@@ -63,9 +80,20 @@ export function DirectoryPicker(props: {
               className={styles.pathInput}
               value={editing}
               autoFocus
-              onChange={(event) => setEditing(event.target.value)}
+              onBlur={() => setEditing(null)}
+              onChange={(event) => {
+                const text = event.target.value
+                const dir = splitTyped(text)?.dir
+                // Listings carry no trailing slash; keep the root's own slash.
+                if (dir && dir.replace(/(.)\/+$/, '$1') !== listing?.path) load(dir)
+                setEditing(text)
+              }}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') {
+                if (event.nativeEvent.isComposing) return
+                if ((event.key === 'Enter' || event.key === 'Tab') && match) {
+                  event.preventDefault()
+                  navigate(match.path)
+                } else if (event.key === 'Enter') {
                   load(editing)
                   setEditing(null)
                 }
@@ -78,15 +106,30 @@ export function DirectoryPicker(props: {
         {error && <div className={styles.error}>{error}</div>}
 
         <div className={styles.list}>
-          {listing?.parent && (
-            <button className={styles.entry} onClick={() => load(listing.parent ?? undefined)} type="button">
+          {parent && (
+            <button
+              className={styles.entry}
+              onMouseDown={keepFocus}
+              onClick={() => navigate(parent)}
+              type="button"
+              title="上一级"
+            >
               <UpIcon />
-              <span className={styles.entryName}>上一级</span>
+              <span className={styles.entryName}>..</span>
             </button>
           )}
           {listing?.entries.length === 0 && <div className={styles.empty}>此目录下没有子目录</div>}
-          {listing?.entries.map((entry) => (
-            <button key={entry.path} className={styles.entry} onClick={() => load(entry.path)} type="button">
+          {listing && listing.entries.length > 0 && entries.length === 0 && (
+            <div className={styles.empty}>没有匹配的目录</div>
+          )}
+          {entries.map((entry) => (
+            <button
+              key={entry.path}
+              className={`${styles.entry} ${entry === match ? styles.entrySelected : ''}`}
+              onMouseDown={keepFocus}
+              onClick={() => navigate(entry.path)}
+              type="button"
+            >
               <FolderIcon />
               <span className={styles.entryName}>{entry.name}</span>
               <ChevronIcon />
@@ -97,6 +140,7 @@ export function DirectoryPicker(props: {
         <div className={styles.foot}>
           <button
             className={`${styles.toggle} ${showHidden ? styles.toggleOn : ''}`}
+            onMouseDown={keepFocus}
             onClick={() => setShowHidden(!showHidden)}
             type="button"
           >
@@ -118,6 +162,24 @@ export function DirectoryPicker(props: {
       </div>
     </div>
   )
+}
+
+/** Splits typed text into the directory to list and the name prefix to filter it by. */
+function splitTyped(text: string): { dir: string; prefix: string } | null {
+  const slash = text.lastIndexOf('/')
+  return slash < 0 ? null : { dir: text.slice(0, slash + 1), prefix: text.slice(slash + 1) }
+}
+
+function withSlash(path: string): string {
+  return path.endsWith('/') ? path : `${path}/`
+}
+
+/**
+ * Clicking a row or the hidden-file toggle must not blur the path input —
+ * blur closes it, while these clicks should keep editing in sync instead.
+ */
+function keepFocus(event: React.MouseEvent): void {
+  event.preventDefault()
 }
 
 function FolderIcon(): JSX.Element {
@@ -197,7 +259,8 @@ function Breadcrumbs({
       </button>
       {crumbs.map((crumb, index) => (
         <span key={crumb.path} style={{ display: 'contents' }}>
-          <span className={styles.crumbSep}>/</span>
+          {/* The filesystem root's label is already a slash. */}
+          {(insideHome || index > 0) && <span className={styles.crumbSep}>/</span>}
           <button
             className={`${styles.crumb} ${index === crumbs.length - 1 ? styles.crumbLast : ''}`}
             onClick={() => onNavigate(crumb.path)}
