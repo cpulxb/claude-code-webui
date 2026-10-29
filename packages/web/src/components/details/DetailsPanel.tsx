@@ -52,6 +52,41 @@ function tabId(tab: Tab): string {
 
 let terminalCount = 0
 
+/** How long a section opened by a command is held at the top while the pane loads. */
+const PIN_MS = 2000
+
+/** Input that means the user is steering the panel themselves. */
+const USER_INPUT = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const
+
+/**
+ * Brings a 详情 section to the top and holds it there while the sections
+ * around it finish loading. They grow after the scroll has started: growth
+ * below comes too late for the scroll to reach the top, growth above pushes
+ * the section back down. Lets go after {@link PIN_MS}, or at the user's first
+ * wheel, touch, click or key.
+ */
+function pinSection(id: string): () => void {
+  const target = document.getElementById(id)
+  const content = target?.parentElement
+  if (!target || !content) return () => {}
+  target.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  let first = true
+  const observer = new ResizeObserver(() => {
+    // The first call only reports the size the pane had when observed.
+    if (first) first = false
+    else target.scrollIntoView({ block: 'start' })
+  })
+  observer.observe(content)
+  const release = (): void => {
+    observer.disconnect()
+    clearTimeout(timer)
+    for (const type of USER_INPUT) window.removeEventListener(type, release, true)
+  }
+  const timer = setTimeout(release, PIN_MS)
+  for (const type of USER_INPUT) window.addEventListener(type, release, { capture: true, passive: true })
+  return release
+}
+
 /**
  * Focuses `tab`, adding it if needed. The start page behaves like a browser's
  * new-tab page: whatever is picked while it is in front takes its place.
@@ -178,19 +213,24 @@ export function DetailsPanel({
 
   // `/mcp`, `/skills`, `/plugins` and `/status` from the composer: bring up 详情 at that section.
   useEffect(() => {
+    let release = (): void => {}
     const onShow = (event: Event): void => {
       onReveal()
       update((set) => openTab(set, { kind: 'info' }))
       const section = (event as CustomEvent<string>).detail
       // Two frames: one for the tab to render, one for its layout to settle.
       requestAnimationFrame(() =>
-        requestAnimationFrame(() =>
-          document.getElementById(`ccw-info-${section}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
-        ),
+        requestAnimationFrame(() => {
+          release()
+          release = pinSection(`ccw-info-${section}`)
+        }),
       )
     }
     window.addEventListener(SHOW_INFO_EVENT, onShow)
-    return () => window.removeEventListener(SHOW_INFO_EVENT, onShow)
+    return () => {
+      window.removeEventListener(SHOW_INFO_EVENT, onShow)
+      release()
+    }
   }, [onReveal, update])
 
   useEffect(() => {
