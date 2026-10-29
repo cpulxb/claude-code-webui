@@ -267,6 +267,57 @@ export type ScmStatus =
   | { kind: 'shadow'; files: ScmFile[] }
   | { kind: 'none' }
 
+/**
+ * A real repository as the 源代码管理 tab sees it: the index and the work tree
+ * apart, and where the branch stands against its upstream. File paths are
+ * relative to the workspace cwd and limited to its subtree, as in
+ * {@link ScmStatus}; a partly staged file is in both lists.
+ */
+export type ScmRepo = {
+  /** Null when HEAD is detached. */
+  branch: string | null
+  /** Short hash of HEAD; null before the first commit. */
+  head: string | null
+  /** e.g. `origin/master`; null when the branch tracks nothing. */
+  upstream: string | null
+  /** Commits on HEAD and not on the upstream, and the other way round. */
+  ahead: number
+  behind: number
+  /** Whether any remote is configured, so a first push can set the upstream. */
+  hasRemote: boolean
+  staged: ScmFile[]
+  unstaged: ScmFile[]
+  /** Staged files outside the workspace subtree: a commit takes them along. */
+  stagedOutside: number
+  /** The repository root when the workspace is a subdirectory of it, else null. */
+  root: string | null
+}
+
+/** A branch or tag `git log --decorate` would print next to a commit. */
+export type ScmRef = { name: string; kind: 'head' | 'branch' | 'remote' | 'tag' }
+
+export type ScmCommit = {
+  hash: string
+  shortHash: string
+  subject: string
+  author: string
+  /** Unix seconds. */
+  date: number
+  refs: ScmRef[]
+}
+
+export type ScmBranch = {
+  /** `x` for a local branch, `origin/x` for a remote-tracking one. */
+  name: string
+  remote: boolean
+  current: boolean
+  upstream: string | null
+  ahead: number
+  behind: number
+}
+
+export type ScmSyncAction = 'fetch' | 'pull' | 'push'
+
 /** What installing a release runs, in order. */
 export type UpdateStep = 'merge' | 'install' | 'build'
 
@@ -509,6 +560,41 @@ export type RpcMap = {
    * (re)commits the current state as the new diff baseline.
    */
   'scm.shadowBaseline': { params: { cwd: string }; result: Record<string, never> }
+  /** The 源代码管理 tab's view of `cwd`'s repository; null when it is not a git repo. */
+  'scm.repo': { params: { cwd: string }; result: { repo: ScmRepo | null } }
+  /**
+   * One side of a change: index against HEAD when `staged`, else work tree
+   * against index. `oldPath` keeps a staged rename paired.
+   */
+  'scm.changeDiff': {
+    params: { cwd: string; path: string; staged: boolean; oldPath?: string }
+    result: { diff: string; binary: boolean }
+  }
+  'scm.stage': { params: { cwd: string; paths: string[] }; result: Record<string, never> }
+  'scm.unstage': { params: { cwd: string; paths: string[] }; result: Record<string, never> }
+  /** Destructive: work-tree changes go back to the staged version; untracked files are deleted. */
+  'scm.restore': { params: { cwd: string; paths: string[] }; result: Record<string, never> }
+  /** `stageAll` first stages every change in the workspace, for a commit with nothing staged. */
+  'scm.commit': { params: { cwd: string; message: string; stageAll: boolean }; result: { hash: string } }
+  /** A page of history, newest first, limited to commits touching the workspace subtree. */
+  'scm.log': { params: { cwd: string; skip: number }; result: { commits: ScmCommit[]; more: boolean } }
+  /** A commit's message body and the workspace files it changed (against its first parent). */
+  'scm.show': { params: { cwd: string; hash: string }; result: { body: string; files: ScmFile[] } }
+  'scm.showDiff': {
+    params: { cwd: string; hash: string; path: string; oldPath?: string }
+    result: { diff: string; binary: boolean }
+  }
+  'scm.branches': { params: { cwd: string }; result: { branches: ScmBranch[] } }
+  /**
+   * `switch` checks out a local branch, `create` makes one at HEAD and checks
+   * it out, `track` checks out a local branch following the remote one named.
+   */
+  'scm.switch': {
+    params: { cwd: string; name: string; mode: 'switch' | 'create' | 'track' }
+    result: Record<string, never>
+  }
+  /** Pull only fast-forwards; a first push sets the upstream. */
+  'scm.sync': { params: { cwd: string; action: ScmSyncAction }; result: Record<string, never> }
   /** The last release check's answer; `update_status` events push every change after it. */
   'update.status': { params: Record<string, never>; result: UpdateStatus }
   /** Checks for a release now rather than at the next hourly check; fails with git's reason. */

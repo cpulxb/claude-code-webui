@@ -21,9 +21,13 @@ const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
  * trailing slash otherwise) — what turns the repo-root-relative paths git
  * prints into the cwd-relative form the panel speaks.
  */
-type GitContext = { cwd: string; gitDir?: string; prefix: string }
+export type GitContext = { cwd: string; gitDir?: string; prefix: string }
 
-async function git(ctx: GitContext, args: string[]): Promise<string> {
+export async function git(
+  ctx: GitContext,
+  args: string[],
+  options?: { timeout?: number; env?: Record<string, string> },
+): Promise<string> {
   // The subprocess cwd is the work tree in both modes, so relative pathspecs
   // (`-- <file>`) resolve identically — `--work-tree` alone would not do
   // that, since pathspecs follow the process cwd.
@@ -31,7 +35,8 @@ async function git(ctx: GitContext, args: string[]): Promise<string> {
   const { stdout } = await execFileAsync('git', [...prefix, ...args], {
     cwd: ctx.cwd,
     maxBuffer: 16 * 1024 * 1024,
-    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', ...options?.env },
+    ...(options?.timeout ? { timeout: options.timeout } : {}),
   })
   return stdout
 }
@@ -55,7 +60,7 @@ async function repoPrefix(cwd: string): Promise<string | null> {
 }
 
 /** A real repository always wins over a shadow that predates it. */
-async function contextFor(cwd: string): Promise<GitContext | null> {
+export async function contextFor(cwd: string): Promise<GitContext | null> {
   const prefix = await repoPrefix(cwd)
   if (prefix !== null) return { cwd, prefix }
   if (await hasShadow(cwd)) return { cwd, gitDir: shadowGitDir(cwd), prefix: '' }
@@ -66,7 +71,7 @@ async function contextFor(cwd: string): Promise<GitContext | null> {
  * The RPC accepts any relative path, so it must not escape the workspace —
  * `..` in a discard request would otherwise delete files outside it.
  */
-function resolveInside(cwd: string, path: string): string {
+export function resolveInside(cwd: string, path: string): string {
   const root = resolve(cwd)
   const target = resolve(root, path)
   if (target !== root && !target.startsWith(root + sep)) {
@@ -76,7 +81,7 @@ function resolveInside(cwd: string, path: string): string {
 }
 
 /** HEAD when it exists, the empty tree before the first commit. */
-async function diffBase(ctx: GitContext): Promise<string> {
+export async function diffBase(ctx: GitContext): Promise<string> {
   try {
     await git(ctx, ['rev-parse', '-q', '--verify', 'HEAD'])
     return 'HEAD'
@@ -173,21 +178,28 @@ export async function scmDiff(cwd: string, path: string): Promise<{ diff: string
   // A failing `git diff` is not "no changes": letting it through would render
   // the whole file as an addition via the untracked fallback below.
   const base = await diffBase(ctx)
-  let diff = await git(ctx, ['diff', base, '--', path])
-  if (!diff) {
-    // Untracked files are invisible to a base diff; `--no-index` against
-    // /dev/null renders them as a pure addition. Exit code 1 means "differs",
-    // which execFile reports as an error carrying the stdout we want.
-    try {
-      diff = await git(ctx, ['diff', '--no-index', '--', '/dev/null', path])
-    } catch (error) {
-      const stdout = (error as { stdout?: string }).stdout
-      if (typeof stdout !== 'string' || !stdout) throw error
-      diff = stdout
-    }
-  }
+  const diff = (await git(ctx, ['diff', base, '--', path])) || (await untrackedDiff(ctx, path))
+  return { diff, binary: isBinaryDiff(diff) }
+}
 
-  return { diff, binary: /^Binary files .* differ$/m.test(diff) }
+/**
+ * Untracked files are invisible to a base diff; `--no-index` against
+ * /dev/null renders them as a pure addition.
+ */
+export async function untrackedDiff(ctx: GitContext, path: string): Promise<string> {
+  // Exit code 1 means "differs", which execFile reports as an error carrying
+  // the stdout we want.
+  try {
+    return await git(ctx, ['diff', '--no-index', '--', '/dev/null', path])
+  } catch (error) {
+    const stdout = (error as { stdout?: string }).stdout
+    if (typeof stdout !== 'string' || !stdout) throw error
+    return stdout
+  }
+}
+
+export function isBinaryDiff(diff: string): boolean {
+  return /^Binary files .* differ$/m.test(diff)
 }
 
 export async function scmDiscard(cwd: string, path: string): Promise<void> {

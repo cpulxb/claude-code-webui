@@ -6,7 +6,7 @@ import { RefreshIcon, UndoIcon } from '../Icons.tsx'
 import panelStyles from './DetailsPanel.module.css'
 import styles from './ScmPanel.module.css'
 
-const STATUS_LETTER: Record<ScmFile['status'], string> = {
+export const STATUS_LETTER: Record<ScmFile['status'], string> = {
   modified: 'M',
   added: 'A',
   deleted: 'D',
@@ -25,11 +25,14 @@ export function ScmSection({
   cwd,
   turnStatus,
   fsVersion,
+  onOpen,
 }: {
   cwd: string
   turnStatus: SessionStatus
   /** Bumped by the store after a rewind — the tree changed without a turn. */
   fsVersion: number
+  /** Opens the 源代码管理 tab, where a real repo can be committed and synced. */
+  onOpen: () => void
 }): JSX.Element {
   const [status, setStatus] = useState<ScmStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -136,6 +139,11 @@ export function ScmSection({
           </button>
         )}
         <span className={panelStyles.spacer} />
+        {status?.kind === 'git' && (
+          <button className={panelStyles.toggle} onClick={onOpen} type="button" title="暂存、提交、历史、分支与同步">
+            打开
+          </button>
+        )}
         <button className={panelStyles.iconButton} onClick={() => void refresh()} type="button" title="刷新">
           <RefreshIcon size={14} />
         </button>
@@ -201,7 +209,7 @@ export function ScmSection({
   )
 }
 
-function DiffView({ diff }: { diff: { text: string; binary: boolean } | null }): JSX.Element {
+export function DiffView({ diff }: { diff: { text: string; binary: boolean } | null }): JSX.Element {
   const lines = diff && !diff.binary ? parseDiff(diff.text) : []
   return (
     <div className={styles.diffBox}>
@@ -247,12 +255,12 @@ function parseDiff(text: string): DiffLine[] {
   return lines
 }
 
-function basename(path: string): string {
+export function basename(path: string): string {
   const index = path.lastIndexOf('/')
   return index === -1 ? path : path.slice(index + 1)
 }
 
-function dirname(path: string): string {
+export function dirname(path: string): string {
   const index = path.lastIndexOf('/')
   return index === -1 ? '' : path.slice(0, index)
 }

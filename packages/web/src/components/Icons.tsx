@@ -193,6 +193,15 @@ export function PlusIcon(props: { size?: number }): JSX.Element {
   )
 }
 
+/** 源代码管理「取消暂存」。 */
+export function MinusIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M5 12h14" />
+    </Icon>
+  )
+}
+
 export function MaximizeIcon(props: { size?: number }): JSX.Element {
   return (
     <Icon size={props.size}>

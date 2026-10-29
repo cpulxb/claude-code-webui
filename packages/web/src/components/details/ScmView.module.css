@@ -1,0 +1,392 @@
+.root {
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- bar: branch, tracking, sync --------------------------------------- */
+
+.bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: var(--ccw-space-2) 0;
+}
+
+.branch {
+  display: flex;
+  flex-shrink: 1;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  padding: 2px 9px;
+  color: var(--ccw-text-secondary);
+  background: var(--ccw-bg-sunken);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.branch:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.branchName {
+  overflow: hidden;
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track {
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+  white-space: nowrap;
+}
+
+.syncButton {
+  flex: none;
+  padding: 2px 8px;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-secondary);
+  white-space: nowrap;
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.syncButton:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.syncButton:disabled {
+  cursor: default;
+  background: none;
+  opacity: 0.45;
+}
+
+.error {
+  margin-bottom: var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-danger);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* --- 更改 / 历史 / 分支 switch ------------------------------------------- */
+
+.views {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: var(--ccw-space-3);
+  background: var(--ccw-bg-sunken);
+  border-radius: var(--ccw-radius-md);
+}
+
+.viewButton {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 0;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.viewButton:hover {
+  color: var(--ccw-text-primary);
+}
+
+.viewActive {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-base);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+.count {
+  min-width: 18px;
+  padding: 0 5px;
+  font-size: var(--ccw-text-xs);
+  line-height: 16px;
+  color: var(--ccw-text-secondary);
+  text-align: center;
+  background: var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-pill);
+}
+
+/* --- 更改 ---------------------------------------------------------------- */
+
+.message {
+  width: 100%;
+  min-height: 60px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: var(--ccw-text-sm);
+  color: inherit;
+  resize: vertical;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-sm);
+  outline: none;
+}
+
+.message:focus {
+  border-color: var(--ccw-accent);
+}
+
+.message::placeholder {
+  color: var(--ccw-text-faint);
+}
+
+.commit {
+  width: 100%;
+  padding: 5px 0;
+  margin: var(--ccw-space-2) 0;
+  font-size: var(--ccw-text-sm);
+  color: #fff;
+  background: var(--ccw-gray-900);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.commit:hover {
+  background: var(--ccw-gray-700);
+}
+
+.commit:disabled {
+  cursor: default;
+  background: var(--ccw-gray-900);
+  opacity: 0.35;
+}
+
+:root[data-theme='dark'] .commit {
+  color: var(--ccw-gray-900);
+  background: var(--ccw-gray-100);
+}
+
+.group {
+  margin-top: var(--ccw-space-3);
+}
+
+.groupHead {
+  display: flex;
+  align-items: baseline;
+}
+
+.groupHead > :first-child {
+  margin-bottom: var(--ccw-space-1);
+}
+
+/* Bleeds past the pane edge so the hover pill reads as a full-width row. */
+.fileRow {
+  display: flex;
+  align-items: center;
+  margin: 0 -6px;
+  border-radius: var(--ccw-radius-sm);
+}
+
+.fileRow:hover {
+  background: var(--ccw-bg-hover);
+}
+
+.fileMain {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 3px 0 3px 6px;
+  text-align: left;
+}
+
+.rowAction {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--ccw-text-muted);
+  visibility: hidden;
+  border-radius: var(--ccw-radius-sm);
+}
+
+.fileRow:hover .rowAction {
+  visibility: visible;
+}
+
+/* No hover on touch screens; discarding still takes a second tap. */
+@media (hover: none) {
+  .rowAction {
+    visibility: visible;
+  }
+}
+
+.rowAction:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-border-l1);
+}
+
+.rowConfirm {
+  flex: none;
+  padding: 0 5px;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-danger);
+  white-space: nowrap;
+  border-radius: var(--ccw-radius-sm);
+}
+
+.rowConfirm:hover {
+  background: color-mix(in srgb, var(--ccw-danger) 12%, transparent);
+}
+
+/* --- 历史 ---------------------------------------------------------------- */
+
+.commitRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: calc(100% + 12px);
+  padding: 5px 6px;
+  margin: 0 -6px;
+  text-align: left;
+  border-radius: var(--ccw-radius-sm);
+}
+
+.commitRow:hover,
+.commitOpen {
+  background: var(--ccw-bg-hover);
+}
+
+.commitSubject {
+  overflow: hidden;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commitMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+}
+
+.hash {
+  font-family: var(--ccw-font-mono);
+}
+
+.ref {
+  padding: 0 6px;
+  font-family: var(--ccw-font-mono);
+  line-height: 16px;
+  border: 1px solid currentcolor;
+  border-radius: var(--ccw-radius-pill);
+}
+
+.ref_head {
+  color: var(--ccw-accent);
+}
+
+.ref_branch {
+  color: var(--ccw-text-secondary);
+}
+
+.ref_remote {
+  color: var(--ccw-text-muted);
+  border-style: dashed;
+}
+
+.ref_tag {
+  color: var(--ccw-success);
+}
+
+.more {
+  width: 100%;
+  padding: 6px 0;
+  margin-top: var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.more:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.detail {
+  padding: var(--ccw-space-2) 0 var(--ccw-space-3) var(--ccw-space-3);
+  margin-bottom: var(--ccw-space-2);
+  border-left: 2px solid var(--ccw-border-l1);
+}
+
+.detailMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-bottom: var(--ccw-space-2);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+  overflow-wrap: anywhere;
+}
+
+.body {
+  margin-bottom: var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* --- 分支 ---------------------------------------------------------------- */
+
+.newBranch {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+}
+
+.newBranch > input {
+  flex: 1;
+  margin: 0;
+}
+
+.branchRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 6px;
+  margin: 0 -6px;
+  border-radius: var(--ccw-radius-sm);
+}
+
+.branchRow:hover {
+  background: var(--ccw-bg-hover);
+}
+
+.branchMark {
+  display: flex;
+  flex: none;
+  width: 14px;
+  color: var(--ccw-accent);
+}
+
+.branchRowName {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branchCurrent {
+  font-weight: 600;
+}

@@ -8,6 +8,7 @@ import { SHOW_INFO_EVENT } from '../../utils/local-commands.ts'
 import { ConfirmDialog } from '../ConfirmDialog.tsx'
 import {
   CompassIcon,
+  GitBranchIcon,
   InfoIcon,
   MaximizeIcon,
   MinimizeIcon,
@@ -24,6 +25,7 @@ import { FileView } from './FileView.tsx'
 import { McpSection } from './McpSection.tsx'
 import { PluginsSection } from './PluginsSection.tsx'
 import { ScmSection } from './ScmPanel.tsx'
+import { ScmView } from './ScmView.tsx'
 import { SkillsSection } from './SkillsSection.tsx'
 import { StartPage } from './StartPage.tsx'
 import { TerminalView } from './TerminalView.tsx'
@@ -36,6 +38,7 @@ type Tab =
   | { kind: 'start' }
   | { kind: 'files' }
   | { kind: 'info' }
+  | { kind: 'scm' }
   | { kind: 'file'; path: string; name: string }
   /** `cwd` is where the shell started; `title` is the shell's name once it is up. */
   | { kind: 'terminal'; id: string; cwd: string; title: string }
@@ -333,6 +336,7 @@ export function DetailsPanel({
                       onOpenFiles={() => update((set) => openTab(set, { kind: 'files' }))}
                       onNewTerminal={openTerminal}
                       onOpenInfo={() => update((set) => openTab(set, { kind: 'info' }))}
+                      onOpenScm={() => update((set) => openTab(set, { kind: 'scm' }))}
                     />
                   </div>
                 )
@@ -351,7 +355,26 @@ export function DetailsPanel({
               case 'info':
                 return (
                   <div key={id} className={styles.pane} hidden={hidden}>
-                    <InfoPane sessionId={sessionId} cwd={initCwd ?? cwd} status={status} fsVersion={fsVersion} />
+                    <InfoPane
+                      sessionId={sessionId}
+                      cwd={initCwd ?? cwd}
+                      status={status}
+                      fsVersion={fsVersion}
+                      onOpenScm={() => update((set) => openTab(set, { kind: 'scm' }))}
+                    />
+                  </div>
+                )
+              case 'scm':
+                return (
+                  <div key={id} className={styles.pane} hidden={hidden}>
+                    <ScmView
+                      key={initCwd ?? cwd}
+                      cwd={initCwd ?? cwd}
+                      turnStatus={status}
+                      fsVersion={fsVersion}
+                      active={!hidden}
+                      onFilesChanged={() => touchFs(sessionId)}
+                    />
                   </div>
                 )
               case 'file':
@@ -481,6 +504,8 @@ function tabLabel(tab: Tab): string {
       return '文件'
     case 'info':
       return '详情'
+    case 'scm':
+      return '源代码管理'
     case 'file':
       return tab.name
     case 'terminal':
@@ -496,6 +521,8 @@ function tabIcon(tab: Tab): ReactNode {
       return <WorkspaceFolderIcon size={15} />
     case 'info':
       return <InfoIcon size={14} />
+    case 'scm':
+      return <GitBranchIcon size={14} />
     case 'file':
       return <FileTypeIcon name={tab.name} size={14} />
     case 'terminal':
@@ -509,11 +536,13 @@ function InfoPane({
   cwd,
   status,
   fsVersion,
+  onOpenScm,
 }: {
   sessionId: string
   cwd: string
   status: SessionStatus
   fsVersion: number
+  onOpenScm: () => void
 }): JSX.Element {
   const [showTools, setShowTools] = useState(false)
   // Slices again, for the same reason as the panel's. `models` goes through
@@ -563,7 +592,7 @@ function InfoPane({
       </div>
 
       {/* Keyed by cwd: switching workspaces drops open diffs and pending confirms. */}
-      <ScmSection key={cwd} cwd={cwd} turnStatus={status} fsVersion={fsVersion} />
+      <ScmSection key={cwd} cwd={cwd} turnStatus={status} fsVersion={fsVersion} onOpen={onOpenScm} />
 
       <div className={styles.section}>
         <div className={styles.sectionTitle}>能力</div>

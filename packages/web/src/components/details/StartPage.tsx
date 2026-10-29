@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import { CompassIcon, InfoIcon, TerminalIcon } from '../Icons.tsx'
+import { CompassIcon, GitBranchIcon, InfoIcon, TerminalIcon } from '../Icons.tsx'
 import { WorkspaceFolderIcon } from './FileTypeIcon.tsx'
 import styles from './StartPage.module.css'
 
@@ -13,10 +13,12 @@ export function StartPage({
   onOpenFiles,
   onNewTerminal,
   onOpenInfo,
+  onOpenScm,
 }: {
   onOpenFiles: () => void
   onNewTerminal: () => void
   onOpenInfo: () => void
+  onOpenScm: () => void
 }): JSX.Element {
   return (
     <div className={styles.root}>
@@ -54,6 +56,16 @@ export function StartPage({
             title="会话详情"
             subtitle="运行时、源代码管理、MCP 与上下文"
             onClick={onOpenInfo}
+          />
+          <Card
+            icon={
+              <span className={styles.blueIcon}>
+                <GitBranchIcon size={20} />
+              </span>
+            }
+            title="源代码管理"
+            subtitle="暂存与提交、历史、分支、推送拉取"
+            onClick={onOpenScm}
           />
         </div>
       </div>

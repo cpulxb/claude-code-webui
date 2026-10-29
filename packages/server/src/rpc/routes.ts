@@ -20,6 +20,20 @@ import {
   renameSavedSession,
 } from '../history/sessions.ts'
 import { scmDiff, scmDiscard, scmStatus, shadowBaseline } from '../scm/git.ts'
+import {
+  scmBranches,
+  scmChangeDiff,
+  scmCommit,
+  scmLog,
+  scmRepo,
+  scmRestore,
+  scmShow,
+  scmShowDiff,
+  scmStage,
+  scmSwitch,
+  scmSync,
+  scmUnstage,
+} from '../scm/repo.ts'
 import type { SessionManager } from '../session/manager.ts'
 import { fetchUpstreamModels } from '../settings/upstream-models.ts'
 import { readUserSettings, writeUserSettings } from '../settings/user-settings.ts'
@@ -221,6 +235,50 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
 
     'scm.shadowBaseline': async ({ cwd }) => {
       await shadowBaseline(await resolveInWorkspace(cwd))
+      return {}
+    },
+
+    'scm.repo': async ({ cwd }) => ({ repo: await scmRepo(await resolveInWorkspace(cwd)) }),
+
+    'scm.changeDiff': async ({ cwd, path, staged, oldPath }) =>
+      scmChangeDiff(await resolveInWorkspace(cwd), path, staged, oldPath),
+
+    'scm.stage': async ({ cwd, paths }) => {
+      await scmStage(await resolveInWorkspace(cwd), paths)
+      return {}
+    },
+
+    'scm.unstage': async ({ cwd, paths }) => {
+      await scmUnstage(await resolveInWorkspace(cwd), paths)
+      return {}
+    },
+
+    // Deletes untracked files, so the same unchecked-cwd concern as `scm.discard`.
+    'scm.restore': async ({ cwd, paths }) => {
+      await scmRestore(await resolveInWorkspace(cwd), paths)
+      return {}
+    },
+
+    'scm.commit': async ({ cwd, message, stageAll }) => ({
+      hash: await scmCommit(await resolveInWorkspace(cwd), message, stageAll),
+    }),
+
+    'scm.log': async ({ cwd, skip }) => scmLog(await resolveInWorkspace(cwd), skip),
+
+    'scm.show': async ({ cwd, hash }) => scmShow(await resolveInWorkspace(cwd), hash),
+
+    'scm.showDiff': async ({ cwd, hash, path, oldPath }) =>
+      scmShowDiff(await resolveInWorkspace(cwd), hash, path, oldPath),
+
+    'scm.branches': async ({ cwd }) => ({ branches: await scmBranches(await resolveInWorkspace(cwd)) }),
+
+    'scm.switch': async ({ cwd, name, mode }) => {
+      await scmSwitch(await resolveInWorkspace(cwd), name, mode)
+      return {}
+    },
+
+    'scm.sync': async ({ cwd, action }) => {
+      await scmSync(await resolveInWorkspace(cwd), action)
       return {}
     },
 

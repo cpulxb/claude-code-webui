@@ -12,7 +12,7 @@
     "dev": "pnpm -r --parallel dev",
     "start": "pnpm -r --parallel start",
     "build": "pnpm -r build",
-    "test": "pnpm --filter @ccw/server exec tsx --test scripts/auth.test.ts scripts/scm.test.ts scripts/models.test.ts scripts/projects.test.ts scripts/session-create.test.ts scripts/subagents.test.ts scripts/history.test.ts scripts/shell.test.ts scripts/extensions.test.ts scripts/update.test.ts scripts/settings.test.ts scripts/upstream-models.test.ts ../web/scripts/session.test.mjs ../web/scripts/agents.test.mjs ../web/scripts/models.test.mjs ../web/scripts/workflows.test.mjs ../web/scripts/office.test.mjs ../web/scripts/commands.test.mjs ../web/scripts/settings.test.mjs ../web/scripts/compact.test.mjs ../web/scripts/results.test.mjs ../web/scripts/questions.test.mjs ../web/scripts/drafts.test.mjs",
+    "test": "pnpm --filter @ccw/server exec tsx --test scripts/auth.test.ts scripts/scm.test.ts scripts/scm-repo.test.ts scripts/models.test.ts scripts/projects.test.ts scripts/session-create.test.ts scripts/subagents.test.ts scripts/history.test.ts scripts/shell.test.ts scripts/extensions.test.ts scripts/update.test.ts scripts/settings.test.ts scripts/upstream-models.test.ts ../web/scripts/session.test.mjs ../web/scripts/agents.test.mjs ../web/scripts/models.test.mjs ../web/scripts/workflows.test.mjs ../web/scripts/office.test.mjs ../web/scripts/commands.test.mjs ../web/scripts/settings.test.mjs ../web/scripts/compact.test.mjs ../web/scripts/results.test.mjs ../web/scripts/questions.test.mjs ../web/scripts/drafts.test.mjs",
     "typecheck": "pnpm -r typecheck",
     "pair": "pnpm --filter @ccw/server exec tsx src/pair.ts"
   },
