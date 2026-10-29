@@ -63,10 +63,16 @@ export function SkillsSection({ sessionId, attached }: { sessionId: string; atta
     }
   }
 
+  // Name matches first; a description match still finds a skill by what it
+  // does, but a short query hits most descriptions, so those come after.
   const needle = filter.trim().toLowerCase()
-  const shown = (skills ?? []).filter(
-    (skill) => !needle || `${skill.display_name} ${skill.name} ${skill.description}`.toLowerCase().includes(needle),
-  )
+  const named = (skill: SkillInfo): boolean => `${skill.display_name} ${skill.name}`.toLowerCase().includes(needle)
+  const shown = needle
+    ? [
+        ...(skills ?? []).filter(named),
+        ...(skills ?? []).filter((skill) => !named(skill) && skill.description.toLowerCase().includes(needle)),
+      ]
+    : (skills ?? [])
 
   return (
     <div className={styles.section} id="ccw-info-skills">
