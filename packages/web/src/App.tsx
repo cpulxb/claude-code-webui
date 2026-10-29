@@ -87,9 +87,10 @@ function Workspace(): JSX.Element {
   const toggleMaximized = useCallback(() => setDetailsMaximized((maximized) => !maximized), [])
 
   // Drawers cover the conversation, so they close on shrinking into the phone
-  // layout and once a session has been picked from them.
+  // layout and once a session has been picked from them. With none open there
+  // is no conversation to uncover: switching projects keeps the list up.
   useEffect(() => {
-    if (!narrow) return
+    if (!narrow || activeId === null) return
     collapseSidebar()
     collapseDetails()
   }, [narrow, activeId, collapseSidebar, collapseDetails])

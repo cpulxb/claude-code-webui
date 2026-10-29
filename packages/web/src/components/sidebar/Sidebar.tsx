@@ -51,6 +51,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
   const createSession = useStore((state) => state.createSession)
   const openSession = useStore((state) => state.openSession)
   const closeSession = useStore((state) => state.closeSession)
+  const setActive = useStore((state) => state.setActive)
   const renameSavedSession = useStore((state) => state.renameSavedSession)
   const refreshProjects = useStore((state) => state.refreshProjects)
   const checkUpdate = useStore((state) => state.checkUpdate)
@@ -201,6 +202,10 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
         onSelect={(cwd) => {
           setQuery('')
           setSelectedCwd(cwd)
+          // Off the open session too: left on screen, the composer would send
+          // into the old project, and a reload would reopen it and drag the
+          // list back. It keeps running; back returns to it.
+          if (cwd !== activeCwd) setActive(null)
         }}
         onBrowse={() => setPicking(true)}
       />
