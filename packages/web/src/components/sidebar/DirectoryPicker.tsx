@@ -18,7 +18,9 @@ export function DirectoryPicker(props: {
 }): JSX.Element {
   const [listing, setListing] = useState<DirectoryListing | null>(null)
   const [showHidden, setShowHidden] = useState(false)
-  const [editing, setEditing] = useState<string | null>(null)
+  // What the path box holds; null until the first navigation or keystroke, so
+  // it shows the listed directory (the initial one is only known from the server).
+  const [text, setText] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Listings race: a slow earlier response must not bounce the view back.
   const requestId = useRef(0)
@@ -37,10 +39,10 @@ export function DirectoryPicker(props: {
       })
   }
 
-  /** Lists `path`; while the path is being edited, the input follows along. */
+  /** Lists `path`, with the path box following along. */
   const navigate = (path: string): void => {
     load(path)
-    if (editing !== null) setEditing(withSlash(path))
+    setText(withSlash(path))
   }
 
   // Re-list on mount and whenever the hidden-file filter flips.
@@ -49,13 +51,23 @@ export function DirectoryPicker(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showHidden])
 
-  const current = listing?.path ?? ''
   const parent = listing?.parent
+  const typed = text ?? (listing ? withSlash(listing.path) : '')
+  const parts = splitTyped(typed)
   // Like VS Code's folder picker: the text after the last slash narrows the
-  // listing of the directory before it, and Enter/Tab open the first match.
-  const prefix = editing === null ? '' : (splitTyped(editing)?.prefix.toLowerCase() ?? '')
+  // listing of the directory before it, and Tab steps into the first match.
+  const prefix = parts?.prefix.toLowerCase() ?? ''
   const entries = (listing?.entries ?? []).filter((entry) => entry.name.toLowerCase().startsWith(prefix))
   const match = prefix ? entries[0] : undefined
+  // 打开 and Enter take what the box says: its directory, or a folder in it
+  // named exactly as typed. Only once that directory is the one listed, so
+  // neither a half-typed name nor a listing still loading opens the wrong one.
+  const target =
+    !parts || error || !listing || trimSlash(parts.dir) !== listing.path
+      ? undefined
+      : parts.prefix
+        ? listing.entries.find((entry) => entry.name === parts.prefix)?.path
+        : listing.path
 
   return (
     <div className={styles.backdrop} onMouseDown={props.onCancel}>
@@ -63,44 +75,28 @@ export function DirectoryPicker(props: {
         <div className={styles.title}>选择工作区目录</div>
 
         <div className={styles.pathRow}>
-          {editing === null ? (
-            <>
-              <Breadcrumbs path={current} home={listing?.home ?? ''} onNavigate={load} />
-              <button
-                className={styles.iconButton}
-                onClick={() => setEditing(withSlash(current))}
-                type="button"
-                title="直接输入路径"
-              >
-                <PencilIcon />
-              </button>
-            </>
-          ) : (
-            <input
-              className={styles.pathInput}
-              value={editing}
-              autoFocus
-              onBlur={() => setEditing(null)}
-              onChange={(event) => {
-                const text = event.target.value
-                const dir = splitTyped(text)?.dir
-                // Listings carry no trailing slash; keep the root's own slash.
-                if (dir && dir.replace(/(.)\/+$/, '$1') !== listing?.path) load(dir)
-                setEditing(text)
-              }}
-              onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing) return
-                if ((event.key === 'Enter' || event.key === 'Tab') && match) {
-                  event.preventDefault()
-                  navigate(match.path)
-                } else if (event.key === 'Enter') {
-                  load(editing)
-                  setEditing(null)
-                }
-                if (event.key === 'Escape') setEditing(null)
-              }}
-            />
-          )}
+          <input
+            className={styles.pathInput}
+            value={typed}
+            onChange={(event) => {
+              const value = event.target.value
+              const dir = splitTyped(value)?.dir
+              // After a failed listing, retry so fixing the path clears the error.
+              if (dir && (error || trimSlash(dir) !== listing?.path)) load(dir)
+              setText(value)
+            }}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return
+              if (event.key === 'Enter' && target) {
+                props.onPick(target)
+              } else if ((event.key === 'Enter' || event.key === 'Tab') && match) {
+                event.preventDefault()
+                navigate(match.path)
+              } else if (event.key === 'Enter' && parts) {
+                navigate(typed)
+              }
+            }}
+          />
         </div>
 
         {error && <div className={styles.error}>{error}</div>}
@@ -152,8 +148,8 @@ export function DirectoryPicker(props: {
           </button>
           <button
             className={`${styles.button} ${styles.primary}`}
-            onClick={() => current && props.onPick(current)}
-            disabled={!current}
+            onClick={() => target && props.onPick(target)}
+            disabled={!target}
             type="button"
           >
             打开
@@ -174,9 +170,14 @@ function withSlash(path: string): string {
   return path.endsWith('/') ? path : `${path}/`
 }
 
+/** Listings carry no trailing slash; the root keeps its own. */
+function trimSlash(dir: string): string {
+  return dir.replace(/(.)\/+$/, '$1')
+}
+
 /**
- * Clicking a row or the hidden-file toggle must not blur the path input —
- * blur closes it, while these clicks should keep editing in sync instead.
+ * Clicking a row or the hidden-file toggle leaves the caret in the path box,
+ * so typing to narrow the next listing can carry straight on.
  */
 function keepFocus(event: React.MouseEvent): void {
   event.preventDefault()
@@ -202,74 +203,11 @@ function UpIcon(): JSX.Element {
   )
 }
 
-function PencilIcon(): JSX.Element {
-  return (
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d="M10.6 3.1a1.4 1.4 0 0 1 2 0l.3.3a1.4 1.4 0 0 1 0 2L5.6 12.7l-3 .7.7-3zM9.2 4.5l2.3 2.3"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
 /** Marks a row that opens into a deeper listing rather than picking it. */
 function ChevronIcon(): JSX.Element {
   return (
     <svg className={styles.chevron} width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
-  )
-}
-
-/** Each ancestor is clickable, so going up several levels is one click. */
-function Breadcrumbs({
-  path,
-  home,
-  onNavigate,
-}: {
-  path: string
-  home: string
-  onNavigate: (path: string) => void
-}): JSX.Element {
-  const insideHome = home && (path === home || path.startsWith(`${home}/`))
-  const segments = insideHome ? path.slice(home.length).split('/').filter(Boolean) : path.split('/').filter(Boolean)
-
-  const crumbs = segments.map((name, index) => ({
-    name,
-    path: insideHome
-      ? [home, ...segments.slice(0, index + 1)].join('/')
-      : `/${segments.slice(0, index + 1).join('/')}`,
-  }))
-
-  const rootLabel = insideHome ? '主目录' : '/'
-  const rootPath = insideHome ? home : '/'
-
-  return (
-    <span className={styles.crumbs}>
-      <button
-        className={`${styles.crumb} ${crumbs.length === 0 ? styles.crumbLast : ''}`}
-        onClick={() => onNavigate(rootPath)}
-        type="button"
-      >
-        {rootLabel}
-      </button>
-      {crumbs.map((crumb, index) => (
-        <span key={crumb.path} style={{ display: 'contents' }}>
-          {/* The filesystem root's label is already a slash. */}
-          {(insideHome || index > 0) && <span className={styles.crumbSep}>/</span>}
-          <button
-            className={`${styles.crumb} ${index === crumbs.length - 1 ? styles.crumbLast : ''}`}
-            onClick={() => onNavigate(crumb.path)}
-            type="button"
-          >
-            {crumb.name}
-          </button>
-        </span>
-      ))}
-    </span>
   )
 }

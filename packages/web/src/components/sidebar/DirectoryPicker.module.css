@@ -32,35 +32,6 @@
   padding: 0 var(--ccw-space-5) var(--ccw-space-3);
 }
 
-.crumbs {
-  display: flex;
-  flex: 1;
-  flex-wrap: wrap;
-  gap: 2px;
-  align-items: center;
-  min-width: 0;
-  font-size: var(--ccw-text-md);
-  color: var(--ccw-text-secondary);
-}
-
-.crumb {
-  padding: 1px 5px;
-  border-radius: var(--ccw-radius-sm);
-}
-
-.crumb:hover {
-  background: var(--ccw-bg-hover);
-}
-
-.crumbLast {
-  font-weight: 500;
-  color: var(--ccw-text-primary);
-}
-
-.crumbSep {
-  color: var(--ccw-text-faint);
-}
-
 .pathInput {
   flex: 1;
   min-width: 0;
@@ -70,25 +41,13 @@
   font-size: var(--ccw-text-sm);
   color: inherit;
   background: var(--ccw-bg-base);
-  border: 1px solid var(--ccw-accent);
+  border: 1px solid var(--ccw-border-l1);
   border-radius: var(--ccw-radius-sm);
   outline: none;
 }
 
-.iconButton {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  color: var(--ccw-text-muted);
-  border-radius: var(--ccw-radius-sm);
-}
-
-.iconButton:hover {
-  color: var(--ccw-text-primary);
-  background: var(--ccw-bg-hover);
+.pathInput:focus {
+  border-color: var(--ccw-accent);
 }
 
 .list {
