@@ -42,9 +42,41 @@ export async function listProjects(liveSessions: SessionSummary[] = []): Promise
       .filter((session) => !headless.has(session.sessionId))
       .map(async (session) => (session.cwd ? session : { ...session, cwd: await transcriptCwd(session.sessionId, transcripts) })),
   )
+  const dated = await withMessageTimes(kept, transcripts)
   // The SDK omits a new session until its transcript contains a user prompt.
   // Merge runner metadata so an empty or still-streaming session is visible.
-  return mergeProjectSessions([], [...kept.map(toSummary), ...liveSessions])
+  return mergeProjectSessions([], [...dated.map(toSummary), ...liveSessions])
+}
+
+/** A session's last message time, by the transcript mtime it was read at; null when it has none. */
+const messageTimes = new Map<string, { mtime: number; time: number | null }>()
+
+/**
+ * Dates each session by its last prompt or reply. The SDK's `lastModified` is
+ * the transcript's mtime, and the CLI appends `last-prompt`, `cost-state` and
+ * `mode` lines each time a session is resumed or closed, so opening an old
+ * session and closing it again would list it as just used. Kept per mtime:
+ * only transcripts written since the last scan cost a read.
+ */
+async function withMessageTimes(sessions: SDKSessionInfo[], transcripts: Map<string, string>): Promise<SDKSessionInfo[]> {
+  const stale = sessions.filter((session) => messageTimes.get(session.sessionId)?.mtime !== session.lastModified)
+  for (let i = 0; i < stale.length; i += HEAD_BATCH) {
+    await Promise.all(
+      stale.slice(i, i + HEAD_BATCH).map(async (session) => {
+        const path = transcripts.get(session.sessionId)
+        if (path === undefined) return
+        try {
+          messageTimes.set(session.sessionId, { mtime: session.lastModified, time: await findLast(path, parseMessageTime) })
+        } catch {
+          // Gone or unreadable since the SDK listed it: the mtime stands in.
+        }
+      }),
+    )
+  }
+  return sessions.map((session) => {
+    const time = messageTimes.get(session.sessionId)?.time ?? null
+    return time === null ? session : { ...session, lastModified: time }
+  })
 }
 
 /**
@@ -440,17 +472,22 @@ function continuesMessage(previous: SessionMessage, entry: SessionMessage): bool
  * `getSessionMessages` filters those out — so the file is read directly. The
  * last such line wins; a session that was never toggled has none, and the
  * caller keeps its own default rather than being forced to `default`.
- *
- * Read backwards from the end so the common case — the mode was toggled during
- * the recent part of the conversation — costs one chunk instead of streaming
- * the whole file. When the last toggle sits near the front of the file, or
- * there is none at all, the file is read to its front: the same order of work
- * as a forward scan, plus one copy per chunk.
  */
 export async function readPermissionMode(sessionId: string): Promise<PermissionMode | null> {
   const path = await findTranscript(sessionId)
-  if (!path) return null
+  return path ? findLast(path, parsePermissionMode) : null
+}
 
+/**
+ * The last line of a transcript that `parse` makes something of.
+ *
+ * Read backwards from the end so the common case — the line sits in the
+ * recent part of the conversation — costs one chunk instead of streaming the
+ * whole file. When it sits near the front of the file, or there is none at
+ * all, the file is read to its front: the same order of work as a forward
+ * scan, plus one copy per chunk.
+ */
+async function findLast<T>(path: string, parse: (line: string) => T | null): Promise<T | null> {
   const handle = await open(path, 'r')
   try {
     let end = (await handle.stat()).size
@@ -471,8 +508,8 @@ export async function readPermissionMode(sessionId: string): Promise<PermissionM
       carry = merged.subarray(0, boundary + 1)
       const lines = merged.subarray(boundary + 1).toString('utf8').split('\n')
       for (let i = lines.length - 1; i >= 0; i--) {
-        const mode = parsePermissionMode(lines[i]!)
-        if (mode) return mode
+        const found = parse(lines[i]!)
+        if (found !== null) return found
       }
       end = start
     }
@@ -494,6 +531,19 @@ function parsePermissionMode(line: string): PermissionMode | null {
     return entry.type === 'permission-mode' && entry.permissionMode ? entry.permissionMode : null
   } catch {
     // A partially flushed trailing line — the CLI may be mid-write.
+    return null
+  }
+}
+
+/** When a prompt or reply was written. The CLI's bookkeeping lines carry no timestamp. */
+function parseMessageTime(line: string): number | null {
+  if (!line.includes('"type":"user"') && !line.includes('"type":"assistant"')) return null
+  try {
+    const entry = JSON.parse(line) as { type?: string; timestamp?: string }
+    if (entry.type !== 'user' && entry.type !== 'assistant') return null
+    const time = Date.parse(entry.timestamp ?? '')
+    return Number.isNaN(time) ? null : time
+  } catch {
     return null
   }
 }

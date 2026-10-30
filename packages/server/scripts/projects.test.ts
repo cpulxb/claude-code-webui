@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -147,6 +147,49 @@ test('a session whose first prompt carries a screenshot still lists under its pr
     const projects = await listProjects()
     assert.deepEqual(projects.map((group) => group.cwd), ['/work/app'])
     assert.equal(await locateSession(sessionId), '/work/app')
+  } finally {
+    if (previous === undefined) delete process.env['CLAUDE_CONFIG_DIR']
+    else process.env['CLAUDE_CONFIG_DIR'] = previous
+    await rm(config, { recursive: true, force: true })
+  }
+})
+
+test('a session is dated by its last message, not by what reopening it appends', async () => {
+  const config = await mkdtemp(join(tmpdir(), 'ccw-projects-'))
+  const previous = process.env['CLAUDE_CONFIG_DIR']
+  process.env['CLAUDE_CONFIG_DIR'] = config
+  try {
+    const project = join(config, 'projects', '-work-app')
+    await mkdir(project, { recursive: true })
+    const message = (sessionId: string, uuid: string, type: 'user' | 'assistant', text: string, timestamp: string): object => ({
+      parentUuid: null, isSidechain: false, type, uuid, timestamp, userType: 'external', entrypoint: 'sdk-ts', cwd: '/work/app', sessionId,
+      message: type === 'user' ? { role: 'user', content: text } : { id: uuid, role: 'assistant', content: [{ type: 'text', text }] },
+    })
+    const write = (sessionId: string, lines: object[]): Promise<void> =>
+      writeFile(join(project, `${sessionId}.jsonl`), `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`)
+    const reopened = '50000000-0000-4000-8000-000000000001'
+    const recent = '50000000-0000-4000-8000-000000000002'
+    const reopenedLines = [
+      message(reopened, 'r1', 'user', 'old question', '2026-10-01T00:00:00.000Z'),
+      // Longer than one backwards read, so the line is put together across chunks.
+      message(reopened, 'r2', 'assistant', 'x'.repeat(200_000), '2026-10-01T00:00:05.000Z'),
+      // What the CLI appends when the session is merely resumed and closed again.
+      { type: 'last-prompt', lastPrompt: 'old question', sessionId: reopened },
+      { type: 'mode', mode: 'normal', sessionId: reopened },
+      { type: 'cost-state', sessionId: reopened, totalCostUSD: 0 },
+    ]
+    await write(reopened, reopenedLines)
+    await write(recent, [message(recent, 'n1', 'user', 'new question', '2026-10-02T00:00:00.000Z')])
+    // The reopened transcript was written last, as the CLI's bookkeeping leaves it.
+    await utimes(join(project, `${recent}.jsonl`), new Date('2026-10-02T00:00:01.000Z'), new Date('2026-10-02T00:00:01.000Z'))
+
+    const dated = async () => (await listProjects())[0]?.sessions.map((session) => [session.sessionId, session.lastModified])
+    assert.deepEqual(await dated(), [[recent, Date.parse('2026-10-02T00:00:00.000Z')], [reopened, Date.parse('2026-10-01T00:00:05.000Z')]])
+
+    // A message sent after it is what moves it up.
+    await write(reopened, [...reopenedLines, message(reopened, 'r3', 'user', 'follow-up', '2026-10-03T00:00:00.000Z')])
+    await utimes(join(project, `${reopened}.jsonl`), new Date('2026-10-03T00:00:01.000Z'), new Date('2026-10-03T00:00:01.000Z'))
+    assert.deepEqual(await dated(), [[reopened, Date.parse('2026-10-03T00:00:00.000Z')], [recent, Date.parse('2026-10-02T00:00:00.000Z')]])
   } finally {
     if (previous === undefined) delete process.env['CLAUDE_CONFIG_DIR']
     else process.env['CLAUDE_CONFIG_DIR'] = previous
