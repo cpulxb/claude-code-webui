@@ -39,6 +39,11 @@ import { runShellCommand } from './shell.ts'
 type MessageParam = SDKUserMessage['message']
 type ContentBlocks = Extract<MessageParam['content'], readonly unknown[]>
 
+/** `generateSessionTitle` ships on `Query` (SDK 0.3.312) but is missing from its typings. */
+type TitleQuery = Query & {
+  generateSessionTitle?: (description: string, options?: { persist?: boolean }) => Promise<string | null | undefined>
+}
+
 export type EmitEvent = (event: ServerEvent) => void
 
 /** Backlog cap — a runaway turn with hundreds of tool calls must not grow memory unbounded. */
@@ -72,6 +77,8 @@ export class SessionRunner {
   readonly #summary: SessionSummary
   /** Re-reads the transcript for the CLI's AI title; see {@link #watchTitle}. */
   #titleTimer: ReturnType<typeof setInterval> | undefined
+  /** Set while a {@link #requestTitle} call is out, so a quick second prompt does not ask again. */
+  #titling = false
 
   constructor(config: SessionConfig, emit: EmitEvent) {
     this.config = config
@@ -259,8 +266,37 @@ export class SessionRunner {
 
   async #readTitle(): Promise<void> {
     const info = await getSessionInfo(this.sessionId, { dir: this.config.cwd }).catch(() => undefined)
-    const title = info?.customTitle
-    // A read still in flight when the session closes must not announce anything.
+    this.#applyTitle(info?.customTitle)
+  }
+
+  /**
+   * Asks the CLI to name the session from this prompt and to write the name
+   * to the transcript. The automatic naming {@link #watchTitle} waits for is
+   * switched off in SDK sessions when `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`
+   * is set, though the terminal still names its sessions; an explicit request
+   * goes through regardless. When the automatic call is already out, the CLI
+   * hands back its result instead of making a second one. A prompt under ten
+   * characters or a slash command yields no title, so the next prompt tries
+   * again, as in the terminal. Resumed sessions are left alone: their name, if
+   * any, is already on disk.
+   */
+  #requestTitle(text: string): void {
+    if (this.config.resume || this.#titling || this.#summary.customTitle) return
+    const query = this.#query as TitleQuery
+    if (!query.generateSessionTitle) return
+    this.#titling = true
+    // A CLI too old to know the request rejects it; the watch still covers it.
+    query
+      .generateSessionTitle(text, { persist: true })
+      .then((title) => this.#applyTitle(title ?? undefined))
+      .catch(() => {})
+      .finally(() => {
+        this.#titling = false
+      })
+  }
+
+  #applyTitle(title: string | undefined): void {
+    // A read or request still in flight when the session closes must not announce anything.
     if (this.#done || !title || title === this.#summary.customTitle) return
     this.#summary.customTitle = title
     this.#summary.summary = title
@@ -312,6 +348,7 @@ export class SessionRunner {
         this.#summary.summary = this.#summary.firstPrompt.replace(/\s+/g, ' ').slice(0, 160)
       }
       this.#watchTitle()
+      this.#requestTitle(text)
       this.#emit({ type: 'session_updated', sessionId: this.sessionId, summary: this.summary })
     })
   }
