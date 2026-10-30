@@ -2,7 +2,7 @@ import { fuzzyFilter, type ProjectGroup, type SessionSummary, type UpdateProgres
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { call } from '../../api/client.ts'
-import { sessionHref, useStore } from '../../store/session.ts'
+import { sessionHref, useProjectCwd, useStore } from '../../store/session.ts'
 import { sessionTitle } from '../../utils/session-title.ts'
 import { DevicesDialog } from '../auth/DevicesDialog.tsx'
 import {
@@ -20,8 +20,6 @@ import { DirectoryPicker } from './DirectoryPicker.tsx'
 import styles from './Sidebar.module.css'
 import { UpdateDialog } from './UpdateDialog.tsx'
 
-/** The project the list shows survives a reload, even with no session open. */
-const SELECTED_KEY = 'ccw.selectedProject'
 /** How long the check button says "已是最新" before offering itself again. */
 const UP_TO_DATE_MS = 3_000
 
@@ -47,7 +45,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
 
   const connection = useStore((state) => state.connection)
   const update = useStore((state) => state.update)
-  const defaultCwd = useStore((state) => state.defaultCwd)
+  const selectProject = useStore((state) => state.selectProject)
   const createSession = useStore((state) => state.createSession)
   const openSession = useStore((state) => state.openSession)
   const closeSession = useStore((state) => state.closeSession)
@@ -57,7 +55,6 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
   const checkUpdate = useStore((state) => state.checkUpdate)
   const setSettingsOpen = useStore((state) => state.setSettingsOpen)
 
-  const [selectedCwd, setSelectedCwd] = useState<string | null>(() => localStorage.getItem(SELECTED_KEY))
   const [picking, setPicking] = useState(false)
   const [showDevices, setShowDevices] = useState(false)
   const [showUpdate, setShowUpdate] = useState(false)
@@ -77,14 +74,11 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
   // The list follows the open session, so one opened from search or another
   // tab brings its project along.
   useEffect(() => {
-    if (activeCwd) setSelectedCwd(activeCwd)
-  }, [activeCwd])
+    if (activeCwd) selectProject(activeCwd)
+  }, [activeCwd, selectProject])
 
-  useEffect(() => {
-    if (selectedCwd) localStorage.setItem(SELECTED_KEY, selectedCwd)
-  }, [selectedCwd])
-
-  const currentCwd = selectedCwd ?? activeCwd ?? defaultCwd ?? projects[0]?.cwd ?? null
+  // Shared with the details panel, which works in this project too.
+  const currentCwd = useProjectCwd()
   const projectSessions = projects.find((project) => project.cwd === currentCwd)?.sessions ?? []
   // Only worth offering when the sessions span branches.
   const branched = new Set(projectSessions.map((session) => session.gitBranch).filter(Boolean)).size > 1
@@ -152,7 +146,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
       setError('这个分组的工作目录找不到，无法在这里新建会话')
       return
     }
-    setSelectedCwd(cwd)
+    selectProject(cwd)
     run(createSession(cwd), '新建会话失败')
   }
 
@@ -201,7 +195,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
         cwd={currentCwd}
         onSelect={(cwd) => {
           setQuery('')
-          setSelectedCwd(cwd)
+          selectProject(cwd)
           // Off the open session too: left on screen, the composer would send
           // into the old project, and a reload would reopen it and drag the
           // list back. It keeps running; back returns to it.

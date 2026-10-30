@@ -1,9 +1,9 @@
-import type { AccountInfo, ContextUsage, SessionStatus, TreeEntry } from '@ccw/shared'
+import { type AccountInfo, type ContextUsage, type SessionStatus, type TreeEntry, UNKNOWN_CWD } from '@ccw/shared'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode, type WheelEvent } from 'react'
 import { useShallow } from 'zustand/shallow'
 
 import { call } from '../../api/client.ts'
-import { useActiveSessionValue, useStore } from '../../store/session.ts'
+import { useActiveSessionValue, useProjectCwd, useStore } from '../../store/session.ts'
 import { SHOW_CONFIG_EVENT, SHOW_INFO_EVENT } from '../../utils/local-commands.ts'
 import { ConfirmDialog } from '../ConfirmDialog.tsx'
 import {
@@ -57,6 +57,9 @@ function tabId(tab: Tab): string {
 }
 
 let terminalCount = 0
+
+/** What 详情 and 配置 show until a session is open. */
+const NEEDS_SESSION = '在左侧选择一个会话后可用'
 
 /** How long a section opened by a command is held at the top while the pane loads. */
 const PIN_MS = 2000
@@ -140,15 +143,28 @@ export function DetailsPanel({
   // Slices rather than the session object: immer replaces that object on every
   // streamed token, which would re-render this whole panel once per token.
   const sessionId = useActiveSessionValue((session) => session.sessionId) ?? null
-  const cwd = useActiveSessionValue((session) => session.cwd)
+  const sessionCwd = useActiveSessionValue((session) => session.cwd)
   const initCwd = useActiveSessionValue((session) => session.init?.cwd)
   const status = useActiveSessionValue((session) => session.status) ?? 'idle'
-  const fsVersion = useActiveSessionValue((session) => session.fsVersion) ?? 0
+  // With no session open the panel works in the sidebar's project, so files,
+  // terminals and 源代码管理 need no session. The placeholder group for
+  // sessions whose directory is gone is no directory to work in.
+  const project = useProjectCwd()
+  const cwd = sessionCwd ?? (project !== null && project !== UNKNOWN_CWD ? project : undefined)
+  // A session counts its own file changes; without one, the panel does.
+  const [localFsVersion, setLocalFsVersion] = useState(0)
+  const fsVersion = useActiveSessionValue((session) => session.fsVersion) ?? localFsVersion
+  /** Tells the tree, editors and 源代码管理 that files changed outside a turn. */
+  const touchWorkspace = (): void => {
+    if (sessionId !== null) touchFs(sessionId)
+    else setLocalFsVersion((version) => version + 1)
+  }
   // One panel instance serves every session, and editor tabs are absolute
   // paths, so tabs belong to the workspace and not the session: sibling
-  // sessions in the same cwd share them, and switching to another cwd and back
-  // finds that project's tabs as they were left. Only the active cwd's tabs
-  // are mounted. Unmounting a FileView does not lose its unsaved buffer:
+  // sessions in the same cwd share them, they stay put when no session is
+  // open, and switching to another cwd and back finds that project's tabs as
+  // they were left. Only the active cwd's tabs are mounted. Unmounting a
+  // FileView does not lose its unsaved buffer:
   // `drafts` keeps it keyed by path, FileView restores it when the file is
   // shown again, and flags the conflict if the file changed on disk meanwhile.
   const [tabsByCwd, setTabsByCwd] = useState<Record<string, TabSet>>({})
@@ -275,7 +291,7 @@ export function DetailsPanel({
   return (
     <div className={styles.root}>
       <div className={styles.head}>
-        {sessionId !== null && cwd !== undefined && (
+        {cwd !== undefined && (
           <div className={styles.strip} ref={stripRef} onWheel={scrollStrip}>
             {tabs.map((tab) => {
               const id = tabId(tab)
@@ -333,8 +349,8 @@ export function DetailsPanel({
       </div>
 
       <div className={styles.body}>
-        {sessionId === null || cwd === undefined ? (
-          <div className={styles.blank}>尚未选择会话</div>
+        {cwd === undefined ? (
+          <div className={styles.blank}>尚未选择项目</div>
         ) : (
           // Hidden rather than unmounted: switching tabs must not drop the
           // tree's expansion state or an edit in progress in some file tab.
@@ -346,6 +362,7 @@ export function DetailsPanel({
                 return (
                   <div key={id} className={styles.fill} hidden={hidden}>
                     <StartPage
+                      hasSession={sessionId !== null}
                       onOpenFiles={() => update((set) => openTab(set, { kind: 'files' }))}
                       onNewTerminal={openTerminal}
                       onOpenInfo={() => update((set) => openTab(set, { kind: 'info' }))}
@@ -369,13 +386,17 @@ export function DetailsPanel({
               case 'info':
                 return (
                   <div key={id} className={styles.pane} hidden={hidden}>
-                    <InfoPane
-                      sessionId={sessionId}
-                      cwd={initCwd ?? cwd}
-                      status={status}
-                      fsVersion={fsVersion}
-                      onOpenScm={() => update((set) => openTab(set, { kind: 'scm' }))}
-                    />
+                    {sessionId === null ? (
+                      <div className={styles.empty}>{NEEDS_SESSION}</div>
+                    ) : (
+                      <InfoPane
+                        sessionId={sessionId}
+                        cwd={initCwd ?? cwd}
+                        status={status}
+                        fsVersion={fsVersion}
+                        onOpenScm={() => update((set) => openTab(set, { kind: 'scm' }))}
+                      />
+                    )}
                   </div>
                 )
               case 'scm':
@@ -387,14 +408,18 @@ export function DetailsPanel({
                       turnStatus={status}
                       fsVersion={fsVersion}
                       active={!hidden}
-                      onFilesChanged={() => touchFs(sessionId)}
+                      onFilesChanged={touchWorkspace}
                     />
                   </div>
                 )
               case 'config':
                 return (
                   <div key={id} className={styles.pane} hidden={hidden}>
-                    <ConfigView key={initCwd ?? cwd} cwd={initCwd ?? cwd} active={!hidden} />
+                    {sessionId === null ? (
+                      <div className={styles.empty}>{NEEDS_SESSION}</div>
+                    ) : (
+                      <ConfigView key={initCwd ?? cwd} cwd={initCwd ?? cwd} active={!hidden} />
+                    )}
                   </div>
                 )
               case 'file':
@@ -406,7 +431,7 @@ export function DetailsPanel({
                       path={tab.path}
                       turnStatus={status}
                       fsVersion={fsVersion}
-                      onSaved={() => touchFs(sessionId)}
+                      onSaved={touchWorkspace}
                     />
                   </div>
                 )
@@ -419,11 +444,11 @@ export function DetailsPanel({
 
         {/* Terminals of every workspace, in one list that never unmounts:
             unmounting kills the shell, so they stay running (hidden) while
-            another workspace — or no session at all — is in front. */}
+            another workspace — or no project at all — is in front. */}
         {Object.entries(tabsByCwd).flatMap(([scope, set]) =>
           set.tabs.map((tab) => {
             if (tab.kind !== 'terminal') return null
-            const shown = scope === cwd && sessionId !== null && set.active === tab.id
+            const shown = scope === cwd && set.active === tab.id
             return (
               <div key={tab.id} className={styles.fill} hidden={!shown}>
                 <TerminalView cwd={tab.cwd} active={shown} onReady={(shell) => retitle(scope, tab.id, shell)} />
@@ -437,9 +462,7 @@ export function DetailsPanel({
         <UnsavedDialog
           path={closing.path}
           name={closing.name}
-          onSaved={() => {
-            if (sessionId !== null) touchFs(sessionId)
-          }}
+          onSaved={touchWorkspace}
           onClose={() => {
             setClosing(null)
             update((set) => closeTab(set, closing.id))

@@ -227,7 +227,7 @@
   height: 100%;
 }
 
-/* No session yet: centred like the conversation pane's own blank state. */
+/* No project yet: centred like the conversation pane's own blank state. */
 .blank {
   display: flex;
   height: 100%;

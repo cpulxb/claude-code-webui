@@ -41,9 +41,15 @@
     border-color var(--ccw-duration-fast) var(--ccw-ease);
 }
 
-.card:hover {
+.card:hover:not(:disabled) {
   background: var(--ccw-bg-raised);
   border-color: var(--ccw-border-strong);
+}
+
+/* 详情 and 配置 before a session is open. */
+.card:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .cardIcon {

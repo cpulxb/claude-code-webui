@@ -7,15 +7,18 @@ import styles from './StartPage.module.css'
 /**
  * The panel's new-tab page, after dsh's 开始: one card per thing a tab can
  * hold. The panel swaps this tab for whatever gets picked, the way a browser's
- * new-tab page navigates in place.
+ * new-tab page navigates in place. Files, terminals and 源代码管理 work in the
+ * project alone; 详情 and 配置 wait for a session.
  */
 export function StartPage({
+  hasSession,
   onOpenFiles,
   onNewTerminal,
   onOpenInfo,
   onOpenScm,
   onOpenConfig,
 }: {
+  hasSession: boolean
   onOpenFiles: () => void
   onNewTerminal: () => void
   onOpenInfo: () => void
@@ -34,7 +37,7 @@ export function StartPage({
           <Card
             icon={<WorkspaceFolderIcon size={22} />}
             title="工作区文件"
-            subtitle="浏览会话工作区的文件"
+            subtitle="浏览项目工作区的文件"
             shortcut="Ctrl + P"
             onClick={onOpenFiles}
           />
@@ -45,7 +48,7 @@ export function StartPage({
               </span>
             }
             title="新建终端"
-            subtitle="在会话工作区运行命令"
+            subtitle="在项目工作区运行命令"
             shortcut="Ctrl + `"
             onClick={onNewTerminal}
           />
@@ -56,7 +59,8 @@ export function StartPage({
               </span>
             }
             title="会话详情"
-            subtitle="运行时、源代码管理、MCP 与上下文"
+            subtitle={hasSession ? '运行时、源代码管理、MCP 与上下文' : '选择会话后可用'}
+            disabled={!hasSession}
             onClick={onOpenInfo}
           />
           <Card
@@ -76,7 +80,8 @@ export function StartPage({
               </span>
             }
             title="配置"
-            subtitle="Claude Code 的 /config 设置"
+            subtitle={hasSession ? 'Claude Code 的 /config 设置' : '选择会话后可用'}
+            disabled={!hasSession}
             onClick={onOpenConfig}
           />
         </div>
@@ -90,10 +95,11 @@ function Card(props: {
   title: string
   subtitle: string
   shortcut?: string
+  disabled?: boolean
   onClick: () => void
 }): JSX.Element {
   return (
-    <button className={styles.card} onClick={props.onClick} type="button">
+    <button className={styles.card} onClick={props.onClick} disabled={props.disabled} type="button">
       <span className={styles.cardIcon}>{props.icon}</span>
       <span className={styles.cardText}>
         <span className={styles.cardTitle}>{props.title}</span>

@@ -128,6 +128,11 @@ type Store = {
   activeId: string | null
   projects: ProjectGroup[]
   defaultCwd: string
+  /**
+   * The project last picked in the sidebar's switcher, kept across reloads.
+   * Null until one is picked; `useProjectCwd` fills the gap.
+   */
+  selectedCwd: string | null
   /** The server's release status; null until the first connect answers. */
   update: UpdateStatus | null
   /**
@@ -149,6 +154,8 @@ type Store = {
   /** Reads again the history page that failed — the newest one, or the next older one. */
   retryHistory: (sessionId: string) => Promise<void>
   setActive: (sessionId: string | null) => void
+  /** Makes `cwd` the project the sidebar lists and the details panel works in. */
+  selectProject: (cwd: string) => void
   closeSession: (sessionId: string) => Promise<void>
   refreshProjects: () => Promise<void>
 
@@ -233,6 +240,9 @@ function newSession(sessionId: string, cwd: string, attached: boolean): SessionS
  * its transcript recorded, when it recorded one.
  */
 const MODE_KEY = 'ccw.permissionMode'
+
+/** The sidebar's project survives a reload, even with no session open. */
+const SELECTED_PROJECT_KEY = 'ccw.selectedProject'
 
 function rememberedMode(): PermissionMode {
   const stored = localStorage.getItem(MODE_KEY)
@@ -350,6 +360,7 @@ export const useStore = create<Store>()(
     // The server runs where the repos are; the browser cannot know a default,
     // so the first session inherits the server process's cwd via the sidebar.
     defaultCwd: '',
+    selectedCwd: localStorage.getItem(SELECTED_PROJECT_KEY),
     update: null,
     settingsOpen: false,
 
@@ -585,6 +596,13 @@ export const useStore = create<Store>()(
       set((state) => {
         state.activeId = sessionId
       }),
+
+    selectProject: (cwd) => {
+      localStorage.setItem(SELECTED_PROJECT_KEY, cwd)
+      set((state) => {
+        state.selectedCwd = cwd
+      })
+    },
 
     closeSession: async (sessionId) => {
       await call('session.close', { sessionId })
@@ -1681,6 +1699,18 @@ export function useActiveSessionValue<T>(select: (session: SessionState) => T): 
   return useStore((state) => {
     const session = state.activeId ? state.sessions[state.activeId] : undefined
     return session ? select(session) : undefined
+  })
+}
+
+/**
+ * The project in front: the one last picked in the sidebar, else the open
+ * session's, else the most recently used. The sidebar lists its sessions, and
+ * the details panel works in it even when no session is open.
+ */
+export function useProjectCwd(): string | null {
+  return useStore((state) => {
+    const activeCwd = state.activeId ? state.sessions[state.activeId]?.cwd : undefined
+    return state.selectedCwd ?? activeCwd ?? (state.defaultCwd || state.projects[0]?.cwd || null)
   })
 }
 
