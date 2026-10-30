@@ -183,6 +183,87 @@
   color: var(--ccw-danger);
 }
 
+/* --- quotes ----------------------------------------------------------- */
+
+.quotes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ccw-space-2);
+  padding: var(--ccw-space-3) var(--ccw-space-3) 0;
+}
+
+.quote {
+  position: relative;
+  width: 150px;
+}
+
+.quoteOpen {
+  display: block;
+  width: 100%;
+  padding: var(--ccw-space-2) var(--ccw-space-3);
+  text-align: left;
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-md);
+}
+
+.quoteOpen:hover {
+  background: var(--ccw-bg-hover);
+}
+
+.quoteText {
+  display: -webkit-box;
+  padding-left: var(--ccw-space-2);
+  overflow: hidden;
+  font-size: var(--ccw-text-xs);
+  line-height: 1.5;
+  color: var(--ccw-text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-left: 2px solid var(--ccw-border-strong);
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.quoteRemove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: flex;
+  padding: 2px;
+  color: var(--ccw-text-muted);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: 50%;
+  opacity: 0;
+}
+
+/* Faded rather than hidden, so Tab still reaches it. */
+.quote:hover .quoteRemove,
+.quoteRemove:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .quoteRemove {
+    opacity: 1;
+  }
+}
+
+.quoteRemove:hover {
+  color: var(--ccw-danger);
+}
+
+.quoteFull {
+  padding-left: var(--ccw-space-3);
+  margin: 0;
+  font-size: var(--ccw-text-prose);
+  line-height: 1.6;
+  color: var(--ccw-text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-left: 2px solid var(--ccw-border-strong);
+}
+
 /* --- popovers --------------------------------------------------------- */
 
 .popover {

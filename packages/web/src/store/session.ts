@@ -140,6 +140,12 @@ type Store = {
    * model menu. It covers the workspace, whose sessions keep running beneath.
    */
   settingsOpen: boolean
+  /**
+   * Passages picked out of the conversation to reply to, shown over the
+   * composer and sent ahead of the next prompt. Like the typed text, they stay
+   * through a session switch.
+   */
+  quotes: string[]
 
   connect: () => () => void
   createSession: (cwd: string) => Promise<string>
@@ -195,6 +201,7 @@ type Store = {
   /** Asks the server to look for a release now; resolves with what it found. */
   checkUpdate: () => Promise<UpdateStatus>
   setSettingsOpen: (open: boolean) => void
+  setQuotes: (quotes: string[]) => void
 }
 
 function newSession(sessionId: string, cwd: string, attached: boolean): SessionState {
@@ -363,6 +370,7 @@ export const useStore = create<Store>()(
     selectedCwd: localStorage.getItem(SELECTED_PROJECT_KEY),
     update: null,
     settingsOpen: false,
+    quotes: [],
 
     connect: () =>
       connectEvents({
@@ -638,6 +646,12 @@ export const useStore = create<Store>()(
     setSettingsOpen: (open) => {
       set((state) => {
         state.settingsOpen = open
+      })
+    },
+
+    setQuotes: (quotes) => {
+      set((state) => {
+        state.quotes = quotes
       })
     },
 

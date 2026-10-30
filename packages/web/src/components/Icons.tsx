@@ -145,6 +145,16 @@ export function XIcon(props: { size?: number }): JSX.Element {
   )
 }
 
+/** 选中文字后浮出的「引用」按钮。 */
+export function ReplyIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+      <path d="m9 17-5-5 5-5" />
+    </Icon>
+  )
+}
+
 export function HistoryIcon(props: { size?: number }): JSX.Element {
   return (
     <Icon size={props.size}>

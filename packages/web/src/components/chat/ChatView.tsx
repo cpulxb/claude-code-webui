@@ -6,12 +6,14 @@ import { AGENT_TOOLS, findAgent, lastTurnStart } from '../../render/nodes.ts'
 import { WORKFLOW_TOOL } from '../../render/workflows.ts'
 import { useActiveSessionValue, useSessionSettled, useStore } from '../../store/session.ts'
 import { parseQuestions } from '../../utils/questions.ts'
+import { splitQuotes } from '../../utils/quotes.ts'
 import { turnReplyText } from '../../utils/transcript-markdown.ts'
 import { ArrowDownIcon, BrandMark, CheckIcon, CopyIcon, HistoryIcon, LinkIcon } from '../Icons.tsx'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 import styles from './ChatView.module.css'
 import { PermissionCard } from './PermissionCard.tsx'
 import { QuestionCard } from './QuestionCard.tsx'
+import { QuoteButton } from './QuoteButton.tsx'
 import { AgentCard } from './AgentCard.tsx'
 import { WorkflowCard } from './WorkflowCard.tsx'
 import { AgentNav } from './AgentNav.tsx'
@@ -25,6 +27,7 @@ type RewindState = { nodeId: string; busy: boolean; preview: RewindFilesResult |
 
 export function ChatView(): JSX.Element | null {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const streamRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
   // Set while the "back to bottom" button's smooth scroll is under way.
   const seekingRef = useRef(false)
@@ -344,7 +347,7 @@ export function ChatView(): JSX.Element | null {
           <span>Claude Code</span>
         </div>
       ) : (
-        <div className={styles.stream}>
+        <div className={styles.stream} ref={streamRef}>
           {(historyCursor || historyError) && (
             <div ref={sentinelRef} className={styles.olderHistory}>
               {historyError ? (
@@ -446,6 +449,8 @@ export function ChatView(): JSX.Element | null {
             </div>
           )}
           <div ref={bottomRef} />
+          {/* Last, so showing it never changes which row is :first-child. */}
+          <QuoteButton scrollRef={scrollRef} streamRef={streamRef} />
         </div>
       )}
     </div>
@@ -466,6 +471,7 @@ const UserTurn = memo(function UserTurn({
   onCancel: () => void
 }): JSX.Element {
   const messageLink = useStore((state) => state.messageLink)
+  const { quotes, body } = useMemo(() => splitQuotes(node.text), [node.text])
   const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle')
   const copyLink = (): void => {
     void messageLink(node.id)
@@ -483,7 +489,12 @@ const UserTurn = memo(function UserTurn({
   return (
     <>
       <div className={styles.userTurn} data-uuid={node.id}>
-        {node.text}
+        {quotes.map((quote, index) => (
+          <blockquote key={index} className={styles.userQuote}>
+            {quote}
+          </blockquote>
+        ))}
+        {body}
         {node.attachments > 0 && <div className={styles.attachmentNote}>附件 × {node.attachments}</div>}
         <div className={styles.turnActions}>
           <button

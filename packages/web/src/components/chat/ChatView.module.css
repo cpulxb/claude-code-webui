@@ -5,7 +5,9 @@
   scrollbar-gutter: stable;
 }
 
+/* Positioned for the quote button, which is placed in the stream's own coordinates. */
 .stream {
+  position: relative;
   max-width: 780px;
   margin: 0 auto;
   padding: var(--ccw-space-5) var(--ccw-space-5) var(--ccw-space-6);
@@ -41,6 +43,15 @@
 
 .userTurn:first-child {
   margin-top: 0;
+}
+
+/* The passage a reply answers, as the composer's quote card showed it. */
+.userQuote {
+  padding-left: var(--ccw-space-3);
+  margin: 0 0 var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
+  border-left: 2px solid var(--ccw-border-strong);
 }
 
 .turnActions {
@@ -401,6 +412,34 @@
 @media (prefers-reduced-motion: reduce) {
   .toBottomDots > span {
     animation: none;
+  }
+}
+
+/* claude.ai's "Reply" over a selection: dark in the light theme, light in the dark one. */
+.quoteButton {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 5px 11px;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-bg-base);
+  white-space: nowrap;
+  background: var(--ccw-text-primary);
+  border-radius: var(--ccw-radius-md);
+  box-shadow: var(--ccw-shadow-popover);
+  transform: translate(-50%, -100%);
+  user-select: none;
+}
+
+.quoteButtonBelow {
+  transform: translateX(-50%);
+}
+
+@media (pointer: coarse) {
+  .quoteButton {
+    padding: 8px 14px;
   }
 }
 

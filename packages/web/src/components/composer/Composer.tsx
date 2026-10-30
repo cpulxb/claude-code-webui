@@ -7,6 +7,7 @@ import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import { fileToAttachment, isSupportedAttachment } from '../../utils/attachments.ts'
 import { LOCAL_COMMANDS, parseLocalCommand, runLocalCommand } from '../../utils/local-commands.ts'
 import { findModel, modelLabel } from '../../utils/models.ts'
+import { withQuotes } from '../../utils/quotes.ts'
 import { ArrowUpIcon, StopIcon, XIcon } from '../Icons.tsx'
 import { buildPaletteEntries, CommandPalette, type PaletteEntry } from './CommandPalette.tsx'
 import styles from './Composer.module.css'
@@ -15,6 +16,7 @@ import { EFFORT_LABEL, effortChoices } from './EffortSlider.tsx'
 import { AttachIcon, ModeIcon, SlashIcon } from './ModeIcon.tsx'
 import { ModelPicker } from './ModelPicker.tsx'
 import { MODE_META, ModesPopover } from './ModesPopover.tsx'
+import { QuoteChips } from './QuoteChips.tsx'
 import { applyTrigger, detectTrigger, type Trigger } from './trigger.ts'
 import { TriggerMenu, type MenuItem } from './TriggerMenu.tsx'
 import { TurnStatus } from './TurnStatus.tsx'
@@ -58,6 +60,8 @@ export function Composer(): JSX.Element | null {
   const setUltracode = useStore((state) => state.setUltracode)
   const refreshModels = useStore((state) => state.refreshModels)
   const activeId = useStore((state) => state.activeId)
+  const quotes = useStore((state) => state.quotes)
+  const setQuotes = useStore((state) => state.setQuotes)
 
   // Slices rather than the session object: immer replaces that object on every
   // streamed token, which would re-render the palette, the model picker and the
@@ -101,6 +105,7 @@ export function Composer(): JSX.Element | null {
   const modelPillRef = useRef<HTMLButtonElement>(null)
   const modelsRef = useRef<HTMLDivElement>(null)
   const fileSeqRef = useRef(0)
+  const quoteCountRef = useRef(quotes.length)
 
   // Commands bound to a terminal (statusline, vim mode…) are meaningless in a
   // browser; the CLI tags them precisely so remote UIs can hide them.
@@ -222,6 +227,12 @@ export function Composer(): JSX.Element | null {
     if (element) fitHeight(element)
   }, [text])
 
+  // A passage just quoted from the conversation is there to be answered.
+  useEffect(() => {
+    if (quotes.length > quoteCountRef.current) textareaRef.current?.focus()
+    quoteCountRef.current = quotes.length
+  }, [quotes.length])
+
   // The text rewraps when the box changes width too: a phone turned sideways,
   // a panel opened beside the conversation.
   useEffect(() => {
@@ -307,19 +318,21 @@ export function Composer(): JSX.Element | null {
   const submit = useCallback(() => {
     const trimmed = text.trim()
     if (!trimmed && attachments.length === 0) return
-    // Attachments make it a prompt: neither a shell command nor a local
-    // command has anywhere to put them.
-    const command = shellMode && attachments.length === 0 ? trimmed.slice(1).trim() : null
+    // Attachments and quotes make it a prompt: neither a shell command nor a
+    // local command has anywhere to put them.
+    const plain = attachments.length === 0 && quotes.length === 0
+    const command = shellMode && plain ? trimmed.slice(1).trim() : null
     if (command === '') return
-    const local = attachments.length === 0 ? parseLocalCommand(trimmed) : null
+    const local = plain ? parseLocalCommand(trimmed) : null
     if (command) void runShell(command)
     else if (local) void runLocalCommand(local)
-    else void send(trimmed, attachments)
+    else void send(withQuotes(quotes, trimmed), attachments)
     setText('')
     setAttachments([])
     setAttachError(null)
     setTrigger(null)
-  }, [text, attachments, shellMode, send, runShell])
+    setQuotes([])
+  }, [text, attachments, quotes, shellMode, send, runShell, setQuotes])
 
   // The `/` button. A slash is only a command at the very start of the input —
   // see `detectTrigger` — so it goes there rather than at the caret.
@@ -499,6 +512,10 @@ export function Composer(): JSX.Element | null {
               onEffort={(next) => void setEffort(next)}
               onUltracode={(next) => void setUltracode(next)}
             />
+          )}
+
+          {quotes.length > 0 && (
+            <QuoteChips quotes={quotes} onRemove={(index) => setQuotes(quotes.filter((_, i) => i !== index))} />
           )}
 
           {attachError && <div className={styles.attachError}>{attachError}</div>}
