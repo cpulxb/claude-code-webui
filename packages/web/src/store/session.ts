@@ -289,7 +289,15 @@ let projectReadVersion = 0
 
 function updateProjectSession(set: Setter, summary: SessionSummary): void {
   for (const changes of projectReads) changes.set(summary.sessionId, summary)
-  set((state) => { state.projects = mergeProjectSessions(state.projects, [summary]) })
+  set((state) => {
+    // A resumed session is announced untitled and undated, which only says its
+    // saved row is live. Without that row — a page opened straight to the
+    // session, before history loads — it would list as an untitled row from
+    // 1970. The pending read replays it, and the server lists live runners.
+    const listed = state.projects.some((project) => project.sessions.some((session) => session.sessionId === summary.sessionId))
+    if (summary.lastModified === 0 && !listed) return
+    state.projects = mergeProjectSessions(state.projects, [summary])
+  })
 }
 
 function removeProjectSession(set: Setter, sessionId: string): void {

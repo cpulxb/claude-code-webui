@@ -292,6 +292,25 @@ test('a delayed history read cannot hide a newly announced session', async (t) =
   assert.equal(useStore.getState().projects[0].sessions[0].summary, 'Hello')
 })
 
+test('reopening a session before the list loads adds no undated row, then marks the saved one live', async (t) => {
+  const f = await fixture(t)
+  useStore.setState({ projects: [] })
+  const previous = rpc
+  const response = deferred()
+  rpc = (method, params) => method === 'history.projects' ? response.promise : previous(method, params)
+  const refreshing = useStore.getState().refreshProjects()
+  // What the server announces on resume: no title, and no date of its own.
+  const summary = { sessionId: 'resumed', cwd: '/tmp', lastModified: 0, summary: '', live: true }
+  f.receive({ type: 'session_updated', sessionId: summary.sessionId, summary })
+  assert.deepEqual(useStore.getState().projects, [])
+  response.resolve({ projects: [{ cwd: '/tmp', sessions: [{ sessionId: 'resumed', summary: 'Saved title', lastModified: 10 }] }] })
+  await refreshing
+  const [session] = useStore.getState().projects[0].sessions
+  assert.equal(session.summary, 'Saved title')
+  assert.equal(session.lastModified, 10)
+  assert.equal(session.live, true)
+})
+
 test('an older history refresh cannot replace a newer sidebar snapshot', async (t) => {
   await fixture(t)
   const previous = rpc
