@@ -7,7 +7,7 @@ import type { FilePreview, TreeEntry } from '@ccw/shared'
 /** Text previews stop here; the overlay says so rather than paging. */
 const TEXT_CAP = 256 * 1024
 /** Images above this are shown as "binary" instead of shipped as base64. */
-const IMAGE_CAP = 4 * 1024 * 1024
+const IMAGE_CAP = 16 * 1024 * 1024
 
 const IMAGE_TYPES: Record<string, string> = {
   '.png': 'image/png',
