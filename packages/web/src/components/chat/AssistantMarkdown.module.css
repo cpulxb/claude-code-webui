@@ -10,6 +10,27 @@
   margin-bottom: 0;
 }
 
+.serializedSource {
+  margin-top: var(--ccw-space-2);
+  font-family: var(--ccw-font-ui);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-secondary);
+}
+
+.serializedSource summary {
+  cursor: pointer;
+}
+
+.serializedSource pre {
+  max-height: 20rem;
+  padding: var(--ccw-space-2);
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--ccw-font-mono);
+  background: var(--ccw-bg-sunken);
+  border-radius: var(--ccw-radius-sm);
+}
+
 .markdown p {
   margin: 0 0 var(--ccw-space-3);
 }

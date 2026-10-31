@@ -1,4 +1,5 @@
 import { lastTurnStart, type ChatNode } from '../render/nodes.ts'
+import { decodeSerializedAssistantText } from './assistant-text.ts'
 
 /** Input fields that name what a tool call acted on, most telling first. */
 const TOOL_DETAIL_KEYS = ['command', 'file_path', 'path', 'pattern', 'url', 'query', 'skill', 'description']
@@ -66,7 +67,7 @@ export function transcriptMarkdown(nodes: ChatNode[], title: string): string {
 function replyText(node: Extract<ChatNode, { kind: 'assistant' }>): string {
   return node.blocks
     .filter((block) => block.type === 'text')
-    .map((block) => block.text)
+    .map((block) => decodeSerializedAssistantText(block.text))
     .join('\n\n')
     .trim()
 }

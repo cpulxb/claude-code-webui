@@ -651,7 +651,7 @@ function ResultRow({ node }: { node: Extract<ChatNode, { kind: 'result' }> }): J
 }
 
 function BlockView({ block }: { block: AssistantBlock }): JSX.Element {
-  return block.type === 'thinking' ? <ReasoningRow text={block.text} /> : <AssistantMarkdown text={block.text} />
+  return block.type === 'thinking' ? <ReasoningRow text={block.text} /> : <AssistantMarkdown text={block.text} decodeSerialized />
 }
 
 /** Thinking is collapsed by default — it is context, not the answer. */
@@ -707,7 +707,7 @@ function StreamingRow({ block }: { block: StreamingBlock }): JSX.Element {
         <ReasoningRow text={block.text} live />
       ) : (
         <>
-          <AssistantMarkdown text={block.text} />
+          <AssistantMarkdown text={block.text} decodeSerialized />
           <span className={styles.cursor} />
         </>
       )}

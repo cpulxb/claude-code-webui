@@ -10,6 +10,7 @@ import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 
+import { decodeSerializedAssistantText } from '../../utils/assistant-text.ts'
 import styles from './AssistantMarkdown.module.css'
 
 // Only `$$` opens math: single dollars are far more often prices or shell
@@ -33,8 +34,19 @@ const THROTTLE_MS = 80
  * Assistant prose. Fenced blocks get a header with the language and a copy
  * button; everything else is plain GFM.
  */
-export const AssistantMarkdown = memo(function AssistantMarkdown({ text }: { text: string }) {
+export const AssistantMarkdown = memo(function AssistantMarkdown({
+  text,
+  decodeSerialized = false,
+}: {
+  text: string
+  /** Opt in for replies only: file previews must keep their original text. */
+  decodeSerialized?: boolean
+}) {
   const rendered = useThrottled(text)
+  const markdown = useMemo(
+    () => (decodeSerialized ? decodeSerializedAssistantText(rendered) : rendered),
+    [rendered, decodeSerialized],
+  )
 
   // The memo is what actually saves work: react-markdown re-parses on every
   // render, so an element rebuilt each delta costs a full remark + rehype pass
@@ -44,13 +56,23 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({ text }: { tex
   const body = useMemo(
     () => (
       <Markdown remarkPlugins={REMARK} rehypePlugins={REHYPE} components={{ pre: CodeBlock }}>
-        {rendered}
+        {markdown}
       </Markdown>
     ),
-    [rendered],
+    [markdown],
   )
 
-  return <div className={styles.markdown}>{body}</div>
+  return (
+    <div className={styles.markdown}>
+      {body}
+      {markdown !== rendered && (
+        <details className={styles.serializedSource}>
+          <summary>已还原序列化文本 · 查看原文</summary>
+          <pre>{rendered}</pre>
+        </details>
+      )}
+    </div>
+  )
 })
 
 /**
