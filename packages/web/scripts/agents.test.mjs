@@ -275,3 +275,28 @@ test('a result row closes the turn it ends, so live cards before it cannot still
 test('an empty transcript has no turn boundary to find', () => {
   assert.equal(lastTurnStart([]), 0)
 })
+
+// DeepSeek via CPA gives an identical call the same id, so a page read in
+// later can hold an earlier call under the id of the one still running.
+test('a call still running keeps its own result when a page with an earlier call of the same id is read in', () => {
+  const toolResult = (uuid, id, content) => ({
+    type: 'user',
+    uuid,
+    parent_tool_use_id: null,
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content }] },
+  })
+  const done = [prompt('p0', '截个图'), toolUse('a0', 'call_0_shot', 'Read'), toolResult('r0', 'call_0_shot', 'old shot')]
+  const running = [prompt('p1', '再截一张'), toolUse('a1', 'call_0_shot', 'Read')]
+
+  const scrolledUp = reread(running)
+  prependTranscript(scrolledUp, reread(done))
+  const scrolledDown = reread(done)
+  appendTranscript(scrolledDown, reread(running))
+
+  for (const transcript of [scrolledUp, scrolledDown]) {
+    applyMessage(transcript, toolResult('r1', 'call_0_shot', 'new shot'))
+    const [earlier, current] = transcript.nodes.filter((node) => node.kind === 'tool')
+    assert.deepEqual([earlier.status, earlier.output], ['done', 'old shot'])
+    assert.deepEqual([current.status, current.output], ['done', 'new shot'])
+  }
+})

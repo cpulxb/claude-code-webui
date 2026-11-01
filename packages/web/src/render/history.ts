@@ -208,7 +208,9 @@ function applyNotification(transcript: Transcript, notification: TaskNotice): bo
 export function prependTranscript(transcript: Transcript, older: Transcript): void {
   const shift = older.nodes.length
   for (const id of Object.keys(transcript.toolIndex)) transcript.toolIndex[id]! += shift
-  Object.assign(transcript.toolIndex, older.toolIndex)
+  // Some models reuse a tool_use id. Within a page the newest call holds it,
+  // and only that one can still be waiting on its result, so the newer side wins here too.
+  transcript.toolIndex = { ...older.toolIndex, ...transcript.toolIndex }
   transcript.nodes = [...older.nodes, ...transcript.nodes]
 
   for (const id of older.agentOrder) {
