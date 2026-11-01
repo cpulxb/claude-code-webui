@@ -536,6 +536,12 @@ export type RpcMap = {
    * from the address bar. Null when no session has that id.
    */
   'history.locate': { params: { sessionId: string }; result: { cwd: string | null } }
+  /**
+   * Every user entry of a session — across its compactions too — cut down to
+   * the text and attachment blocks a prompt bubble is drawn from, for the
+   * prompt navigator. The whole session, where a page holds a stretch of it.
+   */
+  'history.prompts': { params: { sessionId: string; cwd?: string }; result: { messages: SessionMessage[] } }
   /** Subagents a session spawned, read from `<session>/subagents/*.meta.json`. */
   'history.subagents': { params: { sessionId: string }; result: { agents: SubagentMeta[] } }
   /** One dynamic workflow run, for a reloaded session's workflow card. */

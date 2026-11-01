@@ -1,7 +1,16 @@
 import type { SDKMessage, SessionMessage, TurnTotals } from '@ccw/shared'
 
 import { bashEcho, parseBashInput, parseBashOutput } from './bash.ts'
-import { applyMessage, dropToolsUsedLine, findAgent, findAgentById, userText, type Transcript } from './nodes.ts'
+import {
+  applyMessage,
+  dropToolsUsedLine,
+  emptyTranscript,
+  findAgent,
+  findAgentById,
+  userText,
+  type ChatNode,
+  type Transcript,
+} from './nodes.ts'
 import { applyWorkflowEvent, parseTaskNotification, unframeWorkflowPrompt, type TaskNotice } from './workflows.ts'
 
 /**
@@ -59,6 +68,16 @@ export function applyHistoryMessage(transcript: Transcript, entry: SessionMessag
     .join('\n')
   const images = blocks.filter((block) => block.type === 'image' || block.type === 'document').length
   if (text || images) applyUserText(transcript, entry.uuid, text, images)
+}
+
+/**
+ * The prompt bubbles a run of history entries draws, replayed into a scratch
+ * transcript by the rules the real one follows, so ids and text agree.
+ */
+export function historyPrompts(messages: SessionMessage[]): Extract<ChatNode, { kind: 'user' }>[] {
+  const scratch = emptyTranscript()
+  for (const entry of messages) applyHistoryMessage(scratch, entry)
+  return scratch.nodes.filter((node): node is Extract<ChatNode, { kind: 'user' }> => node.kind === 'user')
 }
 
 /**

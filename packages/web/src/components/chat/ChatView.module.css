@@ -1,3 +1,12 @@
+/* Holds still while `.scroll` moves, for the prompt navigator laid over it. */
+.pane {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .scroll {
   flex: 1;
   min-height: 0;

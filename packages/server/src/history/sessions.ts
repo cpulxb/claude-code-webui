@@ -244,6 +244,41 @@ export async function readMessages(sessionId: string, cwd?: string): Promise<Ses
 }
 
 /**
+ * A session's user entries, cut down for the prompt navigator. Read after the
+ * newest page, whose read is usually still cached, so this costs no parse of
+ * its own unless the session was compacted.
+ */
+export async function readPrompts(sessionId: string, cwd?: string): Promise<SessionMessage[]> {
+  let read: TranscriptRead =
+    lastRead?.sessionId === sessionId && lastRead.cwd === cwd
+      ? lastRead
+      : { messages: await readMessages(sessionId, cwd), complete: false }
+  if (!read.complete && read.messages.some(isCompactSummary)) {
+    read = { messages: await withEarlierMessages(sessionId, read.messages), complete: true }
+  }
+  return promptEntries(read.messages)
+}
+
+/**
+ * The entries that can draw a prompt bubble, with only the blocks it is drawn
+ * from: tool results and compaction summaries — most of a transcript's user
+ * entries by size — are dropped, and so is anything left empty.
+ */
+export function promptEntries(messages: SessionMessage[]): SessionMessage[] {
+  return messages.flatMap((entry) => {
+    if (entry.type !== 'user' || isCompactSummary(entry)) return []
+    const message = entry.message as { content?: unknown } | null
+    const content = message?.content
+    if (typeof content === 'string') return [entry]
+    if (!Array.isArray(content)) return []
+    const kept = (content as { type?: unknown }[]).filter(
+      (block) => block.type === 'text' || block.type === 'image' || block.type === 'document',
+    )
+    return kept.length > 0 ? [{ ...entry, message: { ...message, content: kept } }] : []
+  })
+}
+
+/**
  * Empties base64 image and document payloads in place, keeping the blocks.
  * The renderer only counts them (`[image]`, "附件 × n"), and on a
  * screenshot-heavy session they were 20.8 of the transcript's 23 MB.

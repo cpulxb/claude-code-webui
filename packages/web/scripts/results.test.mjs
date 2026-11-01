@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { applyHistoryMessage, applyTurnTotals } from '../src/render/history.ts'
+import { applyHistoryMessage, applyTurnTotals, historyPrompts } from '../src/render/history.ts'
 import { applyMessage, emptyTranscript, lastTurnStart, rowKeys } from '../src/render/nodes.ts'
 import { turnReplyText } from '../src/utils/transcript-markdown.ts'
 
@@ -72,4 +72,22 @@ test('a tool_use id the model reuses still gives every row its own key, and appe
 
   applyHistoryMessage(transcript, read('a3', 'm3'))
   assert.deepEqual(rowKeys(transcript.nodes), [...keys, 'call_0_e1ad#3'])
+})
+
+test('the prompts read for the navigator are the bubbles history draws, by id and text', () => {
+  const entries = [
+    prompt('u0', 'first question\nwith detail'),
+    prompt('u1', '<command-name>/model</command-name><command-args>haiku</command-args>'),
+    prompt('u2', '<local-command-stdout>Set model to haiku</local-command-stdout>'),
+    prompt('u3', 'second question'),
+  ]
+  const shown = emptyTranscript()
+  for (const message of entries) applyHistoryMessage(shown, message)
+  const bubbles = shown.nodes.filter((node) => node.kind === 'user')
+  assert.deepEqual(historyPrompts(entries), bubbles)
+  assert.deepEqual(bubbles.map((node) => [node.id, node.text]), [
+    ['u0', 'first question\nwith detail'],
+    ['u1', '/model haiku'],
+    ['u3', 'second question'],
+  ])
 })

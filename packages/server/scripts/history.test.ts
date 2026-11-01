@@ -6,7 +6,7 @@ import { test } from 'node:test'
 
 import type { SessionMessage } from '@ccw/shared'
 
-import { locateSession, pageMessages, readMessagePage, readMessages } from '../src/history/sessions.ts'
+import { locateSession, pageMessages, promptEntries, readMessagePage, readMessages } from '../src/history/sessions.ts'
 import { turnTotals } from '../src/history/turns.ts'
 
 const entry = (type: 'user' | 'assistant', uuid: string, message: unknown): SessionMessage => ({
@@ -370,4 +370,22 @@ test('a page carries the totals of the turns that end on it, counted from where 
   ])
 
   assert.deepEqual((await readMessagePage(sessionId, '/work/app', 2, {}, true)).turns, [])
+})
+
+test('the prompt list keeps only what a bubble is drawn from', () => {
+  const summary = { ...prompt('c0', 'Summary: …'), isCompactSummary: true } as SessionMessage
+  const mixed = entry('user', 'u9', {
+    role: 'user',
+    content: [
+      { type: 'tool_result', tool_use_id: 't9', content: 'a long output' },
+      { type: 'text', text: 'and a remark' },
+      { type: 'image', source: { type: 'base64', data: '' } },
+    ],
+  })
+  const kept = promptEntries([...transcript, summary, mixed])
+  assert.deepEqual(kept.map((message) => message.uuid), ['u0', 'u4', 'u9'])
+  assert.deepEqual(
+    (kept[2]!.message as { content: { type: string }[] }).content.map((block) => block.type),
+    ['text', 'image'],
+  )
 })

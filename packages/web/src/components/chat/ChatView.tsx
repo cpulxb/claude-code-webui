@@ -20,9 +20,13 @@ import { WorkflowCard } from './WorkflowCard.tsx'
 import { AgentNav } from './AgentNav.tsx'
 import { StepRun, TurnFold } from './CondensedView.tsx'
 import { ToolCard } from './ToolCard.tsx'
+import { TurnNav } from './TurnNav.tsx'
 
 /** Pixels from the bottom within which we keep following new output. */
 const FOLLOW_THRESHOLD = 120
+
+/** Room left above a prompt jumped to, clear of the sticky agent bar. */
+const JUMP_MARGIN = 56
 
 /** One in-flight rewind interaction, anchored to a single user bubble. */
 type RewindState = { nodeId: string; busy: boolean; preview: RewindFilesResult | null; error: string | null }
@@ -216,6 +220,25 @@ export function ChatView(): JSX.Element | null {
   const streamShown = nodes !== undefined && !empty
   const newestTurn = useMemo(() => (nodes ? lastTurnStart(nodes) : 0), [nodes])
   const keys = useMemo(() => (nodes ? rowKeys(nodes) : []), [nodes])
+  const openSession = useStore((state) => state.openSession)
+  // A prompt on screen is scrolled to; one not read in yet is opened at, as a
+  // message link would be.
+  const jumpTo = useCallback(
+    (id: string) => {
+      const root = scrollRef.current
+      const target = root?.querySelector<HTMLElement>(`[data-uuid="${CSS.escape(id)}"]`)
+      if (!root || !target) {
+        if (activeId) void openSession(activeId, undefined, id)
+        return
+      }
+      followRef.current = false
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      root.scrollTo({ top: contentOffset(root, target) - JUMP_MARGIN, behavior: reduce ? 'auto' : 'smooth' })
+      target.classList.add(styles.userTurnPlaced!)
+      target.addEventListener('animationend', () => target.classList.remove(styles.userTurnPlaced!), { once: true })
+    },
+    [activeId, openSession],
+  )
   const chatLayout = useStore((state) => state.chatLayout)
   const condensed = useMemo(
     () => (chatLayout === 'compact' && nodes ? condense(nodes, newestTurn, settled) : null),
@@ -391,104 +414,108 @@ export function ChatView(): JSX.Element | null {
   }
 
   return (
-    <div className={styles.scroll} ref={scrollRef}>
-      <AgentNav />
-      {empty ? (
-        <div className={styles.empty}>
-          <span className={styles.emptyMark}>
-            <BrandMark size={24} />
-          </span>
-          <span>Claude Code</span>
-        </div>
-      ) : (
-        <div className={condensed ? `${styles.stream} ${styles.condensed}` : styles.stream} ref={streamRef}>
-          {(historyCursor || historyError) && (
-            <div ref={sentinelRef} className={styles.olderHistory}>
-              {historyError ? (
-                <>
-                  <span className={styles.historyError}>{historyError}</span>
-                  <button className={styles.historyRetry} disabled={historyLoading} onClick={retry} type="button">
-                    {historyLoading ? '重试中…' : '重试'}
-                  </button>
-                </>
-              ) : historyLoading ? (
-                '正在加载更早的消息…'
-              ) : (
-                '上滑加载更早的消息'
-              )}
-            </div>
-          )}
-          {condensed
-            ? condensed.map(renderItem)
-            : nodes.map((node, index) => renderNode(node, index, keys[index]!))}
-          {streaming && <StreamingRow block={streaming} />}
-          {(newerCursor || newerError) && (
-            <div ref={newerSentinelRef} className={styles.newerHistory}>
-              {newerError ? (
-                <>
-                  <span className={styles.historyError}>{newerError}</span>
-                  <button
-                    className={styles.historyRetry}
-                    disabled={newerLoading}
-                    onClick={() => activeId && void loadNewerHistory(activeId)}
-                    type="button"
-                  >
-                    {newerLoading ? '重试中…' : '重试'}
-                  </button>
-                </>
-              ) : newerLoading ? (
-                '正在加载更新的消息…'
-              ) : (
-                '下滑加载更新的消息'
-              )}
-            </div>
-          )}
-          {pendingPermissions?.map((request) => {
-            const questions = request.toolName === 'AskUserQuestion' ? parseQuestions(request.input) : null
-            return questions ? (
-              <QuestionCard key={request.requestId} request={request} questions={questions} />
-            ) : (
-              <PermissionCard key={request.requestId} request={request} />
-            )
-          })}
-          {interrupted && (
-            <div className={`${styles.row} ${styles.rowMuted}`}>
-              <div className={styles.notice}>会话进程已退出，这一轮没有跑完。上面标记为「已中断」的工具不会再有结果。</div>
-            </div>
-          )}
-          {error && <div className={`${styles.row} ${styles.rowError}`}>{error}</div>}
-          {newerCursor && (
-            <button className={styles.jumpLatest} onClick={() => activeId && void jumpToLatest(activeId)} type="button">
-              跳到最新
-            </button>
-          )}
-          {/* An older stretch has 跳到最新 above instead: its end is not the latest. */}
-          {away && !newerCursor && (
-            <div className={styles.toBottomDock}>
-              <button
-                className={styles.toBottom}
-                onClick={scrollToBottom}
-                type="button"
-                title={running ? '正在回复，回到底部' : '回到底部'}
-                aria-label={running ? '正在回复，回到底部' : '回到底部'}
-              >
-                {running ? (
-                  <span className={styles.toBottomDots}>
-                    <span />
-                    <span />
-                    <span />
-                  </span>
+    <div className={styles.pane}>
+      <div className={styles.scroll} ref={scrollRef}>
+        <AgentNav />
+        {empty ? (
+          <div className={styles.empty}>
+            <span className={styles.emptyMark}>
+              <BrandMark size={24} />
+            </span>
+            <span>Claude Code</span>
+          </div>
+        ) : (
+          <div className={condensed ? `${styles.stream} ${styles.condensed}` : styles.stream} ref={streamRef}>
+            {(historyCursor || historyError) && (
+              <div ref={sentinelRef} className={styles.olderHistory}>
+                {historyError ? (
+                  <>
+                    <span className={styles.historyError}>{historyError}</span>
+                    <button className={styles.historyRetry} disabled={historyLoading} onClick={retry} type="button">
+                      {historyLoading ? '重试中…' : '重试'}
+                    </button>
+                  </>
+                ) : historyLoading ? (
+                  '正在加载更早的消息…'
                 ) : (
-                  <ArrowDownIcon size={16} />
+                  '上滑加载更早的消息'
                 )}
+              </div>
+            )}
+            {condensed
+              ? condensed.map(renderItem)
+              : nodes.map((node, index) => renderNode(node, index, keys[index]!))}
+            {streaming && <StreamingRow block={streaming} />}
+            {(newerCursor || newerError) && (
+              <div ref={newerSentinelRef} className={styles.newerHistory}>
+                {newerError ? (
+                  <>
+                    <span className={styles.historyError}>{newerError}</span>
+                    <button
+                      className={styles.historyRetry}
+                      disabled={newerLoading}
+                      onClick={() => activeId && void loadNewerHistory(activeId)}
+                      type="button"
+                    >
+                      {newerLoading ? '重试中…' : '重试'}
+                    </button>
+                  </>
+                ) : newerLoading ? (
+                  '正在加载更新的消息…'
+                ) : (
+                  '下滑加载更新的消息'
+                )}
+              </div>
+            )}
+            {pendingPermissions?.map((request) => {
+              const questions = request.toolName === 'AskUserQuestion' ? parseQuestions(request.input) : null
+              return questions ? (
+                <QuestionCard key={request.requestId} request={request} questions={questions} />
+              ) : (
+                <PermissionCard key={request.requestId} request={request} />
+              )
+            })}
+            {interrupted && (
+              <div className={`${styles.row} ${styles.rowMuted}`}>
+                <div className={styles.notice}>会话进程已退出，这一轮没有跑完。上面标记为「已中断」的工具不会再有结果。</div>
+              </div>
+            )}
+            {error && <div className={`${styles.row} ${styles.rowError}`}>{error}</div>}
+            {newerCursor && (
+              <button className={styles.jumpLatest} onClick={() => activeId && void jumpToLatest(activeId)} type="button">
+                跳到最新
               </button>
-            </div>
-          )}
-          <div ref={bottomRef} />
-          {/* Last, so showing it never changes which row is :first-child. */}
-          <QuoteButton scrollRef={scrollRef} streamRef={streamRef} />
-        </div>
-      )}
+            )}
+            {/* An older stretch has 跳到最新 above instead: its end is not the latest. */}
+            {away && !newerCursor && (
+              <div className={styles.toBottomDock}>
+                <button
+                  className={styles.toBottom}
+                  onClick={scrollToBottom}
+                  type="button"
+                  title={running ? '正在回复，回到底部' : '回到底部'}
+                  aria-label={running ? '正在回复，回到底部' : '回到底部'}
+                >
+                  {running ? (
+                    <span className={styles.toBottomDots}>
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  ) : (
+                    <ArrowDownIcon size={16} />
+                  )}
+                </button>
+              </div>
+            )}
+            <div ref={bottomRef} />
+            {/* Last, so showing it never changes which row is :first-child. */}
+            <QuoteButton scrollRef={scrollRef} streamRef={streamRef} />
+          </div>
+        )}
+      </div>
+      {/* A subagent's conversation has the one prompt. */}
+      {!viewAgent && <TurnNav scrollRef={scrollRef} onJump={jumpTo} />}
     </div>
   )
 }

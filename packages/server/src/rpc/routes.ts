@@ -15,6 +15,7 @@ import {
   readMessagePage,
   readMessages,
   readPermissionMode,
+  readPrompts,
   readSubagentMessages,
   readWorkflowRun,
   renameSavedSession,
@@ -199,6 +200,8 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
     'history.locate': async ({ sessionId }) => ({
       cwd: manager.has(sessionId) ? manager.require(sessionId).config.cwd : await locateSession(sessionId),
     }),
+
+    'history.prompts': async ({ sessionId, cwd }) => ({ messages: await readPrompts(sessionId, cwd) }),
 
     'history.subagents': async ({ sessionId }) => ({ agents: await listSubagentMeta(sessionId) }),
 
