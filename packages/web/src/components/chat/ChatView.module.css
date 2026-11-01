@@ -108,6 +108,29 @@
   }
 }
 
+/* The condensed layout draws a prompt as claude.ai and DeepSeek do: a filled
+   bubble on the right, sized to its text and set well apart from the turn
+   before, so each exchange visibly starts anew. bg-hover is lighter than the
+   page in both themes; bg-sunken turns darker in the dark one. */
+.condensed .userTurn {
+  width: fit-content;
+  max-width: 85%;
+  margin: 48px 0 var(--ccw-space-5) auto;
+  background: var(--ccw-bg-hover);
+  border-color: transparent;
+  border-radius: var(--ccw-radius-lg);
+}
+
+.condensed .userTurn:first-child {
+  margin-top: 0;
+}
+
+/* Beside the bubble rather than over it, where they would cover a short prompt. */
+.condensed .turnActions {
+  right: 100%;
+  padding-right: 6px;
+}
+
 /* Sits tight under the bubble it belongs to, ahead of the reply below. */
 .rewindCard {
   display: flex;

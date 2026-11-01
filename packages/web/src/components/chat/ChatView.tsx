@@ -401,7 +401,7 @@ export function ChatView(): JSX.Element | null {
           <span>Claude Code</span>
         </div>
       ) : (
-        <div className={styles.stream} ref={streamRef}>
+        <div className={condensed ? `${styles.stream} ${styles.condensed}` : styles.stream} ref={streamRef}>
           {(historyCursor || historyError) && (
             <div ref={sentinelRef} className={styles.olderHistory}>
               {historyError ? (
