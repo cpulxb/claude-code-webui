@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto'
 import { chmod, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { resolveSettings } from '@anthropic-ai/claude-agent-sdk'
-import type { SettingsOverride, UserSettings } from '@ccw/shared'
+import { filterEscalatingDefaultMode, resolveSettings } from '@anthropic-ai/claude-agent-sdk'
+import type { PermissionMode, SettingsOverride, UserSettings } from '@ccw/shared'
+import { PERMISSION_MODES } from '@ccw/shared'
 
 import { claudeConfigDir } from '../history/sessions.ts'
 
@@ -14,6 +15,23 @@ export async function readUserSettings(cwd?: string): Promise<UserSettings> {
   const path = join(claudeConfigDir(), 'settings.json')
   const raw = (await readIfExists(path)) ?? ''
   return { path, settings: parse(raw, path), revision: hash(raw), overrides: await findOverrides(cwd) }
+}
+
+/**
+ * `permissions.defaultMode` as the CLI would honour it in `cwd`: the highest
+ * tier that sets it wins, and an escalating mode (`bypassPermissions`, `auto`,
+ * `acceptEdits`) from a checked-in `.claude/settings.json` is dropped, so a
+ * cloned repository cannot start its own sessions without approvals. Null when
+ * nothing usable is set or the settings cannot be read: starting the session
+ * matters more than this default.
+ */
+export async function readDefaultPermissionMode(cwd: string): Promise<PermissionMode | null> {
+  try {
+    const mode: unknown = filterEscalatingDefaultMode(await resolveSettings({ cwd })).permissions?.defaultMode
+    return (PERMISSION_MODES as readonly unknown[]).includes(mode) ? (mode as PermissionMode) : null
+  } catch {
+    return null
+  }
 }
 
 /**
