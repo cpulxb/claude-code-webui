@@ -206,6 +206,18 @@
   cursor: pointer;
 }
 
+/* A browser-only setting above the settings.json form, ruled off from it. */
+.local {
+  padding-bottom: var(--ccw-space-5);
+  border-bottom: 1px solid var(--ccw-border-l2);
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ccw-space-2);
+}
+
 /* --- model rows --------------------------------------------------------- */
 
 /* Fetch models: a quiet pill beside the section's checkbox. */

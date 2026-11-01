@@ -36,12 +36,19 @@ export const ToolCard = memo(function ToolCard({ node, stale }: { node: ToolNode
           <span className={styles.elapsed}>{Math.round(node.elapsedSeconds)}s</span>
         )}
       </div>
-      <div className={styles.body}>
-        <ToolBody node={node} stale={stale} />
-      </div>
+      <ToolCardBody node={node} stale={stale} />
     </>
   )
 })
+
+/** The card without its header, for the condensed view, whose step row stands in for it. */
+export function ToolCardBody({ node, stale }: { node: ToolNode; stale: boolean }): JSX.Element {
+  return (
+    <div className={styles.body}>
+      <ToolBody node={node} stale={stale} />
+    </div>
+  )
+}
 
 function ToolBody({ node, stale }: { node: ToolNode; stale: boolean }): JSX.Element {
   const input = node.input

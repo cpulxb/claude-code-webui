@@ -252,6 +252,36 @@ export function TerminalIcon(props: { size?: number }): JSX.Element {
   )
 }
 
+/** 简洁视图里搜索类工具（Grep、Glob）的步骤图标。 */
+export function SearchIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </Icon>
+  )
+}
+
+/** 简洁视图里的思考步骤。 */
+export function LightbulbIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
+      <path d="M9 18h6" />
+      <path d="M10 22h4" />
+    </Icon>
+  )
+}
+
+/** 简洁视图里没有专门图标的工具。 */
+export function WrenchIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+    </Icon>
+  )
+}
+
 /** 面包屑分隔符，以及「点开进入」的行尾提示。 */
 export function ChevronRightIcon(props: { size?: number }): JSX.Element {
   return (

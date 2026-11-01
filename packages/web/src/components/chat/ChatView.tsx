@@ -1,6 +1,7 @@
 import type { RewindFilesResult } from '@ccw/shared'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
+import { condense, type CondensedItem, type Step } from '../../render/condense.ts'
 import type { AssistantBlock, ChatNode, StreamingBlock } from '../../render/nodes.ts'
 import { AGENT_TOOLS, findAgent, lastTurnStart, rowKeys } from '../../render/nodes.ts'
 import { WORKFLOW_TOOL } from '../../render/workflows.ts'
@@ -17,6 +18,7 @@ import { QuoteButton } from './QuoteButton.tsx'
 import { AgentCard } from './AgentCard.tsx'
 import { WorkflowCard } from './WorkflowCard.tsx'
 import { AgentNav } from './AgentNav.tsx'
+import { StepRun, TurnFold } from './CondensedView.tsx'
 import { ToolCard } from './ToolCard.tsx'
 
 /** Pixels from the bottom within which we keep following new output. */
@@ -214,6 +216,11 @@ export function ChatView(): JSX.Element | null {
   const streamShown = nodes !== undefined && !empty
   const newestTurn = useMemo(() => (nodes ? lastTurnStart(nodes) : 0), [nodes])
   const keys = useMemo(() => (nodes ? rowKeys(nodes) : []), [nodes])
+  const chatLayout = useStore((state) => state.chatLayout)
+  const condensed = useMemo(
+    () => (chatLayout === 'compact' && nodes ? condense(nodes, newestTurn, settled) : null),
+    [chatLayout, nodes, newestTurn, settled],
+  )
   // The newest turn was cut short: it leaves no result row and no
   // `session_error` either — the process was simply gone — so without this the
   // thread ends on a tool card with nothing saying why.
@@ -337,6 +344,52 @@ export function ChatView(): JSX.Element | null {
 
   if (!nodes) return null
 
+  const renderNode = (node: ChatNode, index: number, key: string): JSX.Element =>
+    node.kind === 'user' && viewAgent ? (
+      // A subagent's prompt came from the parent model, not from a
+      // checkpointed user message, so it has nothing to rewind to.
+      <div key={key} className={styles.userTurn}>
+        <div className={styles.agentPromptLabel}>主代理下达的任务</div>
+        {node.text}
+      </div>
+    ) : node.kind === 'user' ? (
+      <UserTurn
+        key={key}
+        node={node}
+        rewind={rewind?.nodeId === node.id ? rewind : null}
+        onRewind={startRewind}
+        onConfirm={confirmRewind}
+        onCancel={cancelRewind}
+      />
+    ) : (
+      <NodeView key={key} node={node} settled={settled || index < newestTurn} />
+    )
+
+  const renderItem = (item: CondensedItem): JSX.Element => {
+    switch (item.type) {
+      case 'node':
+        return renderNode(nodes[item.index]!, item.index, item.key)
+      case 'text':
+        return (
+          <div key={item.key} className={`${styles.row} ${styles.prose}`}>
+            <AssistantMarkdown text={item.text} decodeSerialized />
+          </div>
+        )
+      case 'steps':
+        return (
+          <div key={item.key} className={runRowClass(item.steps)}>
+            <StepRun steps={item.steps} />
+          </div>
+        )
+      case 'fold':
+        return (
+          <TurnFold key={item.key} label={foldLabel(item)} detail={`${item.stepCount} 个步骤`}>
+            {item.items.map(renderItem)}
+          </TurnFold>
+        )
+    }
+  }
+
   return (
     <div className={styles.scroll} ref={scrollRef}>
       <AgentNav />
@@ -365,27 +418,9 @@ export function ChatView(): JSX.Element | null {
               )}
             </div>
           )}
-          {nodes.map((node, index) =>
-            node.kind === 'user' && viewAgent ? (
-              // A subagent's prompt came from the parent model, not from a
-              // checkpointed user message, so it has nothing to rewind to.
-              <div key={keys[index]} className={styles.userTurn}>
-                <div className={styles.agentPromptLabel}>主代理下达的任务</div>
-                {node.text}
-              </div>
-            ) : node.kind === 'user' ? (
-              <UserTurn
-                key={keys[index]}
-                node={node}
-                rewind={rewind?.nodeId === node.id ? rewind : null}
-                onRewind={startRewind}
-                onConfirm={confirmRewind}
-                onCancel={cancelRewind}
-              />
-            ) : (
-              <NodeView key={keys[index]} node={node} settled={settled || index < newestTurn} />
-            ),
-          )}
+          {condensed
+            ? condensed.map(renderItem)
+            : nodes.map((node, index) => renderNode(node, index, keys[index]!))}
           {streaming && <StreamingRow block={streaming} />}
           {(newerCursor || newerError) && (
             <div ref={newerSentinelRef} className={styles.newerHistory}>
@@ -714,6 +749,24 @@ function StreamingRow({ block }: { block: StreamingBlock }): JSX.Element {
       )}
     </div>
   )
+}
+
+/** A run's bullet, as the detailed view colours a lone card. */
+function runRowClass(steps: Step[]): string {
+  const tools = steps.flatMap((step) => (step.kind === 'tool' ? [step] : []))
+  const state = tools.some((step) => step.node.status === 'running' && !step.stale)
+    ? styles.rowPending
+    : tools.some((step) => step.node.status === 'error')
+      ? styles.rowError
+      : tools.some((step) => step.stale)
+        ? styles.rowMuted
+        : ''
+  return state ? `${styles.row} ${state}` : styles.row!
+}
+
+function foldLabel(fold: Extract<CondensedItem, { type: 'fold' }>): string {
+  if (fold.durationMs === null) return '已结束'
+  return `${fold.outcome === 'error' ? '出错结束' : '已完成'}，用时 ${formatDuration(fold.durationMs)}`
 }
 
 /** Where `element` sits in the scroller's content, however far it is scrolled. */

@@ -2,7 +2,7 @@ import type { SettingsOverride, UserSettings } from '@ccw/shared'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 
 import { call } from '../../api/client.ts'
-import { useActiveSessionValue, useStore } from '../../store/session.ts'
+import { useActiveSessionValue, useStore, type ChatLayout } from '../../store/session.ts'
 import {
   applyForm,
   formProblems,
@@ -38,6 +38,11 @@ const SOURCE_LABELS: Record<SettingsOverride['source'], string> = {
   managed: '组织管理配置',
 }
 
+const LAYOUTS: [ChatLayout, string, string][] = [
+  ['compact', '简洁', '连续的工具调用合成一行，跑完的回合只露出最终回复'],
+  ['detailed', '详细', '每次工具调用都是一张展开的卡片'],
+]
+
 const describe = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
 
 function parseJson(text: string): Json {
@@ -58,6 +63,8 @@ const showAsJson = (settings: Json): string => JSON.stringify(maskSecrets(settin
 export function SettingsPage({ onLeave }: { onLeave: () => void }): JSX.Element {
   const cwd = useActiveSessionValue((session) => session.cwd)
   const refreshModels = useStore((state) => state.refreshModels)
+  const chatLayout = useStore((state) => state.chatLayout)
+  const setChatLayout = useStore((state) => state.setChatLayout)
   const [loaded, setLoaded] = useState<UserSettings | null>(null)
   /** What the form is applied over: the file, or the JSON as last typed. */
   const [base, setBase] = useState<Json>({})
@@ -220,6 +227,26 @@ export function SettingsPage({ onLeave }: { onLeave: () => void }): JSX.Element 
 
       <div className={styles.panes}>
         <div className={styles.formPane}>
+          {/* Not part of settings.json: it takes effect at once, with nothing to save. */}
+          <section className={`${styles.section} ${styles.local}`}>
+            <div className={dialog.sectionTitle}>对话显示</div>
+            <div className={styles.choices} role="radiogroup" aria-label="对话显示">
+              {LAYOUTS.map(([value, label, note]) => (
+                <label key={value} className={styles.check}>
+                  <input
+                    type="radio"
+                    name="ccw-chat-layout"
+                    checked={chatLayout === value}
+                    onChange={() => setChatLayout(value)}
+                  />
+                  {label}
+                  <span className={dialog.muted}>{note}</span>
+                </label>
+              ))}
+            </div>
+            <div className={dialog.muted}>只保存在这个浏览器里，切换后立即生效，不用点保存。</div>
+          </section>
+
           {loaded && loaded.overrides.length > 0 && (
             <div className={styles.warning}>
               下面这些设置被优先级更高的配置覆盖，在这里修改不会生效：

@@ -146,6 +146,8 @@ type Store = {
    * through a session switch.
    */
   quotes: string[]
+  /** How the chat draws a turn's tool calls; kept per browser, not in settings.json. */
+  chatLayout: ChatLayout
 
   connect: () => () => void
   createSession: (cwd: string) => Promise<string>
@@ -162,6 +164,7 @@ type Store = {
   setActive: (sessionId: string | null) => void
   /** Makes `cwd` the project the sidebar lists and the details panel works in. */
   selectProject: (cwd: string) => void
+  setChatLayout: (layout: ChatLayout) => void
   closeSession: (sessionId: string) => Promise<void>
   refreshProjects: () => Promise<void>
 
@@ -250,6 +253,14 @@ const MODE_KEY = 'ccw.permissionMode'
 
 /** The sidebar's project survives a reload, even with no session open. */
 const SELECTED_PROJECT_KEY = 'ccw.selectedProject'
+
+/**
+ * `compact` folds consecutive tool calls into one line and a finished turn's
+ * process under another; `detailed` draws every call as a card.
+ */
+export type ChatLayout = 'compact' | 'detailed'
+
+const CHAT_LAYOUT_KEY = 'ccw.chatLayout'
 
 function rememberedMode(): PermissionMode {
   const stored = localStorage.getItem(MODE_KEY)
@@ -379,6 +390,7 @@ export const useStore = create<Store>()(
     update: null,
     settingsOpen: false,
     quotes: [],
+    chatLayout: localStorage.getItem(CHAT_LAYOUT_KEY) === 'detailed' ? 'detailed' : 'compact',
 
     connect: () =>
       connectEvents({
@@ -617,6 +629,13 @@ export const useStore = create<Store>()(
       localStorage.setItem(SELECTED_PROJECT_KEY, cwd)
       set((state) => {
         state.selectedCwd = cwd
+      })
+    },
+
+    setChatLayout: (layout) => {
+      localStorage.setItem(CHAT_LAYOUT_KEY, layout)
+      set((state) => {
+        state.chatLayout = layout
       })
     },
 
