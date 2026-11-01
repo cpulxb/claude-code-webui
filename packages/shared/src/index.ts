@@ -179,6 +179,11 @@ export type SessionFlags = {
 export type SessionConfig = {
   cwd: string
   model?: string
+  /**
+   * Omitted when the browser has no mode to give: the session then starts in
+   * `permissions.defaultMode` from the settings the CLI reads in `cwd`, as the
+   * terminal would, or in `default` when none is usable.
+   */
   permissionMode?: PermissionMode
   effort?: EffortLevel
   /**
@@ -409,7 +414,8 @@ export type UpstreamModel = {
  * The client's `call()` derives both argument and return types from this map.
  */
 export type RpcMap = {
-  'session.create': { params: SessionConfig; result: { sessionId: string } }
+  /** `permissionMode` is the mode the session actually started in. */
+  'session.create': { params: SessionConfig; result: { sessionId: string; permissionMode: PermissionMode } }
   'session.close': { params: { sessionId: string }; result: Record<string, never> }
   'session.send': {
     params: { sessionId: string; text: string; attachments?: Attachment[] }

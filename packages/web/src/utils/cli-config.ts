@@ -23,7 +23,7 @@ const META: Record<string, Meta> = {
   autoCompact: { label: '自动压缩', group: 'session' },
   thinking: { label: '思考模式', group: 'session', note: 'WebUI 会话启动时固定开启 adaptive 思考，这一项只影响终端' },
   checkpoints: { label: '代码回退（检查点）', group: 'session', note: 'WebUI 会话总是开启，这一项只影响终端' },
-  permissionMode: { label: '默认权限模式', group: 'session', note: 'WebUI 新会话用输入框旁选的模式，这一项只影响终端' },
+  permissionMode: { label: '默认权限模式', group: 'session', note: 'WebUI 新会话沿用输入框旁上次选的模式；这个浏览器里从没选过时，才从这一项开始' },
   useAutoModeDuringPlan: { label: '计划模式中使用 auto 模式', group: 'session' },
   switchModelsOnFlag: { label: '消息被标记时切换模型', group: 'session' },
   workflows: { label: '动态工作流', group: 'session' },

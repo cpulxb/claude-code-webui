@@ -8,6 +8,7 @@ import type {
   PermissionRequest,
   ProjectGroup,
   RewindFilesResult,
+  RpcResult,
   ServerEvent,
   SessionMessage,
   SessionStatus,
@@ -237,7 +238,7 @@ function newSession(sessionId: string, cwd: string, attached: boolean): SessionS
     init: null,
     commands: [],
     models: [],
-    permissionMode: rememberedMode(),
+    permissionMode: startMode(sessionId),
     effort: 'high',
     ultracode: false,
     ultracodeAvailable: false,
@@ -254,10 +255,11 @@ function newSession(sessionId: string, cwd: string, attached: boolean): SessionS
 /**
  * The permission mode to start a session in.
  *
- * The CLI starts every session at `default` and expects shift+tab, which is
- * fine in a terminal but tedious here — so the last mode picked in the browser
- * carries over. A session opened from the sidebar overrides this with whatever
- * its transcript recorded, when it recorded one.
+ * The CLI expects shift+tab to change modes, which is fine in a terminal but
+ * tedious here — so the last mode picked in the browser carries over. A
+ * browser that never picked one gets `permissions.defaultMode` from the
+ * settings, as the terminal does. A session opened from the sidebar overrides
+ * both with whatever its transcript recorded, when it recorded one.
  */
 const MODE_KEY = 'ccw.permissionMode'
 
@@ -279,9 +281,41 @@ function outOfSight(): boolean {
   return typeof document !== 'undefined' && (document.hidden || !document.hasFocus())
 }
 
-function rememberedMode(): PermissionMode {
+function rememberedMode(): PermissionMode | null {
   const stored = localStorage.getItem(MODE_KEY)
-  return stored && (PERMISSION_MODES as readonly string[]).includes(stored) ? (stored as PermissionMode) : 'default'
+  return stored && (PERMISSION_MODES as readonly string[]).includes(stored) ? (stored as PermissionMode) : null
+}
+
+/**
+ * Sessions showing `default` only because nothing better is known yet: no
+ * mode remembered in this browser, none recorded in the transcript, none
+ * picked. Their start leaves the mode to the server, which reads the
+ * settings for the session's directory and answers with what it chose.
+ */
+const modeGuessed = new Set<string>()
+
+function startMode(sessionId: string): PermissionMode {
+  const remembered = rememberedMode()
+  if (remembered) {
+    modeGuessed.delete(sessionId)
+    return remembered
+  }
+  modeGuessed.add(sessionId)
+  return 'default'
+}
+
+/** The mode to ask `session.create` for; none while it is still a guess. */
+function requestedMode(session: SessionState): { permissionMode?: PermissionMode } {
+  return modeGuessed.has(session.sessionId) ? {} : { permissionMode: session.permissionMode }
+}
+
+/** The mode a guessed session actually started in, unless one was picked meanwhile. */
+function adoptStartMode(set: Setter, sessionId: string, mode: PermissionMode | undefined): void {
+  if (!mode || !modeGuessed.delete(sessionId)) return
+  set((state) => {
+    const session = state.sessions[sessionId]
+    if (session) session.permissionMode = mode
+  })
 }
 
 /**
@@ -389,6 +423,7 @@ function forgetSession(sessionId: string): void {
   starting.delete(sessionId)
   effortPicked.delete(sessionId)
   ultracodePicked.delete(sessionId)
+  modeGuessed.delete(sessionId)
   modelRequests.delete(sessionId)
   closedEpoch.delete(sessionId)
   snapshotVersions.delete(sessionId)
@@ -443,10 +478,11 @@ export const useStore = create<Store>()(
       updateProjectSession(set, { sessionId, cwd, summary: '', lastModified: Date.now(), live: true })
       starting.add(sessionId)
       try {
-        // The runner starts in `default` unless told otherwise, which would
-        // contradict the mode the composer is already showing.
-        const permissionMode = get().sessions[sessionId]?.permissionMode ?? 'default'
-        await call('session.create', { cwd, sessionId, permissionMode })
+        // The mode the composer already shows, unless that is only a guess:
+        // then the server picks from the settings and the composer follows.
+        const session = get().sessions[sessionId]
+        const created = await call('session.create', { cwd, sessionId, ...(session ? requestedMode(session) : {}) })
+        adoptStartMode(set, sessionId, created.permissionMode)
       } catch (error) {
         set((state) => {
           delete state.sessions[sessionId]
@@ -807,6 +843,7 @@ export const useStore = create<Store>()(
       if (!sessionId) return
       if (get().sessions[sessionId]?.attached) await call('session.setPermissionMode', { sessionId, mode })
       localStorage.setItem(MODE_KEY, mode)
+      modeGuessed.delete(sessionId)
       set((state) => {
         const session = state.sessions[sessionId]
         if (session) session.permissionMode = mode
@@ -1403,11 +1440,12 @@ async function attach(set: Setter, get: () => Store, sessionId: string): Promise
   if (!session || session.attached) return
   starting.add(sessionId)
   const epoch = closedEpoch.get(sessionId) ?? 0
+  let created: RpcResult<'session.create'>
   try {
-    await call('session.create', {
+    created = await call('session.create', {
       cwd: session.cwd,
       resume: sessionId,
-      permissionMode: session.permissionMode,
+      ...requestedMode(session),
       // Only when it was really chosen here: forwarding the store's default
       // would silently reset whatever the resumed session was running on.
       ...(effortPicked.has(sessionId) ? { effort: session.effort } : {}),
@@ -1423,6 +1461,7 @@ async function attach(set: Setter, get: () => Store, sessionId: string): Promise
   if ((closedEpoch.get(sessionId) ?? 0) !== epoch) {
     throw new Error('会话进程刚启动就退出了')
   }
+  adoptStartMode(set, sessionId, created.permissionMode)
   set((state) => {
     const target = state.sessions[sessionId]
     if (target) {
@@ -1630,6 +1669,7 @@ async function readWindow(set: Setter, get: () => Store, sessionId: string, cwd:
   ])
   if (!get().sessions[sessionId]) return
   const transcript = await replayHistory(sessionId, messages, subagents.agents, turns)
+  if (permissionMode) modeGuessed.delete(sessionId)
   set((state) => {
     const session = state.sessions[sessionId]
     if (!session) return

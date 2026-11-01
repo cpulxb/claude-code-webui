@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises'
 
-import type { RpcMethod, RpcParams, RpcResult } from '@ccw/shared'
+import type { RpcMethod, RpcParams, RpcResult, SessionConfig } from '@ccw/shared'
 
 import { browseDirectory } from '../files/browse.ts'
 import { listEntries, readFilePreview, writeTextFile } from '../files/explorer.ts'
@@ -38,7 +38,7 @@ import {
 import type { SessionManager } from '../session/manager.ts'
 import { readCliConfig, writeCliConfig } from '../settings/cli-config.ts'
 import { fetchUpstreamModels } from '../settings/upstream-models.ts'
-import { readUserSettings, writeUserSettings } from '../settings/user-settings.ts'
+import { readDefaultPermissionMode, readUserSettings, writeUserSettings } from '../settings/user-settings.ts'
 import type { Updater } from '../update/updater.ts'
 
 export type RpcHandlers = {
@@ -58,16 +58,20 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
       // The picked cwd becomes a legitimate root for the file RPCs. Trusted:
       // the user chose this directory, even if it is `~` itself.
       registerRoot(config.cwd, { trusted: true })
+      // No mode from the browser means none was ever picked there, so the
+      // settings the terminal starts from decide. Passed on explicitly even
+      // then: left out, the SDK may start the session in `auto`.
+      const permissionMode = config.permissionMode ?? (await readDefaultPermissionMode(config.cwd)) ?? 'default'
       // A session opened and never sent to has no JSONL, so `--resume` exits
       // with "No conversation found" — e.g. reopened after a server restart.
       // Starting it fresh under the same id is what it still is.
-      let effective = config
-      if (config.resume && !(await hasTranscript(config.resume))) {
-        const { resume, ...fresh } = config
+      let effective: SessionConfig = { ...config, permissionMode }
+      if (effective.resume && !(await hasTranscript(effective.resume))) {
+        const { resume, ...fresh } = effective
         effective = { ...fresh, sessionId: resume }
       }
       const runner = manager.create(effective)
-      return { sessionId: runner.sessionId }
+      return { sessionId: runner.sessionId, permissionMode }
     },
 
     'session.close': async ({ sessionId }) => {
