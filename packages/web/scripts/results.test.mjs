@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { applyHistoryMessage, applyTurnTotals } from '../src/render/history.ts'
-import { applyMessage, emptyTranscript, lastTurnStart } from '../src/render/nodes.ts'
+import { applyMessage, emptyTranscript, lastTurnStart, rowKeys } from '../src/render/nodes.ts'
 import { turnReplyText } from '../src/utils/transcript-markdown.ts'
 
 const entry = (type, uuid, message) => ({ type, uuid, session_id: 's', message, parent_tool_use_id: null, parent_agent_id: null })
@@ -58,4 +58,18 @@ test('copying from a row takes that turn\'s last reply, and never one from a tur
   const rows = transcript.nodes.flatMap((node, index) => (node.kind === 'result' ? [index] : []))
   assert.equal(turnReplyText(transcript.nodes, rows[0]), 'second')
   assert.equal(turnReplyText(transcript.nodes, rows[1]), null)
+})
+
+test('a tool_use id the model reuses still gives every row its own key, and appending rekeys none above', () => {
+  // DeepSeek via CPA: the same Read, made again, comes back with the same id.
+  const read = (uuid, id) => entry('assistant', uuid, { id, role: 'assistant', content: [{ type: 'tool_use', id: 'call_0_e1ad', name: 'Read', input: {} }] })
+  const transcript = emptyTranscript()
+  for (const message of [prompt('u0', 'shoot'), read('a0', 'm0'), read('a1', 'm1'), read('a2', 'm2')]) {
+    applyHistoryMessage(transcript, message)
+  }
+  const keys = rowKeys(transcript.nodes)
+  assert.deepEqual(keys, ['u0', 'call_0_e1ad', 'call_0_e1ad#1', 'call_0_e1ad#2'])
+
+  applyHistoryMessage(transcript, read('a3', 'm3'))
+  assert.deepEqual(rowKeys(transcript.nodes), [...keys, 'call_0_e1ad#3'])
 })

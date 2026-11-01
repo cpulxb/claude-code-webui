@@ -144,6 +144,24 @@ export function lastTurnStart(nodes: ChatNode[]): number {
 }
 
 /**
+ * A React key per node. Node ids repeat: models behind some gateways reuse a
+ * tool_use id (DeepSeek via CPA gives every identical call the same
+ * `call_0_…`), and when the chat swaps one session's list for another's, React
+ * never removes the old rows behind a repeated key — they stay on top of the
+ * session switched to. A repeat gets a suffix; the first keeps the bare id, so
+ * appended nodes never rekey the rows above them.
+ */
+export function rowKeys(nodes: ChatNode[]): string[] {
+  const used = new Set<string>()
+  return nodes.map((node) => {
+    let key = node.id
+    for (let repeat = 1; used.has(key); repeat += 1) key = `${node.id}#${repeat}`
+    used.add(key)
+    return key
+  })
+}
+
+/**
  * Folds one SDK message into the transcript. Mutates in place — callers run it
  * inside Immer's draft.
  *

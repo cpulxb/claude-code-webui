@@ -2,7 +2,7 @@ import type { RewindFilesResult } from '@ccw/shared'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { AssistantBlock, ChatNode, StreamingBlock } from '../../render/nodes.ts'
-import { AGENT_TOOLS, findAgent, lastTurnStart } from '../../render/nodes.ts'
+import { AGENT_TOOLS, findAgent, lastTurnStart, rowKeys } from '../../render/nodes.ts'
 import { WORKFLOW_TOOL } from '../../render/workflows.ts'
 import { useActiveSessionValue, useSessionSettled, useStore } from '../../store/session.ts'
 import { parseQuestions } from '../../utils/questions.ts'
@@ -213,6 +213,7 @@ export function ChatView(): JSX.Element | null {
     nodes?.length === 0 && !streaming && !historyCursor && !historyError && !newerCursor && !newerError
   const streamShown = nodes !== undefined && !empty
   const newestTurn = useMemo(() => (nodes ? lastTurnStart(nodes) : 0), [nodes])
+  const keys = useMemo(() => (nodes ? rowKeys(nodes) : []), [nodes])
   // The newest turn was cut short: it leaves no result row and no
   // `session_error` either — the process was simply gone — so without this the
   // thread ends on a tool card with nothing saying why.
@@ -368,13 +369,13 @@ export function ChatView(): JSX.Element | null {
             node.kind === 'user' && viewAgent ? (
               // A subagent's prompt came from the parent model, not from a
               // checkpointed user message, so it has nothing to rewind to.
-              <div key={node.id} className={styles.userTurn}>
+              <div key={keys[index]} className={styles.userTurn}>
                 <div className={styles.agentPromptLabel}>主代理下达的任务</div>
                 {node.text}
               </div>
             ) : node.kind === 'user' ? (
               <UserTurn
-                key={node.id}
+                key={keys[index]}
                 node={node}
                 rewind={rewind?.nodeId === node.id ? rewind : null}
                 onRewind={startRewind}
@@ -382,7 +383,7 @@ export function ChatView(): JSX.Element | null {
                 onCancel={cancelRewind}
               />
             ) : (
-              <NodeView key={node.id} node={node} settled={settled || index < newestTurn} />
+              <NodeView key={keys[index]} node={node} settled={settled || index < newestTurn} />
             ),
           )}
           {streaming && <StreamingRow block={streaming} />}
