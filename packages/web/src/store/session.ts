@@ -27,6 +27,7 @@ import { bashDisplay, bashEcho, bashPrompt } from '../render/bash.ts'
 import { appendTranscript, applyHistoryMessage, applyTurnTotals, listUserPromptUuids, prependTranscript } from '../render/history.ts'
 import { applyMessage, emptyTranscript, findAgent, type AgentRun, type Transcript } from '../render/nodes.ts'
 import { applyWorkflowRecord } from '../render/workflows.ts'
+import type { Unread } from '../utils/session-activity.ts'
 
 /** Facts the CLI reports once per turn in its `init` message. */
 export type SessionInit = {
@@ -148,6 +149,14 @@ type Store = {
   quotes: string[]
   /** How the chat draws a turn's tool calls; kept per browser, not in settings.json. */
   chatLayout: ChatLayout
+  /**
+   * Sessions whose turn ended while another was open, by how it ended — the
+   * sidebar's news, kept until the session is opened. Any session counts, not
+   * only those this page has open: every session's events reach every page.
+   */
+  unread: Record<string, Unread>
+  /** Desktop notifications for news while the page is out of sight; kept per browser. */
+  notify: boolean
 
   connect: () => () => void
   createSession: (cwd: string) => Promise<string>
@@ -165,6 +174,7 @@ type Store = {
   /** Makes `cwd` the project the sidebar lists and the details panel works in. */
   selectProject: (cwd: string) => void
   setChatLayout: (layout: ChatLayout) => void
+  setNotify: (on: boolean) => void
   closeSession: (sessionId: string) => Promise<void>
   refreshProjects: () => Promise<void>
 
@@ -261,6 +271,13 @@ const SELECTED_PROJECT_KEY = 'ccw.selectedProject'
 export type ChatLayout = 'compact' | 'detailed'
 
 const CHAT_LAYOUT_KEY = 'ccw.chatLayout'
+
+const NOTIFY_KEY = 'ccw.notify'
+
+/** The page is behind another tab or window, so even the open session's news goes unseen. */
+function outOfSight(): boolean {
+  return typeof document !== 'undefined' && (document.hidden || !document.hasFocus())
+}
 
 function rememberedMode(): PermissionMode {
   const stored = localStorage.getItem(MODE_KEY)
@@ -391,6 +408,8 @@ export const useStore = create<Store>()(
     settingsOpen: false,
     quotes: [],
     chatLayout: localStorage.getItem(CHAT_LAYOUT_KEY) === 'detailed' ? 'detailed' : 'compact',
+    unread: {},
+    notify: localStorage.getItem(NOTIFY_KEY) === '1',
 
     connect: () =>
       connectEvents({
@@ -636,6 +655,13 @@ export const useStore = create<Store>()(
       localStorage.setItem(CHAT_LAYOUT_KEY, layout)
       set((state) => {
         state.chatLayout = layout
+      })
+    },
+
+    setNotify: (on) => {
+      localStorage.setItem(NOTIFY_KEY, on ? '1' : '0')
+      set((state) => {
+        state.notify = on
       })
     },
 
@@ -942,6 +968,17 @@ export const useStore = create<Store>()(
   })),
 )
 
+// However a session comes to be shown — the sidebar, an address, closing the
+// one before it — its news has been seen.
+useStore.subscribe((state, previous) => {
+  const shown = state.activeId
+  if (shown && shown !== previous.activeId && state.unread[shown]) {
+    useStore.setState((draft) => {
+      delete draft.unread[shown]
+    })
+  }
+})
+
 type Setter = (updater: (state: Store) => void) => void
 
 /**
@@ -1210,6 +1247,22 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
   }
   let sawInit = false
   let sawResult = false
+
+  // A turn that ends out of sight is news until its session is opened — the
+  // open one's too while the page is behind something else.
+  const ended =
+    event.type === 'session_error'
+      ? 'error'
+      : event.type === 'sdk' && event.message.type === 'result'
+        ? event.message.is_error
+          ? 'error'
+          : 'done'
+        : null
+  if (ended && (event.sessionId !== get().activeId || outOfSight())) {
+    set((state) => {
+      state.unread[event.sessionId] = ended
+    })
+  }
 
   // Recorded outside the store update so `attach` can see it even for a
   // session the store has already dropped.

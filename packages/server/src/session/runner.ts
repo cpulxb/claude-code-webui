@@ -65,12 +65,15 @@ export class SessionRunner {
   readonly #input = new InputQueue<SDKUserMessage>()
   readonly #permissions = new PermissionBroker((requestId) => {
     this.#emit({ type: 'permission_resolved', sessionId: this.sessionId, requestId })
+    this.#announceState()
   })
   readonly #emit: EmitEvent
   readonly #query: Query
   readonly #models: SessionModels
   #done = false
   #status: SessionStatus = 'idle'
+  /** `running` and `waiting` as the sidebars last heard them; see {@link #announceState}. */
+  #announced = { running: false, waiting: false }
   /** Set by {@link interrupt} so the aborted turn's trailing frames cannot revive `running`. */
   #interrupted = false
   readonly #backlog: SDKMessage[] = []
@@ -133,7 +136,9 @@ export class SessionRunner {
             agentId: options.agentID,
           }
           this.#emit({ type: 'permission_request', sessionId: this.sessionId, request })
-          return this.#permissions.await(request, options.signal)
+          const decision = this.#permissions.await(request, options.signal)
+          this.#announceState()
+          return decision
         },
         stderr: (data) => {
           process.stderr.write(`[cli ${this.sessionId.slice(0, 8)}] ${data}`)
@@ -207,6 +212,7 @@ export class SessionRunner {
         }
         this.#trackBacklog(message)
         this.#emit({ type: 'sdk', sessionId: this.sessionId, message })
+        this.#announceState()
       }
     } catch (error) {
       this.#emit({
@@ -301,7 +307,7 @@ export class SessionRunner {
     this.#summary.customTitle = title
     this.#summary.summary = title
     this.#unwatchTitle()
-    this.#emit({ type: 'session_updated', sessionId: this.sessionId, summary: this.summary })
+    this.#publish()
   }
 
   get done(): boolean {
@@ -324,7 +330,24 @@ export class SessionRunner {
   }
 
   get summary(): SessionSummary {
-    return { ...this.#summary }
+    return { ...this.#summary, running: this.#status === 'running', waiting: this.pendingPermissions.length > 0 }
+  }
+
+  /**
+   * Tells every sidebar when a turn starts or ends, or a prompt opens or
+   * closes — so a session in the background says whether it is done without
+   * being opened. Called wherever either can change; publishes only a change.
+   */
+  #announceState(): void {
+    if (this.#done) return
+    const { running, waiting } = this.summary
+    if (running !== this.#announced.running || waiting !== this.#announced.waiting) this.#publish()
+  }
+
+  #publish(): void {
+    const summary = this.summary
+    this.#announced = { running: summary.running === true, waiting: summary.waiting === true }
+    this.#emit({ type: 'session_updated', sessionId: this.sessionId, summary })
   }
 
   async send(text: string, attachments?: Attachment[]): Promise<void> {
@@ -349,7 +372,7 @@ export class SessionRunner {
       }
       this.#watchTitle()
       this.#requestTitle(text)
-      this.#emit({ type: 'session_updated', sessionId: this.sessionId, summary: this.summary })
+      this.#publish()
     })
   }
 
@@ -366,6 +389,7 @@ export class SessionRunner {
     // SDK 0.3.238 cannot cancel them — and each one opens a turn of its own,
     // so the browser must keep showing Stop.
     this.#status = (receipt?.still_queued?.length ?? 0) > 0 ? 'running' : 'idle'
+    this.#announceState()
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
@@ -498,6 +522,7 @@ export class SessionRunner {
     const handled = this.#permissions.respond(requestId, decision)
     if (handled) {
       this.#emit({ type: 'permission_resolved', sessionId: this.sessionId, requestId })
+      this.#announceState()
     }
     return handled
   }

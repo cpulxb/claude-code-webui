@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { fetchAuthStatus, onUnauthorized } from './api/client.ts'
 import styles from './App.module.css'
 import { AppFrame } from './components/AppFrame.tsx'
+import { Attention } from './components/Attention.tsx'
 import { PairingScreen } from './components/auth/PairingScreen.tsx'
 import { ChatView } from './components/chat/ChatView.tsx'
 import { Composer } from './components/composer/Composer.tsx'
@@ -160,6 +161,7 @@ function Workspace(): JSX.Element {
       />
       {/* Over the frame, which stays mounted beneath so its sessions keep running; outside it, as a drawer's stacking context would cap the page on phones. */}
       {settingsOpen && <SettingsPage onLeave={leaveSettings} />}
+      <Attention />
     </>
   )
 }

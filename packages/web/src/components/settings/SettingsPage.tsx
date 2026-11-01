@@ -14,6 +14,7 @@ import {
   type AuthField,
   type SettingsForm,
 } from '../../utils/settings.ts'
+import { notificationsSupported } from '../Attention.tsx'
 import dialog from '../auth/Auth.module.css'
 import { CodeEditor } from '../details/CodeEditor.tsx'
 import { ArrowLeftIcon, ChevronRightIcon, EyeIcon, EyeOffIcon } from '../Icons.tsx'
@@ -42,6 +43,54 @@ const LAYOUTS: [ChatLayout, string, string][] = [
   ['compact', '简洁', '连续的工具调用合成一行，跑完的回合只露出最终回复'],
   ['detailed', '详细', '每次工具调用都是一张展开的卡片'],
 ]
+
+/** The desktop-notification switch, and what the browser says about it. */
+function NotifySetting(): JSX.Element {
+  const notify = useStore((state) => state.notify)
+  const setNotify = useStore((state) => state.setNotify)
+  const supported = notificationsSupported()
+  const [permission, setPermission] = useState<NotificationPermission>(() =>
+    supported ? Notification.permission : 'denied',
+  )
+
+  const toggle = async (on: boolean): Promise<void> => {
+    if (!on) return setNotify(false)
+    // Asked from the click itself: most browsers only show the prompt for one.
+    const answer = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission
+    setPermission(answer)
+    setNotify(answer === 'granted')
+    // One straight away, so a system that silences the browser shows up now rather than when it matters.
+    if (answer === 'granted') {
+      new Notification('Claude Code', {
+        body: '通知已开启：页面不在前台时，会话跑完、出错或等你确认都会在这里提醒。',
+        icon: '/apple-touch-icon.png',
+      })
+    }
+  }
+
+  return (
+    <>
+      <label className={styles.check}>
+        <input
+          type="checkbox"
+          checked={notify && permission === 'granted'}
+          disabled={!supported}
+          onChange={(event) => void toggle(event.target.checked)}
+        />
+        桌面通知
+        <span className={dialog.muted}>页面不在前台时，会话跑完、出错或等你确认就弹出通知</span>
+      </label>
+      {!supported ? (
+        <div className={styles.warning}>当前地址不支持桌面通知：需要通过 HTTPS 或 localhost 打开。</div>
+      ) : permission === 'denied' ? (
+        <div className={styles.warning}>
+          浏览器已阻止这个网站的通知。到地址栏左侧的网站设置里把「通知」改成允许，再回来打开。
+        </div>
+      ) : null}
+      <div className={dialog.muted}>标签页标题会显示需要你关注的会话数，例如「(2) Claude Code」，不需要授权。</div>
+    </>
+  )
+}
 
 const describe = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
 
@@ -244,7 +293,9 @@ export function SettingsPage({ onLeave }: { onLeave: () => void }): JSX.Element 
                 </label>
               ))}
             </div>
-            <div className={dialog.muted}>只保存在这个浏览器里，切换后立即生效，不用点保存。</div>
+            <div className={`${dialog.sectionTitle} ${styles.subTitle}`}>提醒</div>
+            <NotifySetting />
+            <div className={dialog.muted}>以上只保存在这个浏览器里，切换后立即生效，不用点保存。</div>
           </section>
 
           {loaded && loaded.overrides.length > 0 && (

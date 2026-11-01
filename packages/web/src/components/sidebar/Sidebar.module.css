@@ -397,12 +397,61 @@
   white-space: nowrap;
 }
 
-.liveDot {
+/* A session's state at a glance: working, held on the user, finished out of
+   sight (green, or red for an error) until opened, or a process left idle. */
+.dot {
   flex: none;
   width: 6px;
   height: 6px;
-  background: var(--ccw-success);
   border-radius: 50%;
+}
+
+.dot-running {
+  background: var(--ccw-accent);
+  animation: pulse 1.4s var(--ccw-ease) infinite;
+}
+
+.dot-waiting {
+  background: var(--ccw-warning);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ccw-warning) 30%, transparent);
+}
+
+.dot-done {
+  background: var(--ccw-success);
+}
+
+.dot-error {
+  background: var(--ccw-danger);
+}
+
+.dot-idle {
+  background: var(--ccw-gray-300);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot-running {
+    animation: none;
+  }
+}
+
+/* Finished out of sight: the title stands out until the session is opened. */
+.itemNews {
+  font-weight: 600;
+  color: var(--ccw-text-primary);
+}
+
+.note-running {
+  color: var(--ccw-accent);
+}
+
+.note-waiting {
+  color: var(--ccw-warning);
 }
 
 .foot {

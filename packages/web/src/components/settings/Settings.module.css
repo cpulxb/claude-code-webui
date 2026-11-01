@@ -212,6 +212,10 @@
   border-bottom: 1px solid var(--ccw-border-l2);
 }
 
+.subTitle {
+  margin-top: var(--ccw-space-2);
+}
+
 .choices {
   display: flex;
   flex-direction: column;

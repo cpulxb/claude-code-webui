@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { call } from '../../api/client.ts'
 import { sessionHref, useProjectCwd, useStore } from '../../store/session.ts'
+import { ACTIVITY_LABEL, activityOf, mostUrgent, type Activity } from '../../utils/session-activity.ts'
 import { sessionTitle } from '../../utils/session-title.ts'
 import { DevicesDialog } from '../auth/DevicesDialog.tsx'
 import {
@@ -360,6 +361,12 @@ function ProjectSwitcher(props: {
   const [cursor, setCursor] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
   const cursorRef = useRef<HTMLButtonElement>(null)
+  const unread = useStore((state) => state.unread)
+  // News from the projects not shown below, which the closed switcher would otherwise hide.
+  const elsewhere = mostUrgent(
+    props.projects.filter((project) => project.cwd !== props.cwd).flatMap((project) => project.sessions),
+    unread,
+  )
 
   const matches = useMemo(() => {
     if (filter.trim() === '') return props.projects
@@ -423,6 +430,7 @@ function ProjectSwitcher(props: {
       >
         <FolderIcon size={14} />
         <span className={styles.switcherName}>{props.cwd ? basename(props.cwd) : '选择项目'}</span>
+        {elsewhere && elsewhere !== 'idle' && <ActivityDot activity={elsewhere} prefix="其他项目：" />}
         <span className={styles.switcherCaret}>
           <ChevronsUpDownIcon size={14} />
         </span>
@@ -453,7 +461,7 @@ function ProjectSwitcher(props: {
                 aria-selected={project.cwd === props.cwd}
               >
                 <span className={styles.hitTitleLine}>
-                  {project.sessions.some((session) => session.live) && <span className={styles.liveDot} />}
+                  <ActivityDot activity={mostUrgent(project.sessions, unread)} />
                   <span className={`${styles.itemTitle} ${project.cwd === props.cwd ? styles.switcherCurrent : ''}`}>
                     {basename(project.cwd)}
                   </span>
@@ -490,6 +498,7 @@ function SessionList(props: {
 }): JSX.Element {
   const activeRef = useRef<HTMLDivElement>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
+  const unread = useStore((state) => state.unread)
   // `containsActive` re-runs this once the history arrives after the list
   // first rendered empty.
   const containsActive = props.sessions.some((session) => session.sessionId === props.activeId)
@@ -526,9 +535,7 @@ function SessionList(props: {
                   title={session.summary || '新会话'}
                   aria-current={session.sessionId === props.activeId ? 'page' : undefined}
                 >
-                  {session.live && <span className={styles.liveDot} />}
-                  <span className={styles.itemTitle}>{sessionTitle(session.summary)}</span>
-                  <span className={styles.itemAge}>{age(session.lastModified)}</span>
+                  <SessionRowBody session={session} activity={activityOf(session, unread[session.sessionId])} />
                 </a>
               )}
               {/* A session nobody has written to yet has no transcript to retitle. */}
@@ -575,6 +582,7 @@ function SearchResults(props: {
   onClose: (sessionId: string) => void
 }): JSX.Element {
   const cursorRef = useRef<HTMLDivElement>(null)
+  const unread = useStore((state) => state.unread)
 
   useEffect(() => {
     cursorRef.current?.scrollIntoView({ block: 'nearest' })
@@ -600,9 +608,7 @@ function SearchResults(props: {
             title={hit.summary}
           >
             <span className={styles.hitTitleLine}>
-              {hit.live && <span className={styles.liveDot} />}
-              <span className={styles.itemTitle}>{sessionTitle(hit.summary)}</span>
-              <span className={styles.itemAge}>{age(hit.lastModified)}</span>
+              <SessionRowBody session={hit} activity={activityOf(hit, unread[hit.sessionId])} />
             </span>
             <span className={styles.hitMeta}>
               {basename(hit.cwd)}
@@ -631,6 +637,32 @@ function SearchResults(props: {
  * the field keeps the new name; Escape, or a name left blank or unchanged,
  * keeps the old one (`null`).
  */
+/**
+ * A session row's dot, title and right-hand note. A turn at work or held on
+ * the user says so in place of the age; one finished out of sight stands out
+ * until it is opened.
+ */
+function SessionRowBody({ session, activity }: { session: SessionSummary; activity: Activity | null }): JSX.Element {
+  const news = activity === 'done' || activity === 'error'
+  return (
+    <>
+      <ActivityDot activity={activity} />
+      <span className={`${styles.itemTitle} ${news ? styles.itemNews : ''}`}>{sessionTitle(session.summary)}</span>
+      {activity === 'running' || activity === 'waiting' ? (
+        <span className={`${styles.itemAge} ${styles[`note-${activity}`]}`}>{activity === 'running' ? '运行中' : '待确认'}</span>
+      ) : (
+        <span className={styles.itemAge}>{age(session.lastModified)}</span>
+      )}
+    </>
+  )
+}
+
+function ActivityDot({ activity, prefix = '' }: { activity: Activity | null; prefix?: string }): JSX.Element | null {
+  if (!activity) return null
+  const label = prefix + ACTIVITY_LABEL[activity]
+  return <span className={`${styles.dot} ${styles[`dot-${activity}`]}`} title={label} aria-label={label} role="img" />
+}
+
 function RenameInput(props: { title: string; onDone: (title: string | null) => void }): JSX.Element {
   const [draft, setDraft] = useState(props.title)
   // Escape unmounts the field, and the blur that follows must not save it.

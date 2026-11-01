@@ -208,6 +208,10 @@ export type SessionSummary = {
   firstPrompt?: string
   /** True when this session is currently open in a runner. */
   live?: boolean
+  /** A live session's turn is in flight; republished as it starts and ends. */
+  running?: boolean
+  /** A live session is held on a permission prompt or a question for the user. */
+  waiting?: boolean
 }
 
 export type ProjectGroup = {
