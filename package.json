@@ -1,6 +1,6 @@
 {
   "name": "claude-code-webui",
-  "version": "0.21.4",
+  "version": "0.22.0",
   "private": true,
   "license": "MIT",
   "type": "module",
