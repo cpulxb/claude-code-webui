@@ -82,8 +82,8 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
       return {}
     },
 
-    'session.send': async ({ sessionId, text, attachments }) => {
-      await manager.require(sessionId).send(text, attachments)
+    'session.send': async ({ sessionId, text, attachments, uuid }) => {
+      await manager.require(sessionId).send(text, attachments, uuid)
       return {}
     },
 
@@ -102,6 +102,7 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
         status: runner.status,
         pendingPermissions: runner.pendingPermissions,
         backlog: runner.backlog,
+        permissionMode: runner.permissionMode,
       }
     },
 

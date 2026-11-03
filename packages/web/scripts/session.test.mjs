@@ -105,6 +105,161 @@ function result(sessionId) {
   }
 }
 
+test('rewind and links name the very message sent, even after a send that never reached the server', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  window.location.origin ??= 'http://localhost'
+  const sent = []
+  const rewound = []
+  let failing = false
+  const working = rpc
+  rpc = async (method, params) => {
+    if (method === 'session.send') {
+      if (failing) throw new Error('proxy error')
+      sent.push(params.uuid)
+      return {}
+    }
+    if (method === 'session.rewindFiles') {
+      rewound.push(params.userMessageId)
+      return { rewind: { canRewind: true, filesChanged: [] } }
+    }
+    return working(method, params)
+  }
+  await useStore.getState().send('A')
+  f.receive(result(f.sessionId))
+  await useStore.getState().send('B')
+  f.receive(result(f.sessionId))
+  failing = true
+  await useStore.getState().send('C')
+  assert.match(f.state().error ?? '', /发送失败/)
+
+  // The CLI saves each prompt, and its checkpoint, under the uuid it was sent with.
+  const [a, b] = f.state().transcript.nodes.filter((node) => node.kind === 'user')
+  assert.equal(sent.length, 2)
+  assert.deepEqual([a.id, b.id], sent)
+  await useStore.getState().rewindFiles(b.id, true)
+  assert.deepEqual(rewound, [sent[1]])
+  assert.equal(new URL(await useStore.getState().messageLink(b.id)).hash, `#m-${sent[1]}`)
+})
+
+/** A saved transcript entry, as `history.messages` returns it. */
+function savedEntry(sessionId, type, uuid, message) {
+  return { type, uuid, session_id: sessionId, parent_tool_use_id: null, parent_agent_id: null, message }
+}
+
+test('a reply that finished while the downlink was down is read in on reconnect', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  let prompt
+  const disk = []
+  const working = rpc
+  rpc = async (method, params) => {
+    if (method === 'session.send') {
+      prompt = params.uuid
+      return {}
+    }
+    if (method === 'history.messages') return { messages: disk, hasMore: false, hasNewer: false }
+    return working(method, params)
+  }
+  await useStore.getState().send('question')
+  // Offline: the turn ends and its result clears the runner's backlog.
+  disk.push(
+    savedEntry(f.sessionId, 'user', prompt, { role: 'user', content: 'question' }),
+    savedEntry(f.sessionId, 'assistant', 'reply-envelope', { id: 'reply', role: 'assistant', content: [{ type: 'text', text: 'answered offline' }] }),
+  )
+  const response = await f.reconnect()
+  response.resolve(snapshot({ status: 'idle' }))
+  for (let i = 0; i < 20 && f.state().status !== 'idle'; i++) await settle()
+  assert.match(texts(f.sessionId), /answered offline/)
+  assert.equal(f.state().status, 'idle')
+  // The prompt shown before is the one on disk, not a second bubble.
+  assert.equal(f.state().transcript.nodes.filter((node) => node.kind === 'user').length, 1)
+})
+
+test('a reconnect that missed nothing leaves the transcript as it is', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  let prompt
+  const disk = []
+  const working = rpc
+  rpc = async (method, params) => {
+    if (method === 'session.send') {
+      prompt = params.uuid
+      return {}
+    }
+    if (method === 'history.messages') return { messages: disk, hasMore: false, hasNewer: false }
+    return working(method, params)
+  }
+  await useStore.getState().send('question')
+  f.receive({ type: 'sdk', message: {
+    type: 'assistant', uuid: 'reply-envelope', parent_tool_use_id: null, session_id: f.sessionId,
+    message: { id: 'reply', role: 'assistant', content: [{ type: 'text', text: 'streamed live' }], usage: { input_tokens: 1, output_tokens: 1 } },
+  } })
+  f.receive(result(f.sessionId))
+  disk.push(
+    savedEntry(f.sessionId, 'user', prompt, { role: 'user', content: 'question' }),
+    savedEntry(f.sessionId, 'assistant', 'reply-envelope', { id: 'reply', role: 'assistant', content: [{ type: 'text', text: 'streamed live' }] }),
+  )
+  useStore.getState().addNotice('info', 'kept local notice')
+  const response = await f.reconnect()
+  response.resolve(snapshot({ status: 'idle' }))
+  await settle()
+  await settle()
+  assert.match(texts(f.sessionId), /kept local notice/)
+  assert.equal((texts(f.sessionId).match(/streamed live/g) ?? []).length, 1)
+})
+
+function modeStatus(sessionId, permissionMode) {
+  return { type: 'sdk', message: { type: 'system', subtype: 'status', status: null, permissionMode, uuid: crypto.randomUUID(), session_id: sessionId } }
+}
+
+test('a mode switched in another tab shows here too, and so does the one each turn runs in', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  // What the CLI says the moment another tab switches.
+  f.receive(modeStatus(f.sessionId, 'bypassPermissions'))
+  assert.equal(f.state().permissionMode, 'bypassPermissions')
+  f.receive({ type: 'sdk', message: {
+    type: 'system', subtype: 'init', permissionMode: 'plan', model: 'm', cwd: '/fixture', claude_code_version: '0',
+    tools: [], mcp_servers: [], slash_commands: [], uuid: crypto.randomUUID(), session_id: f.sessionId,
+  } })
+  assert.equal(f.state().permissionMode, 'plan')
+})
+
+test('a reconnect adopts the mode the runner is in, unless a newer one arrived meanwhile', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  let response = await f.reconnect()
+  response.resolve(snapshot({ permissionMode: 'acceptEdits' }))
+  await settle()
+  assert.equal(f.state().permissionMode, 'acceptEdits')
+  response = await f.reconnect()
+  f.receive(modeStatus(f.sessionId, 'plan'))
+  response.resolve(snapshot({ permissionMode: 'acceptEdits' }))
+  await settle()
+  assert.equal(f.state().permissionMode, 'plan')
+})
+
+test('a cleared conversation goes on under its new id, and the one left behind stays as history', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  f.receive(modeStatus(f.sessionId, 'plan'))
+  await useStore.getState().send('/clear')
+  const next = crypto.randomUUID()
+  f.receive({ type: 'session_reset', newSessionId: next, summary: { sessionId: next, cwd: '/fixture', summary: '', lastModified: 1, live: true } })
+
+  const state = useStore.getState()
+  assert.equal(state.activeId, next)
+  const fresh = state.sessions[next]
+  // The same CLI process: attached, its settings and its turn carry over.
+  assert.equal(fresh.attached, true)
+  assert.equal(fresh.permissionMode, 'plan')
+  assert.equal(fresh.status, 'running')
+  assert.equal(fresh.cwd, '/fixture')
+  assert.equal(fresh.transcript.nodes.some((node) => node.kind === 'user'), false)
+  const old = state.sessions[f.sessionId]
+  assert.equal(old.attached, false)
+  assert.equal(old.status, 'idle')
+
+  // Every later frame names the new id, and lands there.
+  f.receive({ ...result(next), sessionId: next })
+  assert.equal(useStore.getState().sessions[next].status, 'idle')
+})
+
 test('a delayed reconnect snapshot cannot undo turn completion or permission resolution', { timeout: 3000 }, async (t) => {
   const f = await fixture(t)
   const request = permission('resolved')
@@ -168,6 +323,23 @@ test('an optimistic permission response also invalidates that snapshot entry', {
   response.resolve(snapshot({ pendingPermissions: [request, missed] }))
   await settle()
   assert.deepEqual(f.state().pendingPermissions, [missed])
+})
+
+test('a permission answer that fails to send leaves the card up for another try', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  const request = permission('flaky')
+  f.receive({ type: 'permission_request', request })
+  const working = rpc
+  rpc = async (method, params) => {
+    if (method === 'permission.respond') throw new Error('connection reset')
+    return working(method, params)
+  }
+  // The CLI is still waiting on it, and nothing else would bring the card back.
+  await assert.rejects(useStore.getState().respondToPermission(request.requestId, { behavior: 'allow' }), /connection reset/)
+  assert.deepEqual(f.state().pendingPermissions.map((p) => p.requestId), ['flaky'])
+  rpc = working
+  await useStore.getState().respondToPermission(request.requestId, { behavior: 'allow' })
+  assert.deepEqual(f.state().pendingPermissions, [])
 })
 
 test('an older overlapping snapshot cannot undo one already applied', { timeout: 3000 }, async (t) => {

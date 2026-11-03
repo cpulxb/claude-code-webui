@@ -80,6 +80,17 @@ export class SessionManager {
       this.#owners.delete(event.sessionId)
       this.#runners.delete(event.sessionId)
     }
+    // The CLI went on in a new conversation: the runner answers to its id now.
+    if (event.type === 'session_reset' && sender) {
+      if (this.#runners.get(event.sessionId) === sender) {
+        this.#runners.delete(event.sessionId)
+        this.#runners.set(event.newSessionId, sender)
+      }
+      if (this.#owners.get(event.sessionId) === sender) {
+        this.#owners.delete(event.sessionId)
+        this.#owners.set(event.newSessionId, sender)
+      }
+    }
     for (const subscriber of this.#subscribers) {
       // One bad socket must not stop the others from seeing the frame.
       try {

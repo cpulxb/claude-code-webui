@@ -42,8 +42,13 @@
   border-radius: var(--ccw-radius-sm);
 }
 
-.button:hover {
+.button:hover:not(:disabled) {
   background: var(--ccw-bg-hover);
+}
+
+.button:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .primary {
@@ -52,7 +57,7 @@
   border-color: var(--ccw-accent);
 }
 
-.primary:hover {
+.primary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--ccw-accent) 88%, black);
 }
 
@@ -64,4 +69,10 @@
   margin-top: var(--ccw-space-2);
   font-size: var(--ccw-text-xs);
   color: var(--ccw-text-muted);
+}
+
+.error {
+  margin-top: var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-danger);
 }

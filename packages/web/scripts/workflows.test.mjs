@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-import { applyHistoryMessage, listUserPromptUuids } from '../src/render/history.ts'
+import { applyHistoryMessage } from '../src/render/history.ts'
 import { applyMessage, emptyTranscript, findAgent, listAgents } from '../src/render/nodes.ts'
 import { applyWorkflowRecord, parseTaskNotification, unframeWorkflowPrompt, workflowAgentKey } from '../src/render/workflows.ts'
 
@@ -103,7 +103,6 @@ test('history: the task notification settles the card instead of drawing a bubbl
   assert.equal(loaded.status, 'completed')
   assert.equal(loaded.taskId, run.taskId)
   assert.equal(loaded.runId, run.runId)
-  assert.deepEqual(listUserPromptUuids([notification]), [])
 
   // The saved record fills in the agents the stream would have.
   const last = messages.filter((message) => message.workflow_progress).at(-1)

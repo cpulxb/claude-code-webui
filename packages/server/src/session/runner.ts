@@ -59,7 +59,8 @@ const TITLE_POLL_MS = 2000
  * the same structured stream the TUI renders from.
  */
 export class SessionRunner {
-  readonly sessionId: string
+  /** Moves to the CLI's new conversation when it resets this one; see {@link #reset}. */
+  #sessionId: string
   readonly config: SessionConfig
 
   readonly #input = new InputQueue<SDKUserMessage>()
@@ -77,7 +78,13 @@ export class SessionRunner {
   /** Set by {@link interrupt} so the aborted turn's trailing frames cannot revive `running`. */
   #interrupted = false
   readonly #backlog: SDKMessage[] = []
-  readonly #summary: SessionSummary
+  #summary: SessionSummary
+  /** The conversation was on disk before this runner: its title, if any, is already there. */
+  #resumed: boolean
+  /** A `conversation_reset` arrived and the frames have not named the new session yet. */
+  #resetting = false
+  /** The mode as the CLI last reported it; see {@link permissionMode}. */
+  #permissionMode: PermissionMode
   /** Re-reads the transcript for the CLI's AI title; see {@link #watchTitle}. */
   #titleTimer: ReturnType<typeof setInterval> | undefined
   /** Set while a {@link #requestTitle} call is out, so a quick second prompt does not ask again. */
@@ -86,10 +93,12 @@ export class SessionRunner {
   constructor(config: SessionConfig, emit: EmitEvent) {
     this.config = config
     this.#emit = emit
+    this.#permissionMode = config.permissionMode ?? 'default'
     // The id is fixed before the CLI starts so the browser can register the
     // session first and never miss the `init` event. Resuming reuses the
     // existing transcript's id.
-    this.sessionId = config.resume ?? config.sessionId ?? randomUUID()
+    this.#sessionId = config.resume ?? config.sessionId ?? randomUUID()
+    this.#resumed = config.resume !== undefined
     this.#summary = {
       sessionId: this.sessionId,
       cwd: config.cwd,
@@ -175,6 +184,19 @@ export class SessionRunner {
   async #pump(): Promise<void> {
     try {
       for await (const message of this.#query) {
+        // Not a frame for the browser: it says the session is about to move.
+        // Where to is the session id on the frames after it — CLI 2.1.316
+        // fills `new_conversation_id` with the frame's own uuid, which names
+        // no transcript.
+        if (message.type === 'conversation_reset') {
+          this.#resetting = true
+          continue
+        }
+        const frameSession = (message as { session_id?: string }).session_id
+        if (this.#resetting && frameSession && frameSession !== this.#sessionId) {
+          this.#resetting = false
+          this.#reset(frameSession)
+        }
         // Tracked here as well as in the browser: a page that reloads mid-turn
         // has no way to tell a working session from a finished one otherwise.
         //
@@ -183,6 +205,10 @@ export class SessionRunner {
         // more precise signal if a later version starts sending it.
         if (message.type === 'system' && message.subtype === 'session_state_changed') {
           this.#status = message.state === 'running' ? 'running' : 'idle'
+        }
+        // Every turn's `init` carries the mode, and a `status` follows each switch.
+        if (message.type === 'system' && (message.subtype === 'init' || message.subtype === 'status') && message.permissionMode) {
+          this.#permissionMode = message.permissionMode
         }
         if (message.type === 'result') {
           this.#status = 'idle'
@@ -232,6 +258,26 @@ export class SessionRunner {
   }
 
   /**
+   * The CLI went on in a fresh conversation, saved under a new id — `/clear`
+   * or one of its aliases, or leaving plan mode with a cleared context — as
+   * the terminal does, in the same process. The runner follows it: later
+   * frames, title reads and a resume after a restart all name the new one,
+   * and the old one stays on disk as history. The manager files the runner
+   * under the new id and the browsers move over on `session_reset`.
+   */
+  #reset(next: string): void {
+    const previous = this.#sessionId
+    if (next === previous) return
+    this.#sessionId = next
+    this.#resumed = false
+    // What streamed so far belongs to the conversation left behind.
+    this.#backlog.length = 0
+    this.#unwatchTitle()
+    this.#summary = { sessionId: next, cwd: this.config.cwd, summary: '', lastModified: Date.now(), live: true }
+    this.#emit({ type: 'session_reset', sessionId: previous, newSessionId: next, summary: this.summary })
+  }
+
+  /**
    * Retains the in-flight turn's messages for a browser that reloads mid-turn:
    * the CLI flushes the jsonl lazily, so the history read alone misses what
    * already streamed. Cleared when the turn ends — from there the transcript
@@ -271,8 +317,10 @@ export class SessionRunner {
   }
 
   async #readTitle(): Promise<void> {
-    const info = await getSessionInfo(this.sessionId, { dir: this.config.cwd }).catch(() => undefined)
-    this.#applyTitle(info?.customTitle)
+    const sessionId = this.#sessionId
+    const info = await getSessionInfo(sessionId, { dir: this.config.cwd }).catch(() => undefined)
+    // A reset meanwhile: that title is the old conversation's.
+    if (sessionId === this.#sessionId) this.#applyTitle(info?.customTitle)
   }
 
   /**
@@ -287,14 +335,17 @@ export class SessionRunner {
    * any, is already on disk.
    */
   #requestTitle(text: string): void {
-    if (this.config.resume || this.#titling || this.#summary.customTitle) return
+    if (this.#resumed || this.#titling || this.#summary.customTitle) return
     const query = this.#query as TitleQuery
     if (!query.generateSessionTitle) return
     this.#titling = true
+    const sessionId = this.#sessionId
     // A CLI too old to know the request rejects it; the watch still covers it.
     query
       .generateSessionTitle(text, { persist: true })
-      .then((title) => this.#applyTitle(title ?? undefined))
+      .then((title) => {
+        if (sessionId === this.#sessionId) this.#applyTitle(title ?? undefined)
+      })
       .catch(() => {})
       .finally(() => {
         this.#titling = false
@@ -308,6 +359,10 @@ export class SessionRunner {
     this.#summary.summary = title
     this.#unwatchTitle()
     this.#publish()
+  }
+
+  get sessionId(): string {
+    return this.#sessionId
   }
 
   get done(): boolean {
@@ -327,6 +382,14 @@ export class SessionRunner {
   /** The in-flight turn's messages, for the same reconnecting browser; see {@link #trackBacklog}. */
   get backlog(): SDKMessage[] {
     return [...this.#backlog]
+  }
+
+  /**
+   * The mode the next message runs in. One CLI serves every tab, so a switch
+   * made in one is the mode for all; a browser that (re)connects reads it here.
+   */
+  get permissionMode(): PermissionMode {
+    return this.#permissionMode
   }
 
   get summary(): SessionSummary {
@@ -350,23 +413,29 @@ export class SessionRunner {
     this.#emit({ type: 'session_updated', sessionId: this.sessionId, summary })
   }
 
-  async send(text: string, attachments?: Attachment[]): Promise<void> {
+  /**
+   * `uuid` becomes the prompt's id in the transcript and the key of the file
+   * checkpoint taken before it: the CLI keeps a stream-json client's own id.
+   */
+  async send(text: string, attachments?: Attachment[], uuid?: string): Promise<void> {
     // Build before the status flips: `buildContent` validates the attachments
     // and throws, which would otherwise leave `running` set with no turn to
     // ever clear it — the browser would show Stop for a turn that never began.
     const content = buildContent(text, attachments)
+    if (uuid !== undefined && !UUID.test(uuid)) throw new Error('uuid must be a UUID')
     await this.#models.withCurrentSettings(() => {
       this.#input.push({
         type: 'user',
         message: { role: 'user', content },
         parent_tool_use_id: null,
         session_id: this.sessionId,
+        ...(uuid ? { uuid: uuid as NonNullable<SDKUserMessage['uuid']> } : {}),
       })
       this.#status = 'running'
       this.#interrupted = false
       if (/^\/model(?:\s|$)/.test(text.trim())) this.#modelCommand = true
       this.#summary.lastModified = Date.now()
-      if (!this.config.resume && !this.#summary.firstPrompt) {
+      if (!this.#resumed && !this.#summary.firstPrompt) {
         this.#summary.firstPrompt = text.trim().slice(0, 2000) || '附件消息'
         this.#summary.summary = this.#summary.firstPrompt.replace(/\s+/g, ' ').slice(0, 160)
       }
@@ -394,6 +463,7 @@ export class SessionRunner {
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     await this.#query.setPermissionMode(mode)
+    this.#permissionMode = mode
   }
 
   async setModel(model?: string): Promise<void> {
@@ -558,6 +628,7 @@ function buildContent(text: string, attachments?: Attachment[]): MessageParam['c
 }
 
 const MEDIA_TYPE = /^[\w.+-]+\/[\w.+-]+$/
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // Only the base64 alphabet, padding and whitespace (line breaks are a legal
 // base64 transport form). Deliberately not a full base64 validator: this just
 // catches obvious mistakes such as a leading `data:…;base64,` prefix.

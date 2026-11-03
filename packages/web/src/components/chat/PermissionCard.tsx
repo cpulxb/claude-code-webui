@@ -1,4 +1,5 @@
-import type { PermissionRequest } from '@ccw/shared'
+import type { PermissionDecision, PermissionRequest } from '@ccw/shared'
+import { useState } from 'react'
 
 import { findAgentById } from '../../render/nodes.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
@@ -15,7 +16,7 @@ import styles from './PermissionCard.module.css'
  * which is what stops the same tool from asking again this session.
  */
 export function PermissionCard({ request }: { request: PermissionRequest }): JSX.Element {
-  const respond = useStore((state) => state.respondToPermission)
+  const { answer, busy, error } = useAnswer(request.requestId)
   const detail = summarize(request)
   const agent = useActiveSessionValue((session) =>
     request.agentId ? (findAgentById(session.transcript, request.agentId)?.description ?? '子代理') : null,
@@ -32,7 +33,8 @@ export function PermissionCard({ request }: { request: PermissionRequest }): JSX
       <div className={styles.actions}>
         <button
           className={`${styles.button} ${styles.primary}`}
-          onClick={() => void respond(request.requestId, { behavior: 'allow' })}
+          disabled={busy}
+          onClick={() => answer({ behavior: 'allow' })}
           type="button"
         >
           允许
@@ -40,7 +42,8 @@ export function PermissionCard({ request }: { request: PermissionRequest }): JSX
         {request.suggestions && request.suggestions.length > 0 && (
           <button
             className={styles.button}
-            onClick={() => void respond(request.requestId, { behavior: 'allow', remember: true })}
+            disabled={busy}
+            onClick={() => answer({ behavior: 'allow', remember: true })}
             type="button"
           >
             总是允许
@@ -48,14 +51,40 @@ export function PermissionCard({ request }: { request: PermissionRequest }): JSX
         )}
         <button
           className={`${styles.button} ${styles.danger}`}
-          onClick={() => void respond(request.requestId, { behavior: 'deny' })}
+          disabled={busy}
+          onClick={() => answer({ behavior: 'deny' })}
           type="button"
         >
           拒绝
         </button>
       </div>
+      {error && <div className={styles.error}>{error}</div>}
     </div>
   )
+}
+
+/**
+ * Sends a card's answer. The buttons wait while it is out, so a double click
+ * does not answer twice; one that fails leaves the card up, saying why, for
+ * another try — the CLI is still waiting on it.
+ */
+export function useAnswer(requestId: string): {
+  answer: (decision: PermissionDecision) => void
+  busy: boolean
+  error: string | null
+} {
+  const respond = useStore((state) => state.respondToPermission)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const answer = (decision: PermissionDecision): void => {
+    setBusy(true)
+    setError(null)
+    respond(requestId, decision).catch((cause: unknown) => {
+      setBusy(false)
+      setError(`回复没有送达，请重试：${cause instanceof Error ? cause.message : String(cause)}`)
+    })
+  }
+  return { answer, busy, error }
 }
 
 function summarize(request: PermissionRequest): string {

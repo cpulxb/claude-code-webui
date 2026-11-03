@@ -441,8 +441,13 @@ export type RpcMap = {
   /** `permissionMode` is the mode the session actually started in. */
   'session.create': { params: SessionConfig; result: { sessionId: string; permissionMode: PermissionMode } }
   'session.close': { params: { sessionId: string }; result: Record<string, never> }
+  /**
+   * `uuid` is what the CLI saves the prompt and its file checkpoint under. The
+   * browser's echo of the prompt carries the same id, so rewind and links name
+   * this message without matching it up against the transcript afterwards.
+   */
   'session.send': {
-    params: { sessionId: string; text: string; attachments?: Attachment[] }
+    params: { sessionId: string; text: string; attachments?: Attachment[]; uuid?: string }
     result: Record<string, never>
   }
   'session.interrupt': { params: { sessionId: string }; result: Record<string, never> }
@@ -456,6 +461,9 @@ export type RpcMap = {
    * `pendingPermissions` restore what the dropped downlink took with it, and
    * `backlog` restores the in-flight turn's messages, which the CLI may not
    * have flushed to the jsonl yet; it is empty while the session is idle.
+   * `permissionMode` is the mode the CLI last reported: one process serves
+   * every tab, so a switch made in another tab is the one this tab's next
+   * message runs in. Absent when the session is not live.
    */
   'session.state': {
     params: { sessionId: string }
@@ -464,6 +472,7 @@ export type RpcMap = {
       status: SessionStatus
       pendingPermissions: PermissionRequest[]
       backlog: SDKMessage[]
+      permissionMode?: PermissionMode
     }
   }
   'session.setPermissionMode': {
@@ -755,6 +764,12 @@ export type ServerEvent =
   | { type: 'permission_resolved'; sessionId: string; requestId: string }
   | { type: 'session_error'; sessionId: string; error: string }
   | { type: 'session_closed'; sessionId: string }
+  /**
+   * The CLI went on in a fresh conversation in the same process — `/clear`,
+   * or leaving plan mode with a cleared context — saved under `newSessionId`.
+   * Every later frame names that id; `sessionId` is the one left behind.
+   */
+  | { type: 'session_reset'; sessionId: string; newSessionId: string; summary: SessionSummary }
   | { type: 'update_status'; status: UpdateStatus }
 
 /**

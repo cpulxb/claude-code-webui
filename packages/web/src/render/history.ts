@@ -156,44 +156,6 @@ function applyUserText(transcript: Transcript, uuid: string, raw: string, attach
 }
 
 /**
- * The uuids of entries that render as user bubbles, in transcript order.
- *
- * The rewind flow aligns these against the on-screen user nodes to recover a
- * real uuid for a locally-echoed message, so this must agree with
- * `applyHistoryMessage` on exactly which entries become user nodes.
- */
-export function listUserPromptUuids(messages: SessionMessage[]): string[] {
-  const uuids: string[] = []
-  for (const entry of messages) {
-    if (entry.type !== 'user' || isCompactSummary(entry)) continue
-    const content = (entry.message as { content?: unknown } | null)?.content
-
-    let text = ''
-    let media = 0
-    if (typeof content === 'string') {
-      text = content
-    } else if (Array.isArray(content)) {
-      const blocks = content as { type: string; text?: string }[]
-      text = blocks
-        .filter((block) => block.type === 'text')
-        .map((block) => block.text ?? '')
-        .join('\n')
-      media = blocks.filter((block) => block.type === 'image' || block.type === 'document').length
-      if (!text && media === 0) continue
-    } else {
-      continue
-    }
-
-    if (LOCAL_OUTPUT.test(text.trim())) continue
-    if (parseTaskNotification(text)) continue
-    // A terminal-written output entry renders as an output row, not a bubble.
-    if (parseBashInput(text.trim()) === null && parseBashOutput(text.trim()) !== null) continue
-    uuids.push(entry.uuid)
-  }
-  return uuids
-}
-
-/**
  * A background task settled; history has no task_* events, only this message.
  * False when no card in this transcript is the task's — not necessarily an
  * error, since shell tasks have no card at all.

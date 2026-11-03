@@ -1,7 +1,6 @@
 import type { PermissionRequest } from '@ccw/shared'
 import { useState } from 'react'
 
-import { useStore } from '../../store/session.ts'
 import {
   answerOf,
   collectAnswers,
@@ -12,6 +11,7 @@ import {
   type Question,
 } from '../../utils/questions.ts'
 import { CheckIcon } from '../Icons.tsx'
+import { useAnswer } from './PermissionCard.tsx'
 import styles from './QuestionCard.module.css'
 
 /**
@@ -23,7 +23,7 @@ import styles from './QuestionCard.module.css'
  * terminal, every question also takes a typed answer instead of the options.
  */
 export function QuestionCard({ request, questions }: { request: PermissionRequest; questions: Question[] }): JSX.Element {
-  const respond = useStore((state) => state.respondToPermission)
+  const { answer, busy, error } = useAnswer(request.requestId)
   const [index, setIndex] = useState(0)
   const [drafts, setDrafts] = useState<Draft[]>(() => questions.map(() => EMPTY_DRAFT))
 
@@ -36,7 +36,7 @@ export function QuestionCard({ request, questions }: { request: PermissionReques
 
   const update = (next: Draft): void => setDrafts(drafts.map((old, at) => (at === index ? next : old)))
   const submit = (): void => {
-    if (answers) void respond(request.requestId, { behavior: 'allow', answers })
+    if (answers && !busy) answer({ behavior: 'allow', answers })
   }
 
   return (
@@ -123,22 +123,22 @@ export function QuestionCard({ request, questions }: { request: PermissionReques
         <span className={styles.spacer} />
         <button
           className={styles.button}
-          onClick={() =>
-            void respond(request.requestId, { behavior: 'deny', message: 'The user declined to answer the questions.' })
-          }
+          disabled={busy}
+          onClick={() => answer({ behavior: 'deny', message: 'The user declined to answer the questions.' })}
           type="button"
         >
           跳过
         </button>
         <button
           className={`${styles.button} ${styles.primary}`}
-          disabled={!answers}
+          disabled={!answers || busy}
           onClick={submit}
           type="button"
         >
           提交
         </button>
       </div>
+      {error && <div className={styles.error}>{error}</div>}
     </div>
   )
 }

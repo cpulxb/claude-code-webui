@@ -25,7 +25,7 @@ import { immer } from 'zustand/middleware/immer'
 
 import { call, connectEvents, type ConnectionStatus } from '../api/client.ts'
 import { bashDisplay, bashEcho, bashPrompt } from '../render/bash.ts'
-import { appendTranscript, applyHistoryMessage, applyTurnTotals, listUserPromptUuids, prependTranscript } from '../render/history.ts'
+import { appendTranscript, applyHistoryMessage, applyTurnTotals, prependTranscript } from '../render/history.ts'
 import { applyMessage, emptyTranscript, findAgent, type AgentRun, type Transcript } from '../render/nodes.ts'
 import { applyWorkflowRecord } from '../render/workflows.ts'
 import type { Unread } from '../utils/session-activity.ts'
@@ -389,14 +389,14 @@ function removeProjectSession(set: Setter, sessionId: string): void {
 const closedEpoch = new Map<string, number>()
 
 type PermissionChanges = Map<string, PermissionRequest | null>
-type SnapshotVersions = { status: number; permissions: number; pending: Set<PermissionChanges> }
+type SnapshotVersions = { status: number; permissions: number; mode: number; pending: Set<PermissionChanges> }
 
 // Kept separate from streaming data: token deltas must not prevent a reconnect
 // from adopting a snapshot. A fresh object also identifies a reopened session.
 const snapshotVersions = new Map<string, SnapshotVersions>()
 
 function newSnapshotVersions(): SnapshotVersions {
-  return { status: 0, permissions: 0, pending: new Set() }
+  return { status: 0, permissions: 0, mode: 0, pending: new Set() }
 }
 
 function versionsFor(sessionId: string): SnapshotVersions {
@@ -411,6 +411,18 @@ function versionsFor(sessionId: string): SnapshotVersions {
 function setSessionStatus(session: SessionState, status: SessionStatus): void {
   session.status = status
   versionsFor(session.sessionId).status += 1
+}
+
+/**
+ * The mode the CLI says it is in. One process serves every tab, so a switch
+ * made in another tab — or by the CLI itself, leaving plan mode — is the mode
+ * this tab's next message runs in, whatever the composer showed before.
+ */
+function setReportedMode(session: SessionState, mode: unknown): void {
+  if (!(PERMISSION_MODES as readonly unknown[]).includes(mode)) return
+  modeGuessed.delete(session.sessionId)
+  session.permissionMode = mode as PermissionMode
+  versionsFor(session.sessionId).mode += 1
 }
 
 // Record only while a snapshot is in flight. Per-request changes let it recover
@@ -751,8 +763,8 @@ export const useStore = create<Store>()(
       if (!(await toTheEnd(get, sessionId))) return pushNotice(set, sessionId, 'error', `没能回到最新的消息，这条没有发出：${text}`)
       if (!(await attachToSend(set, get, sessionId))) return
       // Optimistic echo: the CLI does not replay user messages by default.
-      echoPrompt(set, sessionId, text, attachments?.length ?? 0)
-      await startTurn(set, sessionId, text, attachments)
+      const uuid = echoPrompt(set, sessionId, text, attachments?.length ?? 0)
+      await startTurn(set, sessionId, uuid, text, attachments)
     },
 
     runShell: async (command) => {
@@ -765,8 +777,7 @@ export const useStore = create<Store>()(
       try {
         output = await call('session.shell', { sessionId, command })
       } catch (error) {
-        // Nothing reaches the transcript, so the bubble must go too: rewind
-        // pairs local bubbles with on-disk prompts by position.
+        // Nothing reaches the transcript, so the bubble must go too.
         set((state) => {
           const session = state.sessions[sessionId]
           if (session) session.transcript.nodes = session.transcript.nodes.filter((node) => node.id !== echoId)
@@ -782,7 +793,7 @@ export const useStore = create<Store>()(
           content: bashDisplay(output.stdout, output.stderr),
         })
       })
-      await startTurn(set, sessionId, bashPrompt(command, output.stdout, output.stderr))
+      await startTurn(set, sessionId, echoId, bashPrompt(command, output.stdout, output.stderr))
     },
 
     renameSession: async (title) => {
@@ -849,6 +860,8 @@ export const useStore = create<Store>()(
         const session = state.sessions[sessionId]
         if (session) session.permissionMode = mode
       })
+      // A reconnect snapshot read before the switch must not put the old mode back.
+      versionsFor(sessionId).mode += 1
     },
 
     setEffort: async (effort) => {
@@ -919,7 +932,12 @@ export const useStore = create<Store>()(
     respondToPermission: async (requestId, decision) => {
       const sessionId = get().activeId
       if (!sessionId) return
-      // Drop it locally right away so a double-click cannot answer twice.
+      // The card goes once the answer is in, not before: if the request fails
+      // the CLI is still waiting, and the card is the only way to answer it.
+      // The server ignores a second answer to one request, so retrying after
+      // an answer that did land but whose reply was lost is harmless — and
+      // that answer's `permission_resolved` removes the card anyway.
+      await call('permission.respond', { sessionId, requestId, decision })
       set((state) => {
         const session = state.sessions[sessionId]
         if (session) {
@@ -927,14 +945,13 @@ export const useStore = create<Store>()(
           recordPermissionChange(sessionId, requestId, null)
         }
       })
-      await call('permission.respond', { sessionId, requestId, decision })
     },
 
     messageLink: async (nodeId) => {
       const sessionId = get().activeId
       if (!sessionId) throw new Error('没有活跃会话')
-      const uuid = nodeId.startsWith('local-') ? await resolveUserUuid(get, sessionId, nodeId) : nodeId
-      return new URL(`${sessionHref(sessionId)}#m-${uuid}`, window.location.origin).href
+      // A user node's id is the uuid its message is saved under, live echoes included (see `echoPrompt`).
+      return new URL(`${sessionHref(sessionId)}#m-${nodeId}`, window.location.origin).href
     },
 
     rewindFiles: async (nodeId, dryRun) => {
@@ -943,8 +960,7 @@ export const useStore = create<Store>()(
       // The checkpoint store lives in the CLI process, so a session opened
       // read-only gets its runner started here — same as sending would.
       await attach(set, get, sessionId)
-      const userMessageId = nodeId.startsWith('local-') ? await resolveUserUuid(get, sessionId, nodeId) : nodeId
-      const { rewind } = await call('session.rewindFiles', { sessionId, userMessageId, dryRun })
+      const { rewind } = await call('session.rewindFiles', { sessionId, userMessageId: nodeId, dryRun })
       if (!dryRun && rewind.canRewind) {
         set((state) => {
           const session = state.sessions[sessionId]
@@ -1224,26 +1240,6 @@ async function openAddress(address: Address | null, cwd: string | undefined): Pr
 }
 
 /**
- * Recovers the transcript uuid behind a locally-echoed user node.
- *
- * Live sends get a synthetic `local-` id because the CLI does not replay user
- * messages; the JSONL has the real uuid. Locally-echoed nodes are always the
- * newest user bubbles, so aligning that tail against the end of the on-disk
- * prompt list recovers each one's uuid.
- */
-async function resolveUserUuid(get: () => Store, sessionId: string, nodeId: string): Promise<string> {
-  const session = get().sessions[sessionId]
-  if (!session) throw new Error('会话不存在')
-  const { messages } = await call('history.messages', { sessionId, cwd: session.cwd })
-  const prompts = listUserPromptUuids(messages)
-  const echoed = session.transcript.nodes.filter((node) => node.kind === 'user' && node.id.startsWith('local-'))
-  const position = echoed.findIndex((node) => node.id === nodeId)
-  const uuid = position === -1 ? undefined : prompts[prompts.length - echoed.length + position]
-  if (!uuid) throw new Error('无法在 transcript 中定位这条消息')
-  return uuid
-}
-
-/**
  * Re-adopts a session whose CLI process outlived the page.
  *
  * The runner table survives a reload; the store does not. Without this the
@@ -1254,7 +1250,7 @@ async function resolveUserUuid(get: () => Store, sessionId: string, nodeId: stri
 async function adoptRunner(set: Setter, get: () => Store, sessionId: string): Promise<void> {
   if (!get().sessions[sessionId]) return
   const versions = versionsFor(sessionId)
-  const { status: statusVersion, permissions: permissionsVersion } = versions
+  const { status: statusVersion, permissions: permissionsVersion, mode: modeVersion } = versions
   const epoch = closedEpoch.get(sessionId) ?? 0
   const permissionChanges: PermissionChanges = new Map()
   versions.pending.add(permissionChanges)
@@ -1275,6 +1271,7 @@ async function adoptRunner(set: Setter, get: () => Store, sessionId: string): Pr
     if (!session || session.closed) return
     session.attached = true
     if (versions.status === statusVersion) setSessionStatus(session, state.status)
+    if (versions.mode === modeVersion) setReportedMode(session, state.permissionMode)
     // Merge events received during the read over its permission list. The
     // version excludes older overlapping snapshots that finish after this one.
     if (versions.permissions === permissionsVersion) {
@@ -1306,6 +1303,10 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
     set((state) => {
       state.update = event.status
     })
+    return
+  }
+  if (event.type === 'session_reset') {
+    resetSession(set, get, event)
     return
   }
   let sawInit = false
@@ -1398,6 +1399,9 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
           }
           session.model ??= message.model
         }
+        if (message.type === 'system' && (message.subtype === 'init' || message.subtype === 'status')) {
+          setReportedMode(session, message.permissionMode)
+        }
         if (message.type === 'system' && message.subtype === 'commands_changed') {
           session.commands = message.commands
         }
@@ -1451,6 +1455,53 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
     // live indicators belong in this sidebar even without a local transcript.
     void get().refreshProjects().catch(() => {})
   }
+}
+
+/**
+ * The CLI went on in a fresh conversation in the same process — `/clear`, or
+ * leaving plan mode with a cleared context — saved under a new id. The session
+ * continues there with an empty transcript, as the terminal clears its screen;
+ * the one left behind is history now, which the sidebar reopens from disk.
+ */
+function resetSession(set: Setter, get: () => Store, event: Extract<ServerEvent, { type: 'session_reset' }>): void {
+  const { sessionId: previous, newSessionId: next } = event
+  updateProjectSession(set, event.summary)
+  if (effortPicked.has(previous)) effortPicked.add(next)
+  if (ultracodePicked.has(previous)) ultracodePicked.add(next)
+  set((state) => {
+    const old = state.sessions[previous]
+    if (!old || state.sessions[next]) return
+    const fresh = newSession(next, old.cwd, true)
+    // One process: every setting, and the turn running the command, carry over.
+    fresh.status = old.status
+    fresh.turnStats = old.turnStats
+    fresh.init = old.init
+    fresh.commands = old.commands
+    fresh.models = old.models
+    fresh.model = old.model
+    fresh.permissionMode = old.permissionMode
+    fresh.effort = old.effort
+    fresh.ultracode = old.ultracode
+    fresh.ultracodeAvailable = old.ultracodeAvailable
+    fresh.pendingPermissions = old.pendingPermissions
+    fresh.transcript.nodes.push({
+      kind: 'notice',
+      id: `notice-${Date.now()}-0`,
+      level: 'info',
+      text: '上下文已清空，下面是新的对话；之前的对话仍可从侧栏打开',
+    })
+    state.sessions[next] = fresh
+    if (!modeGuessed.has(previous)) modeGuessed.delete(next)
+    old.attached = false
+    old.closed = true
+    old.pendingPermissions = []
+    old.liveTokens = null
+    old.turnStats = null
+    setSessionStatus(old, 'idle')
+    if (state.activeId === previous) state.activeId = next
+  })
+  // The old row is no longer live.
+  void get().refreshProjects().catch(() => {})
 }
 
 /**
@@ -1519,19 +1570,24 @@ async function attachToSend(set: Setter, get: () => Store, sessionId: string): P
   }
 }
 
-/** Appends a user bubble and returns its id. The `local-` prefix is what rewind keys on. */
+/**
+ * Appends a user bubble and returns its id: a fresh uuid, which the message is
+ * then sent with. The CLI saves the prompt, and the file checkpoint taken
+ * before it, under the uuid the client gave — so the bubble names its own
+ * message for rewind and links without asking the transcript. Counting
+ * bubbles against the saved prompts used to stand in for that, and a send
+ * that failed, prompts the CLI merged while queued, or one sent from another
+ * tab all shifted the count onto an older message.
+ */
 function echoPrompt(set: Setter, sessionId: string, text: string, attachments: number): string {
-  let id = ''
+  const id = crypto.randomUUID()
   set((state) => {
-    const session = state.sessions[sessionId]
-    if (!session) return
-    id = `local-${Date.now()}-${session.transcript.nodes.length}`
-    session.transcript.nodes.push({ kind: 'user', id, text, attachments })
+    state.sessions[sessionId]?.transcript.nodes.push({ kind: 'user', id, text, attachments })
   })
   return id
 }
 
-async function startTurn(set: Setter, sessionId: string, text: string, attachments?: Attachment[]): Promise<void> {
+async function startTurn(set: Setter, sessionId: string, uuid: string, text: string, attachments?: Attachment[]): Promise<void> {
   set((state) => {
     const session = state.sessions[sessionId]
     if (!session) return
@@ -1540,7 +1596,7 @@ async function startTurn(set: Setter, sessionId: string, text: string, attachmen
     session.turnStats = { startedAt: Date.now(), doneTokens: 0, currentTokens: 0 }
   })
   try {
-    await call('session.send', { sessionId, text, ...(attachments?.length ? { attachments } : {}) })
+    await call('session.send', { sessionId, text, uuid, ...(attachments?.length ? { attachments } : {}) })
   } catch (error) {
     // No turn was started, so no `result` will ever clear the running state.
     set((state) => {
@@ -1624,10 +1680,47 @@ async function reconcileSessions(set: Setter, get: () => Store): Promise<void> {
     // every reconnect. Immer commits no partial draft, so the session keeps the
     // attached state it already had and only this re-adoption is lost — logged
     // rather than surfaced, since the next reconnect runs it again.
-    adoptRunner(set, get, sessionId).catch((error: unknown) => {
+    resyncSession(set, get, sessionId).catch((error: unknown) => {
       console.error('[ccw] session resync failed', sessionId, error)
     })
   }
+}
+
+/**
+ * Entries the gap check reads. A turn ends in a few system entries, which the
+ * transcript does not record, so the newest one worth comparing sits a little
+ * way back from the end.
+ */
+const GAP_CHECK_PAGE = 20
+
+/**
+ * A reconnect's re-adoption. The backlog replays a turn still in flight, but a
+ * turn that ended while the downlink was down cleared it with its `result`:
+ * what that turn said is on disk only. So when the disk holds an entry newer
+ * than anything shown, the newest page is read in again first — as a reload
+ * would — and the backlog replays on top. Only then: a re-read drops local
+ * notices and the pages scrolled back to.
+ */
+async function resyncSession(set: Setter, get: () => Store, sessionId: string): Promise<void> {
+  const session = get().sessions[sessionId]
+  // An older stretch shown holds live output back anyway; paging on catches up.
+  if (session && !session.newerCursor && (await missedSaved(get, sessionId, session.cwd).catch(() => false))) {
+    // A failed read keeps what is shown; the backlog below still lands.
+    await readWindow(set, get, sessionId, session.cwd).catch(() => {})
+  }
+  await adoptRunner(set, get, sessionId)
+}
+
+/** Whether the transcript on disk holds an entry newer than any the session shows. */
+async function missedSaved(get: () => Store, sessionId: string, cwd: string): Promise<boolean> {
+  const { messages } = await call('history.messages', { sessionId, cwd, limit: GAP_CHECK_PAGE })
+  const newest = messages.filter((entry) => entry.type !== 'system').at(-1)
+  // As it is now: live frames may have landed during the read.
+  const transcript = get().sessions[sessionId]?.transcript
+  if (!newest || !transcript) return false
+  // Streamed and replayed messages are recorded by uuid; a prompt sent from
+  // here is a bubble carrying the uuid the CLI saved it under.
+  return !transcript.seen[newest.uuid] && !isUserNode(transcript, newest.uuid)
 }
 
 async function loadProjects(set: Setter): Promise<ProjectGroup[] | undefined> {

@@ -187,3 +187,9 @@
 .primary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--ccw-accent) 88%, black);
 }
+
+.error {
+  margin-top: var(--ccw-space-2);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-danger);
+}

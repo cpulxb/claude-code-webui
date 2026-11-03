@@ -30,7 +30,7 @@ globalThis.fetch = async (_url, options) => {
 const { useStore } = await import('../src/store/session.ts')
 const { exportFileName, parseLocalCommand, runLocalCommand, SHOW_CONFIG_EVENT, SHOW_INFO_EVENT } = await import('../src/utils/local-commands.ts')
 const { lastReplyText, transcriptMarkdown } = await import('../src/utils/transcript-markdown.ts')
-const { applyHistoryMessage, listUserPromptUuids } = await import('../src/render/history.ts')
+const { applyHistoryMessage } = await import('../src/render/history.ts')
 const { emptyTranscript } = await import('../src/render/nodes.ts')
 const { bashPrompt } = await import('../src/render/bash.ts')
 const { sessionTitle } = await import('../src/utils/session-title.ts')
@@ -110,9 +110,6 @@ test('`!` commands replay identically from WebUI and terminal transcripts', () =
 
   assert.deepEqual(view(web.nodes), [['user', '! git status'], ['localOutput', '?? a.js']])
   assert.deepEqual(view(cli.nodes), view(web.nodes))
-  // Rewind targets: the command is a prompt, the terminal's output entry is not.
-  assert.deepEqual(listUserPromptUuids(combined), ['w1'])
-  assert.deepEqual(listUserPromptUuids(split), ['c1'])
 
   const quiet = emptyTranscript()
   applyHistoryMessage(quiet, { type: 'user', uuid: 'q', message: { role: 'user', content: bashPrompt('true', '', '') } })
@@ -128,7 +125,8 @@ test('a shell command shows its output, then goes to the model in the terminal f
   assert.deepEqual(calls[0].params, { sessionId: f.sessionId, command: 'ls' })
   assert.equal(calls[1].params.text, bashPrompt('ls', 'a.js', ''))
   assert.deepEqual(view(f.nodes()), [['user', '! ls'], ['localOutput', 'a.js']])
-  assert.match(f.nodes()[0].id, /^local-/)
+  // The bubble is the prompt the CLI saves: rewind and links use its id as is.
+  assert.equal(f.nodes()[0].id, calls[1].params.uuid)
   assert.equal(useStore.getState().sessions[f.sessionId].status, 'running')
 })
 

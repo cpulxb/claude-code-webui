@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { applyHistoryMessage, listUserPromptUuids } from '../src/render/history.ts'
+import { applyHistoryMessage } from '../src/render/history.ts'
 import { applyMessage, emptyTranscript } from '../src/render/nodes.ts'
 
 const SUMMARY =
@@ -84,7 +84,6 @@ test('a compaction read from history is a divider with its summary, not a prompt
     ['compact', 'user'],
   )
   assert.equal(transcript.nodes[0].summary, SUMMARY)
-  assert.deepEqual(listUserPromptUuids(history), ['next'])
 })
 
 test('the tools-used line a summary carries for the model is not shown', () => {
