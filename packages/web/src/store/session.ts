@@ -138,10 +138,11 @@ type Store = {
   /** The server's release status; null until the first connect answers. */
   update: UpdateStatus | null
   /**
-   * The settings page at `/settings`, opened from the sidebar and from the
-   * model menu. It covers the workspace, whose sessions keep running beneath.
+   * The section of the settings page shown, at `/settings/<section>`, or null
+   * when it is closed. Opened from the sidebar and from the model menu, it
+   * covers the workspace, whose sessions keep running beneath.
    */
-  settingsOpen: boolean
+  settingsSection: SettingsSection | null
   /**
    * Passages picked out of the conversation to reply to, shown over the
    * composer and sent ahead of the next prompt. Like the typed text, they stay
@@ -214,7 +215,7 @@ type Store = {
   applyUpdate: () => Promise<void>
   /** Asks the server to look for a release now; resolves with what it found. */
   checkUpdate: () => Promise<UpdateStatus>
-  setSettingsOpen: (open: boolean) => void
+  setSettingsSection: (section: SettingsSection | null) => void
   setQuotes: (quotes: string[]) => void
 }
 
@@ -440,7 +441,7 @@ export const useStore = create<Store>()(
     defaultCwd: '',
     selectedCwd: localStorage.getItem(SELECTED_PROJECT_KEY),
     update: null,
-    settingsOpen: false,
+    settingsSection: null,
     quotes: [],
     chatLayout: localStorage.getItem(CHAT_LAYOUT_KEY) === 'detailed' ? 'detailed' : 'compact',
     unread: {},
@@ -732,9 +733,9 @@ export const useStore = create<Store>()(
       return status
     },
 
-    setSettingsOpen: (open) => {
+    setSettingsSection: (section) => {
       set((state) => {
-        state.settingsOpen = open
+        state.settingsSection = section
       })
     },
 
@@ -1081,28 +1082,52 @@ export function sessionHref(sessionId: string): string {
   return `/s/${sessionId}`
 }
 
-const SETTINGS_HREF = '/settings'
+export const SETTINGS_SECTIONS = ['general', 'channels', 'models', 'json'] as const
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
+
+export function settingsHref(section: SettingsSection): string {
+  return `/settings/${section}`
+}
+
+/** The section the address names — 'general' for a bare or unknown one — or null off the settings page. */
+function settingsSectionOf(pathname: string): SettingsSection | null {
+  const match = /^\/settings(?:\/([^/]+))?\/?$/.exec(pathname)
+  if (!match) return null
+  return SETTINGS_SECTIONS.find((section) => section === match[1]) ?? 'general'
+}
 
 /**
- * The `history.state` of a settings page entry pushed from within the tab:
- * leaving the page steps back to the entry behind it rather than adding one.
+ * The `history.state` of a settings entry pushed from within the tab. `depth`
+ * counts the settings entries from the one the page opened on, so leaving
+ * steps back past every section visited rather than adding one more entry.
  * Kept by the browser across a reload, unlike anything in memory.
  */
-const OPENED_HERE = { settings: 'opened-here' }
+type OpenedHere = { settings: 'opened-here'; depth: number }
 
-const onSettingsPage = (): boolean => /^\/settings\/?$/.test(window.location.pathname)
+function openedHere(state: unknown): OpenedHere | null {
+  if (typeof state !== 'object' || state === null || !('settings' in state) || state.settings !== 'opened-here') return null
+  // An entry from before sections had no depth: it was the only one.
+  const depth = 'depth' in state && typeof state.depth === 'number' ? state.depth : 1
+  return { settings: 'opened-here', depth }
+}
 
 /**
  * Leaves the settings page for the session beneath it, as the browser's back
  * would when the page was opened from within the tab.
  */
 export function leaveSettings(): void {
-  const state: unknown = window.history.state
-  if (typeof state === 'object' && state !== null && 'settings' in state && state.settings === OPENED_HERE.settings) {
-    window.history.back()
-  } else {
-    useStore.getState().setSettingsOpen(false)
-  }
+  const here = openedHere(window.history.state)
+  if (here) window.history.go(-here.depth)
+  else useStore.getState().setSettingsSection(null)
+}
+
+/** The state for the entry `state` pushes: one settings step deeper, or none off the page. */
+function entryState(state: Store, previous: Store): OpenedHere | null {
+  if (!state.settingsSection) return null
+  if (!previous.settingsSection) return { settings: 'opened-here', depth: 1 }
+  // Another section: deeper only when the page itself was opened within the tab.
+  const here = openedHere(window.history.state)
+  return here ? { settings: 'opened-here', depth: here.depth + 1 } : null
 }
 
 /**
@@ -1111,7 +1136,7 @@ export function leaveSettings(): void {
  * sent to.
  */
 function addressOf(state: Store): string {
-  if (state.settingsOpen) return SETTINGS_HREF
+  if (state.settingsSection) return settingsHref(state.settingsSection)
   const session = state.activeId ? state.sessions[state.activeId] : undefined
   if (!session) return '/'
   if (session.viewAgent) return `${sessionHref(session.sessionId)}?${new URLSearchParams({ agent: session.viewAgent })}`
@@ -1129,16 +1154,16 @@ function readAddress(): Address | null {
 /**
  * Keeps the address bar on what the tab shows, and the tab on what the bar
  * names. A reload or a link opens that session in this tab whatever the
- * others are on, and back/forward step through what was viewed. A bare `/`
- * opens the session this browser last had open, and so does `/settings`,
- * beneath its page. Returns the teardown.
+ * others are on, and back/forward step through what was viewed — settings
+ * sections included. A bare `/` opens the session this browser last had
+ * open, and so does `/settings/…`, beneath its page. Returns the teardown.
  */
 export function followAddressBar(): () => void {
-  const follow = async (address: Address | null, settings: boolean): Promise<void> => {
+  const follow = async (address: Address | null, section: SettingsSection | null): Promise<void> => {
     const remembered = readRememberedSession()
     following += 1
     // At once: the page does not wait for the session beneath it.
-    useStore.getState().setSettingsOpen(settings)
+    useStore.getState().setSettingsSection(section)
     try {
       // The remembered cwd spares asking the server on a plain reload.
       await openAddress(address, remembered?.sessionId === address?.sessionId ? remembered?.cwd : undefined)
@@ -1149,14 +1174,15 @@ export function followAddressBar(): () => void {
       following -= 1
     }
     // The bar may name something that did not open; the last open to settle
-    // puts what did in its place. Its state stays: it may be OPENED_HERE.
+    // puts what did in its place. Its state stays: it may be an OpenedHere.
     if (following === 0) window.history.replaceState(window.history.state, '', addressOf(useStore.getState()))
   }
   const onPopState = (): void => {
-    if (!onSettingsPage()) return void follow(readAddress(), false)
-    // Forward onto the settings page: the session beneath stays as it is.
+    const section = settingsSectionOf(window.location.pathname)
+    if (!section) return void follow(readAddress(), null)
+    // Onto the settings page, or to another of its sections: the session beneath stays as it is.
     following += 1
-    useStore.getState().setSettingsOpen(true)
+    useStore.getState().setSettingsSection(section)
     following -= 1
   }
 
@@ -1167,11 +1193,11 @@ export function followAddressBar(): () => void {
     // Moving off a session that was just closed: no place to come back to.
     const closed = previous.activeId !== null && !state.sessions[previous.activeId]
     if (closed) window.history.replaceState(null, '', address)
-    else window.history.pushState(state.settingsOpen ? OPENED_HERE : null, '', address)
+    else window.history.pushState(entryState(state, previous), '', address)
   })
   window.addEventListener('popstate', onPopState)
-  const settings = onSettingsPage()
-  void follow(settings ? readRememberedSession() : (readAddress() ?? readRememberedSession()), settings)
+  const section = settingsSectionOf(window.location.pathname)
+  void follow(section ? readRememberedSession() : (readAddress() ?? readRememberedSession()), section)
   return () => {
     unsubscribe()
     window.removeEventListener('popstate', onPopState)

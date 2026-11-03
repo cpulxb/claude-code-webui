@@ -2,7 +2,7 @@ import type { SettingsOverride, UserSettings } from '@ccw/shared'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 
 import { call } from '../../api/client.ts'
-import { useActiveSessionValue, useStore, type ChatLayout } from '../../store/session.ts'
+import { settingsHref, useActiveSessionValue, useStore, type ChatLayout, type SettingsSection } from '../../store/session.ts'
 import {
   applyForm,
   formProblems,
@@ -17,7 +17,7 @@ import {
 import { notificationsSupported } from '../Attention.tsx'
 import dialog from '../auth/Auth.module.css'
 import { CodeEditor } from '../details/CodeEditor.tsx'
-import { ArrowLeftIcon, ChevronRightIcon, EyeIcon, EyeOffIcon } from '../Icons.tsx'
+import { ArrowLeftIcon, BoxIcon, BracesIcon, ChevronRightIcon, EyeIcon, EyeOffIcon, MonitorIcon, PlugIcon } from '../Icons.tsx'
 import { ModelList, type UpstreamAnswer } from './ModelList.tsx'
 import styles from './Settings.module.css'
 
@@ -38,6 +38,13 @@ const SOURCE_LABELS: Record<SettingsOverride['source'], string> = {
   flag: '启动参数',
   managed: '组织管理配置',
 }
+
+const SECTIONS: { id: SettingsSection; label: string; icon: JSX.Element }[] = [
+  { id: 'general', label: '通用', icon: <MonitorIcon /> },
+  { id: 'channels', label: '渠道', icon: <PlugIcon /> },
+  { id: 'models', label: '模型', icon: <BoxIcon /> },
+  { id: 'json', label: 'settings.json', icon: <BracesIcon /> },
+]
 
 const LAYOUTS: [ChatLayout, string, string][] = [
   ['compact', '简洁', '连续的工具调用合成一行，跑完的回合只露出最终回复'],
@@ -103,14 +110,17 @@ function parseJson(text: string): Json {
 const showAsJson = (settings: Json): string => JSON.stringify(maskSecrets(settings), null, 2)
 
 /**
- * The user-level settings.json at `/settings`: the channel and the model menu
- * as a form, beside the whole file as JSON, each following the other's edits.
- * Nothing is written until 保存, and leaving the page drops what was not
+ * The settings page at `/settings/<section>`, a section per sidebar entry:
+ * what only this browser keeps, then the user-level settings.json as the
+ * channel and model forms and as the whole file in JSON, each following the
+ * other's edits. The draft spans the sections, so moving between them keeps
+ * it; nothing is written until 保存, and leaving the page drops what was not
  * saved. Live sessions pick a saved channel up at their next model refresh —
  * the composer runs one every few seconds.
  */
-export function SettingsPage({ onLeave }: { onLeave: () => void }): JSX.Element {
+export function SettingsPage({ section, onLeave }: { section: SettingsSection; onLeave: () => void }): JSX.Element {
   const cwd = useActiveSessionValue((session) => session.cwd)
+  const setSettingsSection = useStore((state) => state.setSettingsSection)
   const refreshModels = useStore((state) => state.refreshModels)
   const chatLayout = useStore((state) => state.chatLayout)
   const setChatLayout = useStore((state) => state.setChatLayout)
@@ -259,122 +269,133 @@ export function SettingsPage({ onLeave }: { onLeave: () => void }): JSX.Element 
     status = <span className={styles.statusDirty}>有未保存的修改，离开这个页面就会丢弃</span>
   }
 
-  return (
-    <div ref={page} className={styles.page} tabIndex={-1} onKeyDown={onKeyDown} role="region" aria-label="设置">
-      <div className={styles.head}>
-        <button className={styles.back} onClick={onLeave} type="button" title="回到会话，没保存的修改会丢弃">
-          <ArrowLeftIcon size={15} />
-          返回
-        </button>
-        <span className={styles.title}>设置</span>
-        {loaded && (
-          <span className={styles.path} title={loaded.path}>
-            {loaded.path}
-          </span>
-        )}
-      </div>
+  const notices = (
+    <>
+      {loaded && loaded.overrides.length > 0 && (
+        <div className={styles.warning}>
+          下面这些设置被优先级更高的配置覆盖，在这里修改不会生效：
+          <ul className={styles.overrides}>
+            {loaded.overrides.map((override) => (
+              <li key={`${override.source}:${override.key}`}>
+                <code>{override.key}</code>（{SOURCE_LABELS[override.source]}
+                {override.path ? ` ${override.path}` : ''}）
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {jsonError !== null && <div className={styles.warning}>JSON 有误，改好之前表单停在上一次能解析的内容，不能编辑。</div>}
+    </>
+  )
 
-      <div className={styles.panes}>
-        <div className={styles.formPane}>
-          {/* Not part of settings.json: it takes effect at once, with nothing to save. */}
-          <section className={`${styles.section} ${styles.local}`}>
-            <div className={dialog.sectionTitle}>对话显示</div>
-            <div className={styles.choices} role="radiogroup" aria-label="对话显示">
-              {LAYOUTS.map(([value, label, note]) => (
-                <label key={value} className={styles.check}>
-                  <input
-                    type="radio"
-                    name="ccw-chat-layout"
-                    checked={chatLayout === value}
-                    onChange={() => setChatLayout(value)}
-                  />
-                  {label}
-                  <span className={dialog.muted}>{note}</span>
+  /** A settings.json section's fields, once the file is read; a JSON that does not parse disables them. */
+  const fileForm = (children: JSX.Element): JSX.Element =>
+    !loaded ? (
+      <>{!error && <div className={dialog.muted}>读取中…</div>}</>
+    ) : (
+      <fieldset className={styles.form} disabled={jsonError !== null}>
+        {children}
+      </fieldset>
+    )
+
+  let content: JSX.Element
+  switch (section) {
+    case 'general':
+      content = (
+        // Not part of settings.json: it takes effect at once, with nothing to save.
+        <section className={styles.section}>
+          <div className={dialog.sectionTitle}>对话显示</div>
+          <div className={styles.choices} role="radiogroup" aria-label="对话显示">
+            {LAYOUTS.map(([value, label, note]) => (
+              <label key={value} className={styles.check}>
+                <input
+                  type="radio"
+                  name="ccw-chat-layout"
+                  checked={chatLayout === value}
+                  onChange={() => setChatLayout(value)}
+                />
+                {label}
+                <span className={dialog.muted}>{note}</span>
+              </label>
+            ))}
+          </div>
+          <div className={`${dialog.sectionTitle} ${styles.subTitle}`}>提醒</div>
+          <NotifySetting />
+          <div className={dialog.muted}>以上只保存在这个浏览器里，切换后立即生效，不用点保存。</div>
+        </section>
+      )
+      break
+    case 'channels':
+      content = (
+        <>
+          {notices}
+          {fileForm(
+            <section className={styles.section}>
+              <div className={dialog.sectionTitle}>渠道</div>
+              <div className={styles.field}>
+                <label className={styles.label} htmlFor="ccw-settings-url">
+                  请求地址
                 </label>
-              ))}
-            </div>
-            <div className={`${dialog.sectionTitle} ${styles.subTitle}`}>提醒</div>
-            <NotifySetting />
-            <div className={dialog.muted}>以上只保存在这个浏览器里，切换后立即生效，不用点保存。</div>
-          </section>
-
-          {loaded && loaded.overrides.length > 0 && (
-            <div className={styles.warning}>
-              下面这些设置被优先级更高的配置覆盖，在这里修改不会生效：
-              <ul className={styles.overrides}>
-                {loaded.overrides.map((override) => (
-                  <li key={`${override.source}:${override.key}`}>
-                    <code>{override.key}</code>（{SOURCE_LABELS[override.source]}
-                    {override.path ? ` ${override.path}` : ''}）
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {jsonError !== null && <div className={styles.warning}>JSON 有误，改好之前表单停在上一次能解析的内容，不能编辑。</div>}
-
-          {!loaded ? (
-            !error && <div className={dialog.muted}>读取中…</div>
-          ) : (
-            <fieldset className={styles.form} disabled={jsonError !== null}>
-              <section className={styles.section}>
-                <div className={dialog.sectionTitle}>渠道</div>
-                <div className={styles.field}>
-                  <label className={styles.label} htmlFor="ccw-settings-url">
-                    请求地址
-                  </label>
+                <input
+                  id="ccw-settings-url"
+                  className={`${styles.input} ${problems.some((p) => p.startsWith('请求地址')) ? styles.invalid : ''}`}
+                  value={form.baseUrl}
+                  onChange={(event) => patch({ baseUrl: event.target.value })}
+                  placeholder="留空使用官方地址，例如 https://api.example.com"
+                  spellCheck={false}
+                />
+              </div>
+              <div className={styles.field}>
+                <label className={styles.label} htmlFor="ccw-settings-auth">
+                  认证字段
+                </label>
+                <select
+                  id="ccw-settings-auth"
+                  className={styles.input}
+                  value={form.authField}
+                  onChange={(event) => patch({ authField: event.target.value as AuthField })}
+                >
+                  <option value="ANTHROPIC_AUTH_TOKEN">ANTHROPIC_AUTH_TOKEN（Authorization: Bearer）</option>
+                  <option value="ANTHROPIC_API_KEY">ANTHROPIC_API_KEY（x-api-key）</option>
+                </select>
+              </div>
+              <div className={styles.field}>
+                <label className={styles.label} htmlFor="ccw-settings-key">
+                  Key
+                </label>
+                <div className={styles.secret}>
                   <input
-                    id="ccw-settings-url"
-                    className={`${styles.input} ${problems.some((p) => p.startsWith('请求地址')) ? styles.invalid : ''}`}
-                    value={form.baseUrl}
-                    onChange={(event) => patch({ baseUrl: event.target.value })}
-                    placeholder="留空使用官方地址，例如 https://api.example.com"
+                    id="ccw-settings-key"
+                    className={styles.input}
+                    type={showKey ? 'text' : 'password'}
+                    value={form.key}
+                    onChange={(event) => patch({ key: event.target.value })}
+                    placeholder="留空使用 CLI 自己的登录"
+                    autoComplete="off"
                     spellCheck={false}
                   />
-                </div>
-                <div className={styles.field}>
-                  <label className={styles.label} htmlFor="ccw-settings-auth">
-                    认证字段
-                  </label>
-                  <select
-                    id="ccw-settings-auth"
-                    className={styles.input}
-                    value={form.authField}
-                    onChange={(event) => patch({ authField: event.target.value as AuthField })}
+                  <button
+                    className={styles.iconButton}
+                    onClick={() => setShowKey(!showKey)}
+                    type="button"
+                    title={showKey ? '隐藏' : '显示'}
+                    aria-label={showKey ? '隐藏 Key' : '显示 Key'}
                   >
-                    <option value="ANTHROPIC_AUTH_TOKEN">ANTHROPIC_AUTH_TOKEN（Authorization: Bearer）</option>
-                    <option value="ANTHROPIC_API_KEY">ANTHROPIC_API_KEY（x-api-key）</option>
-                  </select>
+                    {showKey ? <EyeOffIcon size={15} /> : <EyeIcon size={15} />}
+                  </button>
                 </div>
-                <div className={styles.field}>
-                  <label className={styles.label} htmlFor="ccw-settings-key">
-                    Key
-                  </label>
-                  <div className={styles.secret}>
-                    <input
-                      id="ccw-settings-key"
-                      className={styles.input}
-                      type={showKey ? 'text' : 'password'}
-                      value={form.key}
-                      onChange={(event) => patch({ key: event.target.value })}
-                      placeholder="留空使用 CLI 自己的登录"
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                    <button
-                      className={styles.iconButton}
-                      onClick={() => setShowKey(!showKey)}
-                      type="button"
-                      title={showKey ? '隐藏' : '显示'}
-                      aria-label={showKey ? '隐藏 Key' : '显示 Key'}
-                    >
-                      {showKey ? <EyeOffIcon size={15} /> : <EyeIcon size={15} />}
-                    </button>
-                  </div>
-                </div>
-              </section>
-
+              </div>
+            </section>,
+          )}
+        </>
+      )
+      break
+    case 'models':
+      content = (
+        <>
+          {notices}
+          {fileForm(
+            <>
               <ModelList form={form} onChange={patch} upstream={upstream} fetching={fetching} onFetch={() => void fetchModels()} />
 
               <section className={styles.section}>
@@ -434,16 +455,19 @@ export function SettingsPage({ onLeave }: { onLeave: () => void }): JSX.Element 
                   </>
                 )}
               </section>
-            </fieldset>
+            </>,
           )}
-        </div>
-
-        <div className={styles.jsonPane}>
+        </>
+      )
+      break
+    case 'json':
+      content = (
+        <>
           <div className={dialog.sectionTitle}>settings.json</div>
           <div className={dialog.muted}>
-            和左边的表单互相同步。密钥显示为 {SECRET_MASK}，保持不变就不会修改；要查看或修改密钥，在表单里改。这里的大多数设置对新会话生效。
+            和「渠道」「模型」里的表单互相同步。密钥显示为 {SECRET_MASK}，保持不变就不会修改；要查看或修改密钥，在表单里改。这里的大多数设置对新会话生效。
           </div>
-          {loaded && (
+          {loaded ? (
             <div className={styles.editor}>
               <CodeEditor
                 path="settings.json"
@@ -453,7 +477,51 @@ export function SettingsPage({ onLeave }: { onLeave: () => void }): JSX.Element 
                 onChange={editJson}
               />
             </div>
+          ) : (
+            !error && <div className={dialog.muted}>读取中…</div>
           )}
+        </>
+      )
+      break
+  }
+
+  return (
+    <div ref={page} className={styles.page} tabIndex={-1} onKeyDown={onKeyDown} role="region" aria-label="设置">
+      <div className={styles.head}>
+        <button className={styles.back} onClick={onLeave} type="button" title="回到会话，没保存的修改会丢弃">
+          <ArrowLeftIcon size={15} />
+          返回
+        </button>
+        <span className={styles.title}>设置</span>
+        {loaded && (
+          <span className={styles.path} title={loaded.path}>
+            {loaded.path}
+          </span>
+        )}
+      </div>
+
+      <div className={styles.body}>
+        <nav className={styles.nav} aria-label="设置分类">
+          {SECTIONS.map(({ id, label, icon }) => (
+            // Links, so a section can be opened in a new tab or have its address copied.
+            <a
+              key={id}
+              href={settingsHref(id)}
+              className={id === section ? `${styles.navItem} ${styles.navItemActive}` : styles.navItem}
+              aria-current={id === section ? 'page' : undefined}
+              onClick={(event) => {
+                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                event.preventDefault()
+                setSettingsSection(id)
+              }}
+            >
+              {icon}
+              {label}
+            </a>
+          ))}
+        </nav>
+        <div className={styles.content}>
+          <div className={section === 'json' ? `${styles.card} ${styles.cardFill}` : styles.card}>{content}</div>
         </div>
       </div>
 

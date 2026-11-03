@@ -1,6 +1,6 @@
 /* The settings page: a layer over the workspace, which stays mounted beneath
-   so its sessions keep running. The form and the JSON sit side by side as
-   cards, each scrolling on its own, between the head and the save bar. */
+   so its sessions keep running. A sidebar of sections beside the one shown,
+   as a card scrolling on its own, between the head and the save bar. */
 .page {
   position: fixed;
   inset: 0;
@@ -52,33 +52,69 @@
   white-space: nowrap;
 }
 
-.panes {
+.body {
   display: grid;
   flex: 1;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: var(--ccw-space-4);
+  grid-template-columns: 200px minmax(0, 1fr);
   min-height: 0;
-  padding: var(--ccw-space-4) var(--ccw-space-5);
 }
 
-.formPane,
-.jsonPane {
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--ccw-space-4) var(--ccw-space-3);
+  overflow-y: auto;
+  border-right: 1px solid var(--ccw-border-l2);
+}
+
+.navItem {
+  display: flex;
+  flex: none;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: var(--ccw-text-base);
+  color: var(--ccw-text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: var(--ccw-radius-md);
+}
+
+.navItem:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
+}
+
+.navItemActive,
+.navItemActive:hover {
+  font-weight: 500;
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-selected);
+}
+
+.content {
+  min-height: 0;
+  padding: var(--ccw-space-4) var(--ccw-space-5);
+  overflow-y: auto;
+}
+
+.card {
   display: flex;
   flex-direction: column;
   gap: var(--ccw-space-4);
-  min-height: 0;
+  max-width: 960px;
   padding: var(--ccw-space-5);
   background: var(--ccw-bg-base);
   border: 1px solid var(--ccw-border-l1);
   border-radius: var(--ccw-radius-lg);
 }
 
-.formPane {
-  overflow-y: auto;
-}
-
-.jsonPane {
+/* settings.json: the editor takes the whole height, and scrolls itself. */
+.cardFill {
   gap: var(--ccw-space-2);
+  height: 100%;
+  max-width: none;
 }
 
 /* A fieldset, so a JSON that does not parse disables the whole form at once. */
@@ -204,12 +240,6 @@
   font-size: var(--ccw-text-sm);
   color: var(--ccw-text-secondary);
   cursor: pointer;
-}
-
-/* A browser-only setting above the settings.json form, ruled off from it. */
-.local {
-  padding-bottom: var(--ccw-space-5);
-  border-bottom: 1px solid var(--ccw-border-l2);
 }
 
 .subTitle {
@@ -529,20 +559,8 @@
 
 /* Too narrow for two columns: the JSON follows the form, and the page scrolls as one. */
 @media (max-width: 1024px) {
-  .panes {
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
-  }
-
-  .formPane {
-    flex: none;
-    overflow-y: visible;
-  }
-
-  .jsonPane {
-    flex: none;
-    height: 70vh;
+  .body {
+    grid-template-columns: 168px minmax(0, 1fr);
   }
 }
 
@@ -552,13 +570,29 @@
     padding: var(--ccw-space-2) var(--ccw-space-3);
   }
 
-  .panes {
-    gap: var(--ccw-space-3);
+  /* The sections become a row of tabs above the card. */
+  .body {
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nav {
+    flex-direction: row;
+    padding: var(--ccw-space-2) var(--ccw-space-3);
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--ccw-border-l2);
+  }
+
+  .navItem {
+    padding: 6px 10px;
+  }
+
+  .content {
     padding: var(--ccw-space-3);
   }
 
-  .formPane,
-  .jsonPane {
+  .card {
     padding: var(--ccw-space-4);
   }
 

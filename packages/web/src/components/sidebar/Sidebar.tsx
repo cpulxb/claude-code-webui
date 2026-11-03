@@ -54,7 +54,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
   const renameSavedSession = useStore((state) => state.renameSavedSession)
   const refreshProjects = useStore((state) => state.refreshProjects)
   const checkUpdate = useStore((state) => state.checkUpdate)
-  const setSettingsOpen = useStore((state) => state.setSettingsOpen)
+  const setSettingsSection = useStore((state) => state.setSettingsSection)
 
   const [picking, setPicking] = useState(false)
   const [showDevices, setShowDevices] = useState(false)
@@ -317,7 +317,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
             </button>
           </>
         )}
-        <button className={styles.footButton} onClick={() => setSettingsOpen(true)} type="button" title="渠道、模型和 settings.json">
+        <button className={styles.footButton} onClick={() => setSettingsSection('general')} type="button" title="渠道、模型和 settings.json">
           设置
         </button>
         <button className={styles.footButton} onClick={() => setShowDevices(true)} type="button" title="已配对的设备">

@@ -63,7 +63,7 @@ function Workspace(): JSX.Element {
   const closed = useActiveSessionValue((session) => session.closed)
   const activeId = useStore((state) => state.activeId)
   const summary = useStore(activeSummary)
-  const settingsOpen = useStore((state) => state.settingsOpen)
+  const settingsSection = useStore((state) => state.settingsSection)
   const narrow = useNarrow()
 
   // A phone opens on the conversation; the session list is a drawer away.
@@ -160,7 +160,7 @@ function Workspace(): JSX.Element {
         }
       />
       {/* Over the frame, which stays mounted beneath so its sessions keep running; outside it, as a drawer's stacking context would cap the page on phones. */}
-      {settingsOpen && <SettingsPage onLeave={leaveSettings} />}
+      {settingsSection && <SettingsPage section={settingsSection} onLeave={leaveSettings} />}
       <Attention />
     </>
   )

@@ -342,6 +342,46 @@ export function SlidersIcon(props: { size?: number }): JSX.Element {
   )
 }
 
+/** 设置页「通用」：显示与提醒。 */
+export function MonitorIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <rect width="20" height="14" x="2" y="3" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </Icon>
+  )
+}
+
+/** 设置页「渠道」。 */
+export function PlugIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M12 22v-5M9 8V2M15 8V2" />
+      <path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z" />
+    </Icon>
+  )
+}
+
+/** 设置页「模型」。 */
+export function BoxIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+      <path d="m3.3 7 8.7 5 8.7-5M12 22V12" />
+    </Icon>
+  )
+}
+
+/** 设置页「settings.json」。 */
+export function BracesIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1" />
+      <path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1" />
+    </Icon>
+  )
+}
+
 export function ArrowUpIcon(props: { size?: number }): JSX.Element {
   return (
     <Icon size={props.size}>
