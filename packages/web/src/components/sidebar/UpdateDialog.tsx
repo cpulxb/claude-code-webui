@@ -33,6 +33,8 @@ export function UpdateDialog({ onClose }: { onClose: () => void }): JSX.Element 
 
   if (!update?.latest) return null
   const { current, latest, changes, canApply, progress } = update
+  // Already on that version: an update that merged it never finished.
+  const unfinished = latest === current
 
   const apply = (): void => {
     setError(null)
@@ -43,13 +45,13 @@ export function UpdateDialog({ onClose }: { onClose: () => void }): JSX.Element 
     <div className={dialog.backdrop} onMouseDown={onClose}>
       <div className={dialog.dialog} onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="更新">
         <div className={dialog.dialogHead}>
-          <span className={dialog.dialogTitle}>新版本 v{latest}</span>
+          <span className={dialog.dialogTitle}>{unfinished ? `v${latest} 的更新没有完成` : `新版本 v${latest}`}</span>
           <span className={dialog.spacer} />
           <button className={dialog.close} onClick={onClose} type="button" aria-label="关闭">
             <XIcon />
           </button>
         </div>
-        <div className={dialog.muted}>当前版本 v{current}</div>
+        {!unfinished && <div className={dialog.muted}>当前版本 v{current}</div>}
 
         {changes.length > 0 && (
           <div className={dialog.section}>

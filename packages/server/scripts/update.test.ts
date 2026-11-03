@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
@@ -163,6 +163,98 @@ test('a failing install step is reported with its output', async (t) => {
   if (progress?.state !== 'failed') return
   assert.equal(progress.step, 'install')
   assert.match(progress.error, /no-such-command/)
+})
+
+/** An install step that fails until `fix()` is called, counting its runs. */
+async function flakyInstall(t: TestContext): Promise<{ command: UpdateCommand; fix: () => Promise<void>; runs: () => Promise<number> }> {
+  const dir = await mkdtemp(join(tmpdir(), 'ccw-update-install-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const log = join(dir, 'runs')
+  const ok = join(dir, 'ok')
+  return {
+    command: { step: 'install', command: 'sh', args: ['-c', `echo run >> '${log}'; test -e '${ok}'`] },
+    fix: () => writeFile(ok, ''),
+    runs: async () => (await readFile(log, 'utf8').catch(() => '')).split('\n').filter(Boolean).length,
+  }
+}
+
+test('a retry after a failed install runs the install again', async (t) => {
+  const { dev, install, release } = await fixture(t)
+  await writeFile(join(dev, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n")
+  await release('0.2.0', 'chore: release 0.2.0')
+  const flaky = await flakyInstall(t)
+  const updates = updater(install, { commands: [flaky.command] })
+  await updates.check()
+  let done = settled(updates)
+  updates.apply()
+  assert.deepEqual((await done).progress?.state, 'failed')
+  await flaky.fix()
+  // The retry's merge is already up to date, which still moves ORIG_HEAD to HEAD.
+  done = settled(updates)
+  assert.deepEqual(updates.apply().progress, { state: 'running', step: 'merge' })
+  assert.deepEqual((await done).progress, { state: 'restartRequired' })
+  assert.equal(await flaky.runs(), 2)
+})
+
+test('a server started again before its install finished still offers to finish it', async (t) => {
+  const { dev, install, release } = await fixture(t)
+  await writeFile(join(dev, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n")
+  await release('0.2.0', 'chore: release 0.2.0')
+  const flaky = await flakyInstall(t)
+  const first = updater(install, { commands: [flaky.command] })
+  await first.check()
+  const failed = settled(first)
+  first.apply()
+  assert.equal((await failed).progress?.state, 'failed')
+
+  // HEAD already contains v0.2.0, yet its dependencies were never installed.
+  const restarted = new Updater({ root: install, current: '0.2.0', canApply: true, commands: [flaky.command], restart: null })
+  await restarted.check()
+  assert.equal(restarted.status.latest, '0.2.0')
+  assert.deepEqual(restarted.status.changes, ['chore: release 0.2.0'])
+  assert.equal(restarted.status.progress?.state, 'failed')
+  if (restarted.status.progress?.state !== 'failed') return
+  assert.equal(restarted.status.progress.step, 'install')
+  await flaky.fix()
+  const done = settled(restarted)
+  restarted.apply()
+  assert.deepEqual((await done).progress, { state: 'restartRequired' })
+  assert.equal(await flaky.runs(), 2)
+
+  // Finished: the next server has nothing left to offer.
+  const next = new Updater({ root: install, current: '0.2.0', canApply: true, commands: [flaky.command], restart: null })
+  await next.check()
+  assert.equal(next.status.latest, null)
+})
+
+test('a failed update keeps its retry, and a newer release still shows up', async (t) => {
+  const { dev, install, release } = await fixture(t)
+  await writeFile(join(dev, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n")
+  await release('0.2.0', 'chore: release 0.2.0')
+  const flaky = await flakyInstall(t)
+  const updates = updater(install, { commands: [flaky.command] })
+  await updates.check()
+  const failed = settled(updates)
+  updates.apply()
+  const failure = (await failed).progress
+  assert.equal(failure?.state, 'failed')
+
+  // The hourly check: HEAD has v0.2.0 now, but the failure stays on offer.
+  await updates.check()
+  assert.equal(updates.status.latest, '0.2.0')
+  assert.deepEqual(updates.status.progress, failure)
+
+  await release('0.2.1', 'fix: the fix')
+  await updates.check()
+  assert.equal(updates.status.latest, '0.2.1')
+  assert.deepEqual(updates.status.changes, ['fix: the fix'])
+  assert.equal(updates.status.progress, null)
+  // Measured from what node_modules holds, not from the half-done v0.2.0.
+  await flaky.fix()
+  const done = settled(updates)
+  updates.apply()
+  assert.deepEqual((await done).progress, { state: 'restartRequired' })
+  assert.equal(await flaky.runs(), 2)
 })
 
 test('a release that only bumps package.json skips the install but still builds', async (t) => {

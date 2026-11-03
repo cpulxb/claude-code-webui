@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { readFile, realpath } from 'node:fs/promises'
+import { readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -16,6 +16,15 @@ const GIT_TIMEOUT_MS = 60_000
 const STEP_TIMEOUT_MS = 10 * 60_000
 /** `vX.Y.Z` only: pre-release tags are never offered. */
 const RELEASE_TAG = /^v\d+\.\d+\.\d+$/
+/**
+ * In the checkout's git dir while an update has merged but not finished: the
+ * commit it started from, whose dependencies are what node_modules still
+ * holds. A retry, or a server started again before the install was done,
+ * reads it to know the install is still owed — ORIG_HEAD cannot tell, since
+ * the retry's merge is already up to date and still moves it to HEAD.
+ */
+const UNFINISHED_FILE = 'ccw-update-base'
+const INTERRUPTED = '上一次更新没有走完这一步，服务就重启了。点「重试」补完剩下的步骤。'
 
 export type UpdateCommand = { step: UpdateStep; command: string; args: string[] }
 
@@ -124,14 +133,32 @@ export class Updater {
       const newest = tags.find((tag) => RELEASE_TAG.test(tag))
       let latest: string | null = null
       let changes: string[] = []
+      let unfinished: UpdateStep | null = null
       if (newest && !(await contains(root, newest))) {
         latest = newest.slice(1)
-        changes = (await git(root, 'log', '--no-merges', '--format=%s', `HEAD..refs/tags/${newest}`)).split('\n').filter(Boolean)
+        changes = await subjects(root, `HEAD..refs/tags/${newest}`)
+      } else if (newest) {
+        // HEAD has the newest release, but the update that merged it may still
+        // owe its install or build — failed here, or cut off by a restart.
+        const base = await readUnfinished(root)
+        if (base) {
+          latest = newest.slice(1)
+          changes = await subjects(root, `${base}..refs/tags/${newest}`)
+          unfinished = (await dependenciesChanged(root, base)) ? 'install' : 'build'
+        }
       }
       // An install that started while the fetch ran owns the status now; the
       // merge would otherwise read as "up to date" mid-install.
       if (this.#installing()) return
-      this.#set({ ...this.#status, latest, changes })
+      // A failure stays on offer, retry button and all, until another release replaces it.
+      const { progress } = this.#status
+      const kept = progress?.state === 'failed' && latest === this.#status.latest ? progress : null
+      this.#set({
+        ...this.#status,
+        latest,
+        changes,
+        progress: kept ?? (unfinished ? { state: 'failed', step: unfinished, error: INTERRUPTED } : null),
+      })
     } catch (error) {
       // git's own words, not execFile's "Command failed: git fetch …" header.
       throw new Error(describe(error))
@@ -152,20 +179,34 @@ export class Updater {
   }
 
   async #install(root: string, tag: string): Promise<void> {
-    // `^{commit}`: merging an annotated tag object would ask for a merge commit.
-    const merge: UpdateCommand = { step: 'merge', command: 'git', args: ['merge', '--ff-only', '--quiet', `refs/tags/${tag}^{commit}`] }
-    for (const { step, command, args } of [merge, ...this.#commands]) {
-      if (step === 'install' && !(await dependenciesChanged(root))) continue
-      this.#setProgress({ state: 'running', step })
-      try {
-        await run(command, args, root, STEP_TIMEOUT_MS)
-      } catch (error) {
-        const reason = describe(error)
-        console.error(`[ccw] update to ${tag}: ${step} failed: ${reason}`)
-        this.#setProgress({ state: 'failed', step, error: reason })
-        return
+    let step: UpdateStep = 'merge'
+    this.#setProgress({ state: 'running', step })
+    try {
+      // What node_modules was installed for: where an unfinished update
+      // started, else HEAD before this merge.
+      let base = (await readUnfinished(root)) ?? (await head(root))
+      // `^{commit}`: merging an annotated tag object would ask for a merge commit.
+      await run('git', ['merge', '--ff-only', '--quiet', `refs/tags/${tag}^{commit}`], root, STEP_TIMEOUT_MS)
+      if ((await head(root)) !== base) await writeUnfinished(root, base)
+      for (const command of this.#commands) {
+        step = command.step
+        if (step === 'install' && !(await dependenciesChanged(root, base))) continue
+        this.#setProgress({ state: 'running', step })
+        await run(command.command, command.args, root, STEP_TIMEOUT_MS)
+        if (step === 'install') {
+          // Installed for HEAD now: a build failing next does not owe it again.
+          base = await head(root)
+          await writeUnfinished(root, base)
+        }
       }
+    } catch (error) {
+      const reason = describe(error)
+      console.error(`[ccw] update to ${tag}: ${step} failed: ${reason}`)
+      this.#setProgress({ state: 'failed', step, error: reason })
+      return
     }
+    // Everything is in place; a record left behind would only offer the same update again.
+    await clearUnfinished(root).catch((error: unknown) => console.warn(`[ccw] update to ${tag}: ${describe(error)}`))
     console.log(`[ccw] updated to ${tag}`)
     if (!this.#restart) {
       this.#setProgress({ state: 'restartRequired' })
@@ -176,9 +217,14 @@ export class Updater {
     setTimeout(this.#restart, 500)
   }
 
-  /** Once an install has started, the status describes it until the restart. */
+  /**
+   * Once an install has started, the status describes it until the restart.
+   * A failed one no longer runs: checks go on, so a fixed release can still
+   * be found.
+   */
   #installing(): boolean {
-    return this.#status.progress !== null
+    const { progress } = this.#status
+    return progress !== null && progress.state !== 'failed'
   }
 
   #setProgress(progress: UpdateProgress): void {
@@ -212,20 +258,50 @@ async function contains(root: string, tag: string): Promise<boolean> {
 }
 
 /**
- * Whether the merge just made changes what pnpm installs; the merge left the
- * old HEAD in ORIG_HEAD. package.json alone does not count: a release bumps
- * every version field without touching a dependency, yet an install then
- * still rewrites node_modules/.pnpm/lock.yaml — which fails with EPERM where
- * the files carry a gid the user namespace cannot map. Any doubt (git
- * failing) runs the install.
+ * Whether HEAD needs other dependencies than `base`, the commit node_modules
+ * was installed for. package.json alone does not count: a release bumps every
+ * version field without touching a dependency, yet an install then still
+ * rewrites node_modules/.pnpm/lock.yaml — which fails with EPERM where the
+ * files carry a gid the user namespace cannot map. Any doubt (git failing)
+ * runs the install.
  */
-async function dependenciesChanged(root: string): Promise<boolean> {
+async function dependenciesChanged(root: string, base: string): Promise<boolean> {
   try {
-    await git(root, 'diff', '--quiet', 'ORIG_HEAD', 'HEAD', '--', 'pnpm-lock.yaml', 'pnpm-workspace.yaml')
+    await git(root, 'diff', '--quiet', base, 'HEAD', '--', 'pnpm-lock.yaml', 'pnpm-workspace.yaml')
     return false
   } catch {
     return true
   }
+}
+
+async function head(root: string): Promise<string> {
+  return (await git(root, 'rev-parse', 'HEAD')).trim()
+}
+
+/** Commit subjects in `range`, newest first. */
+async function subjects(root: string, range: string): Promise<string[]> {
+  return (await git(root, 'log', '--no-merges', '--format=%s', range)).split('\n').filter(Boolean)
+}
+
+/** See UNFINISHED_FILE. A worktree or submodule keeps its git dir elsewhere, hence `--git-path`. */
+async function unfinishedPath(root: string): Promise<string> {
+  return resolve(root, (await git(root, 'rev-parse', '--git-path', UNFINISHED_FILE)).trim())
+}
+
+async function readUnfinished(root: string): Promise<string | null> {
+  const raw = await readFile(await unfinishedPath(root), 'utf8').catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null
+    throw error
+  })
+  return raw?.trim() || null
+}
+
+async function writeUnfinished(root: string, base: string): Promise<void> {
+  await writeFile(await unfinishedPath(root), `${base}\n`)
+}
+
+async function clearUnfinished(root: string): Promise<void> {
+  await rm(await unfinishedPath(root), { force: true })
 }
 
 function git(cwd: string, ...args: string[]): Promise<string> {
