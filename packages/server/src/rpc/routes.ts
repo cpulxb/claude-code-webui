@@ -6,6 +6,7 @@ import { browseDirectory } from '../files/browse.ts'
 import { listEntries, readFilePreview, writeTextFile } from '../files/explorer.ts'
 import { registerRoot, resolveInWorkspace } from '../files/roots.ts'
 import { suggestFiles } from '../files/suggest.ts'
+import { saveUpload } from '../files/upload.ts'
 import {
   forkSavedSession,
   hasTranscript,
@@ -228,6 +229,12 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
     'files.write': async ({ path, content }) => ({
       bytesWritten: await writeTextFile(await resolveInWorkspace(path), content),
     }),
+
+    'files.upload': async ({ cwd, filename, data }) => {
+      const saved = await saveUpload(await resolveInWorkspace(cwd), filename, Buffer.from(data, 'base64'))
+      console.log(`[ccw] uploaded ${saved.path} (${saved.size} bytes) into ${cwd}`)
+      return saved
+    },
 
     'scm.status': async ({ cwd }) => ({ status: await scmStatus(await resolveInWorkspace(cwd)) }),
 

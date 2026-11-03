@@ -173,6 +173,10 @@
   border-radius: var(--ccw-radius-sm);
 }
 
+.chipPending {
+  color: var(--ccw-text-muted);
+}
+
 .chipRemove {
   display: flex;
   padding: 0 2px;

@@ -65,6 +65,7 @@ export type PluginAction = 'enable' | 'disable' | 'update' | 'uninstall'
 
 export { fuzzyFilter, fuzzyScore } from './fuzzy.ts'
 export { mergeProjectSessions, UNKNOWN_CWD } from './projects.ts'
+export { MAX_UPLOAD_BYTES, UPLOAD_DIR, UPLOAD_KINDS, uploadKind, type UploadKind } from './uploads.ts'
 
 /** Every permission mode the CLI accepts, in the order the Modes popover lists them. */
 export const PERMISSION_MODES = [
@@ -588,6 +589,16 @@ export type RpcMap = {
    * file at 256KB — and the server refuses anything but an existing file.
    */
   'files.write': { params: { path: string; content: string }; result: { bytesWritten: number } }
+  /**
+   * Saves a file into `<cwd>/upload/` for the prompt to reference, for types
+   * the API cannot take inline (docx and the like). `data` is base64. Only
+   * the `UPLOAD_KINDS` extensions are taken, and only when the bytes match;
+   * a taken name gets a numbered suffix. `path` is relative to `cwd`.
+   */
+  'files.upload': {
+    params: { cwd: string; filename: string; data: string }
+    result: { path: string; size: number }
+  }
   /** Changed files in `cwd`, or `{ kind: 'none' }` when it is not a git repo. */
   'scm.status': { params: { cwd: string }; result: { status: ScmStatus } }
   /**

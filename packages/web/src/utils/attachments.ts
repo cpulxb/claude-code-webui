@@ -16,13 +16,17 @@ export function isSupportedAttachment(file: File): boolean {
  * a `document` block. Callers must filter with `isSupportedAttachment` first.
  */
 export async function fileToAttachment(file: File): Promise<Attachment> {
-  const buffer = await file.arrayBuffer()
   return {
     kind: IMAGE_TYPES.has(file.type) ? 'image' : 'document',
     mediaType: file.type,
-    data: base64(buffer),
+    data: await fileToBase64(file),
     ...(file.name ? { filename: file.name } : {}),
   }
+}
+
+/** The file's bytes as base64, as `files.upload` takes them. */
+export async function fileToBase64(file: File): Promise<string> {
+  return base64(await file.arrayBuffer())
 }
 
 /**
