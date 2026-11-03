@@ -4,11 +4,13 @@ import { join } from 'node:path'
 import type { Channel, ChannelLibrary, UserSettings } from '@ccw/shared'
 
 import { configDir } from '../auth/pairing.ts'
-import { hash, readIfExists, validate as validateSettings, writePrivate, writeUserSettings } from './user-settings.ts'
+import { hash, readIfExists, validate as validateSettings, writePrivate, writeQueue, writeUserSettings } from './user-settings.ts'
 
 const FILE = 'channels.json'
 const MAX_CHANNELS = 100
 const ID = /^[\w-]{1,64}$/
+
+const saving = writeQueue()
 
 /** The saved channels; an empty list while the file does not exist. */
 export async function readChannels(): Promise<ChannelLibrary> {
@@ -22,26 +24,32 @@ export async function readChannels(): Promise<ChannelLibrary> {
  * another tab saving its own. With `settings`, settings.json is written
  * first, through its own revision check, so a refusal there leaves both files
  * as they were. The file holds API keys, so it is private to the user.
+ *
+ * One save at a time, as settings.json's are (see `writeUserSettings`). The
+ * settings write inside takes that file's own turn: always this order, never
+ * the other way round, so neither waits on the other forever.
  */
-export async function writeChannels(
+export function writeChannels(
   channels: unknown,
   activeId: unknown,
   revision: string,
   settings?: { settings: unknown; revision: string; cwd?: string },
 ): Promise<{ library: ChannelLibrary; settings: UserSettings | null }> {
-  validate(channels, activeId)
-  const dir = configDir()
-  const path = join(dir, FILE)
-  if (hash((await readIfExists(path)) ?? '') !== revision) {
-    throw new Error('渠道列表在打开设置之后被改过（可能是另一个标签页保存的），请重新载入后再保存')
-  }
-  const written = settings ? await writeUserSettings(settings.settings, settings.revision, settings.cwd) : null
-  await mkdir(dir, { recursive: true, mode: 0o700 })
-  // Rename is atomic: a read mid-save sees the old list or the new one.
-  const temp = `${path}.${process.pid}.tmp`
-  await writePrivate(temp, `${JSON.stringify({ activeId, channels }, null, 2)}\n`, 0o600)
-  await rename(temp, path)
-  return { library: await readChannels(), settings: written }
+  return saving(async () => {
+    validate(channels, activeId)
+    const dir = configDir()
+    const path = join(dir, FILE)
+    if (hash((await readIfExists(path)) ?? '') !== revision) {
+      throw new Error('渠道列表在打开设置之后被改过（可能是另一个标签页保存的），请重新载入后再保存')
+    }
+    const written = settings ? await writeUserSettings(settings.settings, settings.revision, settings.cwd) : null
+    await mkdir(dir, { recursive: true, mode: 0o700 })
+    // Rename is atomic: a read mid-save sees the old list or the new one.
+    const temp = `${path}.${process.pid}.tmp`
+    await writePrivate(temp, `${JSON.stringify({ activeId, channels }, null, 2)}\n`, 0o600)
+    await rename(temp, path)
+    return { library: await readChannels(), settings: written }
+  })
 }
 
 function parse(raw: string, path: string): Omit<ChannelLibrary, 'revision'> {

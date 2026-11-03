@@ -37,6 +37,20 @@ test('a save over a list changed by another tab is refused', async () => {
   assert.deepEqual((await readChannels()).channels, [cpa])
 })
 
+test('two saves from one revision at once: one lands whole, the other is refused', async () => {
+  const empty = await readChannels()
+  const results = await Promise.allSettled([
+    writeChannels([cpa, relay], 'cpa', empty.revision),
+    writeChannels([relay], 'relay', empty.revision),
+  ])
+  const saved = results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
+  const refused = results.flatMap((result) => (result.status === 'rejected' ? [String(result.reason)] : []))
+  assert.equal(saved.length, 1)
+  assert.match(refused[0] ?? '', /另一个标签页/)
+  // Parses, and holds what the successful save answered with.
+  assert.deepEqual((await readChannels()).channels, saved[0]!.library.channels)
+})
+
 test('switching writes settings.json and the list together', async () => {
   await writeFile(join(claude, 'settings.json'), JSON.stringify({ ...cpa.settings, theme: 'dark' }))
   const settings = await readUserSettings()

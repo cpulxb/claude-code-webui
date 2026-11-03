@@ -41,6 +41,20 @@ test('a save is refused when the file changed after it was read', async () => {
   assert.equal(await readFile(file, 'utf8'), '{ "model": "sonnet" }')
 })
 
+test('two saves from one revision at once: one lands whole, the other is refused', async () => {
+  await writeFile(file, '{}')
+  const read = await readUserSettings()
+  const results = await Promise.allSettled([
+    writeUserSettings({ env: { ANTHROPIC_BASE_URL: `https://${'x'.repeat(5000)}.example` } }, read.revision),
+    writeUserSettings({ model: 'opus' }, read.revision),
+  ])
+  const saved = results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
+  const refused = results.flatMap((result) => (result.status === 'rejected' ? [String(result.reason)] : []))
+  assert.equal(saved.length, 1)
+  assert.match(refused[0] ?? '', /其他程序/)
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), saved[0]!.settings)
+})
+
 test('a symlinked settings.json is written through, not replaced', async () => {
   const real = join(await mkdtemp(join(tmpdir(), 'ccw-dotfiles-')), 'settings.json')
   await writeFile(real, '{}')
