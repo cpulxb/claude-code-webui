@@ -110,26 +110,37 @@ export function attachTerminal(
   })
 
   ws.on('message', (raw) => {
-    let message: TerminalClientMessage
+    let parsed: unknown
     try {
-      message = JSON.parse(String(raw)) as TerminalClientMessage
+      parsed = JSON.parse(String(raw))
     } catch {
       return
     }
+    // Valid JSON is not a message yet: reading a field of `null` throws, and
+    // an exception escaping this listener exits the whole server (bin.ts).
+    if (typeof parsed !== 'object' || parsed === null) return
+    const message = parsed as TerminalClientMessage
     // node-pty throws on writes and resizes once the process is gone.
     if (exited) return
-    if (message.type === 'input' && typeof message.data === 'string') {
-      pty.write(message.data)
-    } else if (message.type === 'resize') {
-      const cols = terminalSize(message.cols)
-      const rows = terminalSize(message.rows)
-      if (cols !== null && rows !== null) pty.resize(cols, rows)
-    } else if (message.type === 'ack') {
-      unacked = Math.max(0, unacked - (Number(message.chars) || 0))
-      if (paused && unacked < LOW_WATERMARK) {
-        paused = false
-        pty.resume()
+    try {
+      if (message.type === 'input' && typeof message.data === 'string') {
+        pty.write(message.data)
+      } else if (message.type === 'resize') {
+        const cols = terminalSize(message.cols)
+        const rows = terminalSize(message.rows)
+        if (cols !== null && rows !== null) pty.resize(cols, rows)
+      } else if (message.type === 'ack') {
+        unacked = Math.max(0, unacked - (Number(message.chars) || 0))
+        if (paused && unacked < LOW_WATERMARK) {
+          paused = false
+          pty.resume()
+        }
       }
+    } catch (error) {
+      // The process can be gone before `onExit` reports it. That ends this
+      // tab, not every connection on the server.
+      console.warn(`[ccw] terminal: ${error instanceof Error ? error.message : String(error)}`)
+      ws.close(1011)
     }
   })
 

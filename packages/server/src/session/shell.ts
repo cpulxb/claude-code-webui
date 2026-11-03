@@ -14,17 +14,29 @@ const BYTE_LIMIT = 1024 * 1024
  * no stdin, in the session's cwd. A failure is reported in-band on stderr
  * (`Exit code N`) rather than thrown, because the model is meant to see it.
  */
-export async function runShellCommand(command: string, cwd: string): Promise<{ stdout: string; stderr: string }> {
+export async function runShellCommand(
+  command: string,
+  cwd: string,
+  timeoutMs = TIMEOUT_MS,
+): Promise<{ stdout: string; stderr: string }> {
   const shell = await resolveShell()
   return new Promise((resolve, reject) => {
-    const child = spawn(shell, ['-c', command], { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    // Detached makes the shell the leader of a process group of its own, so a
+    // timeout can reach what it waits on: killing the shell alone would leave
+    // `python job.py; echo done` computing on after the result says it ended.
+    const child = spawn(shell, ['-c', command], { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
     const stdout = collect(child.stdout)
     const stderr = collect(child.stderr)
     let timedOut = false
     const timer = setTimeout(() => {
       timedOut = true
-      child.kill('SIGKILL')
-    }, TIMEOUT_MS)
+      try {
+        // A negative pid signals every process in the group.
+        process.kill(-child.pid!, 'SIGKILL')
+      } catch {
+        child.kill('SIGKILL')
+      }
+    }, timeoutMs)
     child.on('error', (error) => {
       clearTimeout(timer)
       reject(error)
@@ -42,7 +54,7 @@ export async function runShellCommand(command: string, cwd: string): Promise<{ s
     child.on('close', (code, signal) => {
       let err = stderr.text()
       const note = timedOut
-        ? `Command timed out after ${TIMEOUT_MS / 1000}s`
+        ? `Command timed out after ${timeoutMs / 1000}s`
         : signal
           ? `Killed by ${signal}`
           : code
