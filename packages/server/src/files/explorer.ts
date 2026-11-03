@@ -58,26 +58,28 @@ export async function listEntries(path: string): Promise<TreeEntry[]> {
  * show its first screenful.
  */
 export async function readFilePreview(path: string): Promise<FilePreview> {
-  const info = await stat(path)
-  const size = info.size
+  // The tree lists FIFOs and devices as files too. Opening a FIFO that has no
+  // writer blocks until one shows up — and holds one of libuv's four threads
+  // that every file operation on the server shares. O_NONBLOCK turns that into
+  // an open that returns at once, for the type check below to refuse; it
+  // changes nothing for a regular file. Checking the opened handle rather than
+  // the path also means the file cannot be swapped in between.
+  const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK)
+  try {
+    const info = await handle.stat()
+    if (!info.isFile()) throw new Error(`不是普通文件：${path}`)
+    const size = info.size
 
-  const mediaType = IMAGE_TYPES[extname(path).toLowerCase()]
-  if (mediaType) {
-    if (size > IMAGE_CAP) return { kind: 'binary', size }
-    const handle = await open(path, 'r')
-    try {
+    const mediaType = IMAGE_TYPES[extname(path).toLowerCase()]
+    if (mediaType) {
+      if (size > IMAGE_CAP) return { kind: 'binary', size }
       const buffer = Buffer.alloc(size)
       // The file can shrink between the stat and the read; anything past
       // `bytesRead` is still zero-filled padding, not image data.
       const { bytesRead } = await handle.read(buffer, 0, size, 0)
       return { kind: 'image', size, mediaType, data: buffer.subarray(0, bytesRead).toString('base64') }
-    } finally {
-      await handle.close()
     }
-  }
 
-  const handle = await open(path, 'r')
-  try {
     const length = Math.min(size, TEXT_CAP)
     const buffer = Buffer.alloc(length)
     const { bytesRead } = await handle.read(buffer, 0, length, 0)

@@ -1,15 +1,19 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, readlink, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createServer as createNetServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Writable } from 'node:stream'
 import { after, before, beforeEach, test } from 'node:test'
 
 import { API_FILES_RAW_PATH, API_RPC_PATH } from '@ccw/shared'
 
 import { AuthGate } from '../src/auth/gate.ts'
+import { sendFile } from '../src/files/raw.ts'
 import { registerRoot } from '../src/files/roots.ts'
 import { createShare, listShares, revokeShare } from '../src/files/shares.ts'
+import { serveStatic } from '../src/http/static.ts'
 import { startServer, type ServerHandle } from '../src/rpc/server.ts'
 import { SessionManager } from '../src/session/manager.ts'
 
@@ -126,6 +130,45 @@ test('an unknown extension is served as text only when it is text', async () => 
   assert.equal(blob.headers.get('content-type'), 'application/octet-stream')
   assert.equal(await readFile(join(workspace, 'notes.unknownext'), 'utf8'), 'plain words')
 })
+
+test('a download cancelled halfway closes the file it was reading', { skip: process.platform !== 'linux' }, async () => {
+  const big = join(workspace, 'big.bin')
+  await writeFile(big, Buffer.alloc(4 * 1024 * 1024))
+  const req = { method: 'GET', url: '/big.bin' } as IncomingMessage
+  for (let i = 0; i < 5; i++) {
+    const shared = abortingResponse()
+    await sendFile(req, shared.res, big, { name: 'big.bin', download: true })
+    await shared.closed
+    // The built UI is served the same way, to clients that never paired.
+    const asset = abortingResponse()
+    await serveStatic(req, asset.res, workspace)
+    await asset.closed
+  }
+  // A destroyed read stream closes its descriptor a tick or two later.
+  for (let tries = 0; tries < 50 && (await openCount(big)) > 0; tries++) await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(await openCount(big), 0)
+})
+
+/** A response whose client goes away after the first chunk, as a cancelled download does. */
+function abortingResponse(): { res: ServerResponse; closed: Promise<void> } {
+  const res = new Writable({
+    write(_chunk, _encoding, callback) {
+      callback()
+      this.destroy()
+    },
+  })
+  Object.assign(res, { writeHead: () => res })
+  return { res: res as unknown as ServerResponse, closed: new Promise((resolve) => res.once('close', () => resolve())) }
+}
+
+/** This process's descriptors open on `path`. */
+async function openCount(path: string): Promise<number> {
+  let count = 0
+  for (const fd of await readdir('/proc/self/fd')) {
+    if ((await readlink(`/proc/self/fd/${fd}`).catch(() => '')) === path) count++
+  }
+  return count
+}
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {

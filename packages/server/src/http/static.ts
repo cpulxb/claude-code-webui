@@ -2,6 +2,7 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { extname, join, resolve, sep } from 'node:path'
+import { pipeline } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 
 /** `pnpm --filter @ccw/web build` output. */
@@ -74,7 +75,8 @@ export async function serveStatic(req: IncomingMessage, res: ServerResponse, roo
     res.end()
     return
   }
-  createReadStream(file)
-    .on('error', () => res.destroy())
-    .pipe(res)
+  // `pipeline`, not `pipe`: when the client goes away mid-download, `pipe`
+  // only unpipes and leaves the read stream paused, holding its descriptor
+  // for good. `pipeline` destroys both ends on an error or an early close.
+  pipeline(createReadStream(file), res, () => {})
 }

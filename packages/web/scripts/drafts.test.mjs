@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { dirtyPaths, getDraft, putDraft, subscribeDrafts } from '../src/components/details/drafts.ts'
+import { afterSave, dirtyPaths, getDraft, putDraft, subscribeDrafts } from '../src/components/details/drafts.ts'
 
 test('the tab strip hears when a file gains or loses its draft, not on every keystroke', () => {
   let heard = 0
@@ -31,4 +31,13 @@ test('the tab strip hears when a file gains or loses its draft, not on every key
   } finally {
     unsubscribe()
   }
+})
+
+test('typing that went on while a save was out stays unsaved, against the text the save wrote', () => {
+  // Nothing typed meanwhile: clean.
+  assert.equal(afterSave('first edit', 'first edit'), null)
+  // Typed on: still dirty, and the file now holds what was saved.
+  assert.deepEqual(afterSave('first edit', 'first edit plus new typing'), { text: 'first edit plus new typing', base: 'first edit' })
+  // Discarded with Esc meanwhile: the editor shows the file, which holds the save.
+  assert.equal(afterSave('first edit', null), null)
 })

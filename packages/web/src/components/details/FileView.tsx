@@ -7,7 +7,7 @@ import { rawFileHref } from '../../utils/shares.ts'
 import { CheckIcon, DownloadIcon, ExternalLinkIcon, RefreshIcon } from '../Icons.tsx'
 import { CodeEditor } from './CodeEditor.tsx'
 import panelStyles from './DetailsPanel.module.css'
-import { getDraft, putDraft } from './drafts.ts'
+import { afterSave, getDraft, putDraft } from './drafts.ts'
 import styles from './FileView.module.css'
 import { ShareButton } from './ShareButton.tsx'
 
@@ -35,6 +35,9 @@ export function FileView({
   const [error, setError] = useState<string | null>(null)
   /** Null while the doc matches disk; the unsaved buffer otherwise. */
   const [draft, setDraft] = useState<string | null>(() => getDraft(path)?.text ?? null)
+  /** The buffer as last rendered: `save()` outlives the render it started in, and typing goes on meanwhile. */
+  const draftRef = useRef(draft)
+  draftRef.current = draft
   const [saving, setSaving] = useState(false)
   const [mdMode, setMdMode] = useState<'preview' | 'edit'>('preview')
   /** Set when disk moved under an unsaved buffer — saving then loses the newer file. */
@@ -124,19 +127,26 @@ export function FileView({
 
   /** Resolves to whether the write landed — callers restore state when it did not. */
   const save = async (): Promise<boolean> => {
-    if (draft === null || saving) return false
+    const text = draft
+    if (text === null || saving) return false
     setSaving(true)
     try {
-      await call('files.write', { path, content: draft })
+      await call('files.write', { path, content: text })
       // Disk now holds the buffer, so that is the baseline the re-read below
       // measures against — the old one would flag our own write as a conflict.
-      baseRef.current = draft
+      baseRef.current = text
       // Re-read before clearing the dirty flag: the value-sync re-arms
       // against `data.content`, and doing this first makes that exactly the
       // text just written — no rollback flash between the two renders.
       await load()
-      setDraft(null)
-      baseRef.current = null
+      // Only what was written is clean. Clearing whatever the editor holds by
+      // now would hand the doc back to the value-sync, which puts the saved
+      // text over anything typed while the write was out.
+      const next = afterSave(text, draftRef.current)
+      baseRef.current = next?.base ?? null
+      setDraft(next?.text ?? null)
+      // The text may be unchanged, which re-runs no effect: the new baseline goes to `drafts` here.
+      if (next) putDraft(path, next)
       // `onSaved` bumps fsVersion by one, which names the effect run to skip.
       // If something else bumps first the guard just misses and the extra read
       // is harmless.
@@ -295,11 +305,13 @@ export function FileView({
             readOnly={!editable}
             dirty={draft !== null}
             onChange={(text) => {
-              if (text === data.content) {
+              if (text === data.content && !saving) {
                 // Back to the text on screen: clean again, baseline included.
                 baseRef.current = null
                 setDraft(null)
               } else {
+                // A save in flight is replacing that baseline. Even edits back
+                // to the old disk text must survive until it finishes.
                 // First keystroke on a clean buffer pins the baseline; later
                 // ones keep it, so a conflict stays visible until it is resolved.
                 baseRef.current ??= data.content

@@ -36,6 +36,16 @@ export function putDraft(path: string, draft: Draft | null): void {
   if (had !== drafts.has(path)) changed()
 }
 
+/**
+ * The buffer once a save of `saved` has landed, given what the editor holds
+ * now (`current`, null when clean). Typing can go on while the write is out:
+ * unless the buffer is exactly what was written it is newer than the file, so
+ * it stays unsaved — against the text the save put on disk.
+ */
+export function afterSave(saved: string, current: string | null): Draft | null {
+  return current === null || current === saved ? null : { text: current, base: saved }
+}
+
 export function dirtyPaths(): ReadonlySet<string> {
   return dirty
 }

@@ -2,6 +2,7 @@ import { createReadStream } from 'node:fs'
 import { open, stat } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { extname } from 'node:path'
+import { pipeline } from 'node:stream'
 
 const TYPES: Record<string, string> = {
   '.png': 'image/png',
@@ -63,9 +64,10 @@ export async function sendFile(
     res.end()
     return
   }
-  createReadStream(path)
-    .on('error', () => res.destroy())
-    .pipe(res)
+  // `pipeline`, not `pipe`: when the client goes away mid-download, `pipe`
+  // only unpipes and leaves the read stream paused, holding its descriptor
+  // for good. `pipeline` destroys both ends on an error or an early close.
+  pipeline(createReadStream(path), res, () => {})
 }
 
 /** `filename` for old clients, ASCII only; `filename*` with the real name for everyone else. */
