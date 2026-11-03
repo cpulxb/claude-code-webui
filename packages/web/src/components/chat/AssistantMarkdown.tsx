@@ -3,7 +3,7 @@
 // `katex` dependency on the same range as rehype-katex's.
 import 'katex/dist/katex.min.css'
 
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import Markdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeKatex from 'rehype-katex'
@@ -55,7 +55,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
   // window rather than per delta.
   const body = useMemo(
     () => (
-      <Markdown remarkPlugins={REMARK} rehypePlugins={REHYPE} components={{ pre: CodeBlock }}>
+      <Markdown remarkPlugins={REMARK} rehypePlugins={REHYPE} components={{ pre: CodeBlock, a: Link }}>
         {markdown}
       </Markdown>
     ),
@@ -111,6 +111,20 @@ function useThrottled(text: string): string {
   }, [text, rendered])
 
   return rendered
+}
+
+/**
+ * A link opens in a new tab, so following one never navigates the app away
+ * from its sessions; an in-page `#anchor` stays where it is. `noopener` keeps
+ * the opened page from reaching back through `window.opener`.
+ */
+function Link({ node: _node, href, children, ...props }: ComponentProps<'a'> & { node?: unknown }): JSX.Element {
+  const inPage = href?.startsWith('#') ?? true
+  return (
+    <a {...props} href={href} {...(inPage ? {} : { target: '_blank', rel: 'noopener noreferrer' })}>
+      {children}
+    </a>
+  )
 }
 
 function CodeBlock({ children }: { children?: ReactNode }): JSX.Element {

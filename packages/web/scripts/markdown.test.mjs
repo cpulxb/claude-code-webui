@@ -175,3 +175,15 @@ test('file previews stay opt-out, and user messages and tool output stay unchang
   assert.equal(nodes[0].text, wrapped)
   assert.equal(nodes[1].content, wrapped)
 })
+
+test('links open in a new tab, without a way back to the app', () => {
+  const html = render('see [the docs](https://dashboard.exa.ai/api-keys) and https://example.com/x')
+  assert.match(html, /<a href="https:\/\/dashboard\.exa\.ai\/api-keys" target="_blank" rel="noopener noreferrer">the docs<\/a>/)
+  assert.match(html, /<a href="https:\/\/example\.com\/x" target="_blank" rel="noopener noreferrer">/)
+})
+
+test('an in-page anchor stays in the page', () => {
+  const html = render('[jump](#section)')
+  assert.match(html, /<a href="#section">jump<\/a>/)
+})
+
