@@ -65,6 +65,26 @@ test('a device left unused past the idle limit has to pair again', async () => {
   assert.equal(store.authenticate(token, '203.0.113.9', now + 2 * DEVICE_IDLE_MS), null)
 })
 
+test('a device in steady use stays paired across a restart', async () => {
+  const devices = await mkdtemp(join(tmpdir(), 'ccw-devices-'))
+  const store = await DeviceStore.open(devices)
+  const start = Date.now()
+  const { token } = await store.add('Chrome · Linux', '203.0.113.9', start)
+  // Half-hourly: no request ever comes an hour after the one before it.
+  let now = start
+  for (let i = 0; i < 6; i++) {
+    now += 30 * 60 * 1000
+    assert.ok(store.authenticate(token, '203.0.113.9', now))
+  }
+  // Touches are written in the background.
+  const saved = async (): Promise<number> =>
+    (JSON.parse(await readFile(join(devices, 'devices.json'), 'utf8')) as { devices: { lastSeenAt: number }[] }).devices[0]!.lastSeenAt
+  for (let tries = 0; tries < 50 && now - (await saved()) > 60 * 60 * 1000; tries++) await new Promise((resolve) => setTimeout(resolve, 10))
+  // Past the idle limit counted from pairing, well inside it counted from the last use.
+  const restarted = await DeviceStore.open(devices)
+  assert.ok(restarted.authenticate(token, '203.0.113.9', start + DEVICE_IDLE_MS + 2 * 60 * 60 * 1000))
+})
+
 test('a request from this machine needs no pairing, one relayed by a proxy does', async () => {
   const local = await call('GET', API_AUTH_PATH)
   assert.deepEqual(JSON.parse(local.body).result, { authenticated: true, local: true })

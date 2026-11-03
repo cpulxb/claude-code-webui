@@ -26,11 +26,16 @@ export type Device = {
 export class DeviceStore {
   readonly #path: string
   readonly #byHash = new Map<string, Device>()
+  /** Each device's `lastSeenAt` as the file has it — what a restart reads back. */
+  readonly #savedSeenAt = new Map<string, number>()
   #writing: Promise<void> = Promise.resolve()
 
   private constructor(path: string, devices: Device[]) {
     this.#path = path
-    for (const device of devices) this.#byHash.set(device.tokenHash, device)
+    for (const device of devices) {
+      this.#byHash.set(device.tokenHash, device)
+      this.#savedSeenAt.set(device.tokenHash, device.lastSeenAt)
+    }
   }
 
   static async open(dir: string): Promise<DeviceStore> {
@@ -55,7 +60,10 @@ export class DeviceStore {
       this.#persistInBackground()
       return null
     }
-    const stale = now - device.lastSeenAt > TOUCH_PERSIST_MS || device.lastIp !== ip
+    // Measured from the file, not from the previous request: a device used
+    // every half hour would otherwise never be written, and a restart after a
+    // month of steady use would read it back as idle.
+    const stale = now - (this.#savedSeenAt.get(device.tokenHash) ?? 0) > TOUCH_PERSIST_MS || device.lastIp !== ip
     device.lastSeenAt = now
     device.lastIp = ip
     if (stale) this.#persistInBackground()
@@ -91,7 +99,10 @@ export class DeviceStore {
   }
 
   #persist(): Promise<void> {
-    const snapshot = JSON.stringify({ devices: [...this.#byHash.values()] }, null, 2)
+    const devices = [...this.#byHash.values()]
+    const snapshot = JSON.stringify({ devices }, null, 2)
+    this.#savedSeenAt.clear()
+    for (const device of devices) this.#savedSeenAt.set(device.tokenHash, device.lastSeenAt)
     const write = async (): Promise<void> => {
       await mkdir(dirname(this.#path), { recursive: true, mode: 0o700 })
       const temp = `${this.#path}.${process.pid}.tmp`
