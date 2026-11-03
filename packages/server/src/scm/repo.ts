@@ -8,6 +8,7 @@ import {
   diffBase,
   git,
   isBinaryDiff,
+  literal,
   resolveInside,
   untrackedDiff,
   type GitContext,
@@ -198,9 +199,9 @@ export async function scmChangeDiff(
   let diff: string
   if (staged) {
     // Without HEAD, `--cached` shows everything staged as added, which is right.
-    diff = await run(ctx, ['diff', '--cached', '-M', '--', path, ...(oldPath ? [oldPath] : [])])
+    diff = await run(ctx, ['diff', '--cached', '-M', '--', ...literal(oldPath ? [path, oldPath] : [path])])
   } else {
-    diff = (await run(ctx, ['diff', '--', path])) || (await untrackedDiff(ctx, path))
+    diff = (await run(ctx, ['diff', '--', ...literal([path])])) || (await untrackedDiff(ctx, path))
   }
   return { diff, binary: isBinaryDiff(diff) }
 }
@@ -210,7 +211,7 @@ export async function scmChangeDiff(
 export async function scmStage(cwd: string, paths: string[]): Promise<void> {
   checkPaths(cwd, paths)
   // `-A` stages deletions too.
-  await run(await requireRepo(cwd), ['add', '-A', '--', ...paths])
+  await run(await requireRepo(cwd), ['add', '-A', '--', ...literal(paths)])
 }
 
 export async function scmUnstage(cwd: string, paths: string[]): Promise<void> {
@@ -218,7 +219,7 @@ export async function scmUnstage(cwd: string, paths: string[]): Promise<void> {
   const ctx = await requireRepo(cwd)
   // From the empty tree while HEAD is unborn, which drops the entries.
   const base = await diffBase(ctx)
-  await run(ctx, ['restore', '--staged', `--source=${base}`, '--', ...paths])
+  await run(ctx, ['restore', '--staged', `--source=${base}`, '--', ...literal(paths)])
 }
 
 /**
@@ -231,10 +232,10 @@ export async function scmRestore(cwd: string, paths: string[]): Promise<void> {
   const ctx = await requireRepo(cwd)
   // Asked of git rather than taken from the request: which files get deleted
   // must not depend on what the client claims is untracked.
-  const known = new Set((await run(ctx, ['ls-files', '-z', '--', ...paths])).split('\0').filter(Boolean))
+  const known = new Set((await run(ctx, ['ls-files', '-z', '--', ...literal(paths)])).split('\0').filter(Boolean))
   const tracked = paths.filter((path) => known.has(path))
   const untracked = paths.filter((path) => !known.has(path))
-  if (tracked.length > 0) await run(ctx, ['restore', '--worktree', '--', ...tracked])
+  if (tracked.length > 0) await run(ctx, ['restore', '--worktree', '--', ...literal(tracked)])
   for (const path of untracked) await rm(resolveInside(cwd, path), { force: true })
 }
 
@@ -344,7 +345,7 @@ export async function scmShowDiff(
   checkPaths(cwd, oldPath ? [path, oldPath] : [path])
   const ctx = await requireRepo(cwd)
   // Both names in the pathspec, or the rename splits into a delete and an add.
-  const diff = await run(ctx, [...SHOW_ARGS, '-p', hash, '--', path, ...(oldPath ? [oldPath] : [])])
+  const diff = await run(ctx, [...SHOW_ARGS, '-p', hash, '--', ...literal(oldPath ? [path, oldPath] : [path])])
   return { diff, binary: isBinaryDiff(diff) }
 }
 

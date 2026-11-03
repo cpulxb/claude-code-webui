@@ -146,6 +146,40 @@ test('restore drops only work-tree changes and deletes untracked files', async (
   assert.deepEqual((await scmRepo(root))?.staged, [{ path: 'a.txt', status: 'modified' }])
 })
 
+test('a file name with glob characters stages, unstages, restores and diffs only itself', async (t) => {
+  const { root, git } = await fixture(t)
+  // As pathspecs, `notes*.txt` would also match `notes-other.txt`, and
+  // `[ab].txt` would match `a.txt` and `b.txt`.
+  await writeFile(join(root, 'notes*.txt'), 'n1\n')
+  await writeFile(join(root, 'notes-other.txt'), 'o1\n')
+  await writeFile(join(root, '[ab].txt'), 'x1\n')
+  await git('add', '.')
+  await git('commit', '--quiet', '-m', 'globs')
+  for (const [name, content] of [
+    ['notes*.txt', 'n2\n'],
+    ['notes-other.txt', 'o2\n'],
+    ['[ab].txt', 'x2\n'],
+    ['a.txt', 'a2\n'],
+    ['b.txt', 'b2\n'],
+  ] as const) {
+    await writeFile(join(root, name), content)
+  }
+  const staged = async (): Promise<string[]> => (await scmRepo(root))?.staged.map((file) => file.path) ?? []
+
+  await scmStage(root, ['notes*.txt'])
+  assert.deepEqual(await staged(), ['notes*.txt'])
+  await scmStage(root, ['notes-other.txt'])
+  await scmUnstage(root, ['notes*.txt'])
+  assert.deepEqual(await staged(), ['notes-other.txt'])
+
+  assert.doesNotMatch((await scmChangeDiff(root, '[ab].txt', false)).diff, /a2|b2/)
+  // git's restore happens to prefer an exact match already; kept as a guard.
+  await scmRestore(root, ['[ab].txt'])
+  assert.equal(await readFile(join(root, '[ab].txt'), 'utf8'), 'x1\n')
+  assert.equal(await readFile(join(root, 'a.txt'), 'utf8'), 'a2\n')
+  assert.equal(await readFile(join(root, 'b.txt'), 'utf8'), 'b2\n')
+})
+
 test('commit, then find it in the log with its refs and files', async (t) => {
   const { root, git } = await fixture(t)
   await assert.rejects(scmCommit(root, '  ', false), /empty/)

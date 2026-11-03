@@ -80,6 +80,16 @@ export function resolveInside(cwd: string, path: string): string {
   return target
 }
 
+/**
+ * Pathspecs for paths taken from a file list. git reads `*`, `?` and `[…]` in
+ * a pathspec as a glob, and a leading `:` as magic: `git add notes*.txt` also
+ * stages `notes-other.txt`, and `git diff` shows it. Only checkout and restore
+ * prefer an exact match when the file exists, which is no reason to rely on it.
+ */
+export function literal(paths: string[]): string[] {
+  return paths.map((path) => `:(literal)${path}`)
+}
+
 /** HEAD when it exists, the empty tree before the first commit. */
 export async function diffBase(ctx: GitContext): Promise<string> {
   try {
@@ -178,7 +188,7 @@ export async function scmDiff(cwd: string, path: string): Promise<{ diff: string
   // A failing `git diff` is not "no changes": letting it through would render
   // the whole file as an addition via the untracked fallback below.
   const base = await diffBase(ctx)
-  const diff = (await git(ctx, ['diff', base, '--', path])) || (await untrackedDiff(ctx, path))
+  const diff = (await git(ctx, ['diff', base, '--', ...literal([path])])) || (await untrackedDiff(ctx, path))
   return { diff, binary: isBinaryDiff(diff) }
 }
 
@@ -231,23 +241,23 @@ export async function scmDiscard(cwd: string, path: string): Promise<void> {
     // Restore the original name first. The steps below are not atomic, so the
     // order is chosen for the least damaging failure: if anything after this
     // throws, the old file is already back and only the new one is left over.
-    await git(ctx, ['restore', `--source=${base}`, '--staged', '--worktree', '--', entry.oldPath])
+    await git(ctx, ['restore', `--source=${base}`, '--staged', '--worktree', '--', ...literal([entry.oldPath])])
     // The new name has no counterpart in the base tree, so only
     // `restore --staged` can drop it from the index.
-    await git(ctx, ['restore', '--staged', `--source=${base}`, '--', entry.path])
+    await git(ctx, ['restore', '--staged', `--source=${base}`, '--', ...literal([entry.path])])
     await rm(renamedTarget, { force: true })
     return
   }
 
   if (entry.status === 'added') {
     // Nothing to restore from: drop the index entry, then the file itself.
-    await git(ctx, ['restore', '--staged', `--source=${base}`, '--', path])
+    await git(ctx, ['restore', '--staged', `--source=${base}`, '--', ...literal([path])])
     await rm(target, { force: true })
     return
   }
 
   // Restores index and worktree from the base tree; also resurrects deletions.
-  await git(ctx, ['checkout', base, '--', path])
+  await git(ctx, ['checkout', base, '--', ...literal([path])])
 }
 
 /* --- shadow repo: diffs for directories that are not git repos ----------- */

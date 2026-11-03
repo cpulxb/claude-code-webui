@@ -40,6 +40,21 @@ test('subdirectory discard restores only the selected file', async (t) => {
   assert.equal(await readFile(join(root, 'outside.txt'), 'utf8'), 'outside edited\n')
 })
 
+test('discarding a file whose name is a glob leaves the files it would match alone', async (t) => {
+  const { cwd, git } = await fixture(t)
+  await writeFile(join(cwd, '[fo]ile.txt'), 'glob\n')
+  await writeFile(join(cwd, 'file.txt'), 'original\n')
+  await git('add', '.')
+  await git('-c', 'user.name=Test', '-c', 'user.email=test@localhost', '-c', 'core.hooksPath=/dev/null',
+    'commit', '--quiet', '--no-gpg-sign', '-m', 'glob')
+  await writeFile(join(cwd, '[fo]ile.txt'), 'glob edited\n')
+  await writeFile(join(cwd, 'file.txt'), 'edited\n')
+  assert.doesNotMatch((await scmDiff(cwd, '[fo]ile.txt')).diff, /\+edited/)
+  await scmDiscard(cwd, '[fo]ile.txt')
+  assert.equal(await readFile(join(cwd, '[fo]ile.txt'), 'utf8'), 'glob\n')
+  assert.equal(await readFile(join(cwd, 'file.txt'), 'utf8'), 'edited\n')
+})
+
 test('a staged addition can still be discarded', async (t) => {
   const { cwd, git } = await fixture(t)
   await writeFile(join(cwd, 'added.txt'), 'added\n')
