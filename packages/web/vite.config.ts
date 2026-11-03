@@ -17,6 +17,8 @@ export default defineConfig({
     port: 5190,
     proxy: {
       '/api': { target: 'http://127.0.0.1:3090', ws: true },
+      // Share links live outside /api: they are opened from anywhere, with no device cookie.
+      '/share': { target: 'http://127.0.0.1:3090' },
     },
   },
 })

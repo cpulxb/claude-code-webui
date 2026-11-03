@@ -382,6 +382,34 @@ export function BracesIcon(props: { size?: number }): JSX.Element {
   )
 }
 
+export function ExternalLinkIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </Icon>
+  )
+}
+
+export function DownloadIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M12 15V3M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5" />
+    </Icon>
+  )
+}
+
+/** 分享链接；设置页「分享」。 */
+export function ShareIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98" />
+    </Icon>
+  )
+}
+
 export function TrashIcon(props: { size?: number }): JSX.Element {
   return (
     <Icon size={props.size}>

@@ -708,6 +708,20 @@
   transform: translateX(14px);
 }
 
+.revoke {
+  flex: none;
+  padding: 2px 10px;
+  margin-left: var(--ccw-space-1);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-danger);
+  border: 1px solid currentColor;
+  border-radius: var(--ccw-radius-pill);
+}
+
+.revoke:hover {
+  background: color-mix(in srgb, var(--ccw-danger) 10%, transparent);
+}
+
 .backLink {
   display: inline-flex;
   gap: 4px;

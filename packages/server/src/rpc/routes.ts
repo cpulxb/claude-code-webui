@@ -1,10 +1,11 @@
 import { stat } from 'node:fs/promises'
 
-import type { RpcMethod, RpcParams, RpcResult, SessionConfig } from '@ccw/shared'
+import { SHARE_TTLS, type RpcMethod, type RpcParams, type RpcResult, type SessionConfig } from '@ccw/shared'
 
 import { browseDirectory } from '../files/browse.ts'
 import { listEntries, readFilePreview, writeTextFile } from '../files/explorer.ts'
 import { registerRoot, resolveInWorkspace } from '../files/roots.ts'
+import { createShare, listShares, revokeShare } from '../files/shares.ts'
 import { suggestFiles } from '../files/suggest.ts'
 import { saveUpload } from '../files/upload.ts'
 import {
@@ -235,6 +236,18 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
       const saved = await saveUpload(await resolveInWorkspace(cwd), filename, Buffer.from(data, 'base64'))
       console.log(`[ccw] uploaded ${saved.path} (${saved.size} bytes) into ${cwd}`)
       return saved
+    },
+
+    'shares.create': async ({ path, ttl }) => {
+      if (!(ttl in SHARE_TTLS)) throw new Error(`unknown ttl ${String(ttl)}`)
+      return createShare(await resolveInWorkspace(path), ttl)
+    },
+
+    'shares.list': async () => ({ shares: await listShares() }),
+
+    'shares.revoke': async ({ id }) => {
+      if (!(await revokeShare(id))) throw new Error('这个分享链接已经不存在了')
+      return {}
     },
 
     'scm.status': async ({ cwd }) => ({ status: await scmStatus(await resolveInWorkspace(cwd)) }),

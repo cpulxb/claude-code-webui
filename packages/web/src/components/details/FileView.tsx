@@ -3,17 +3,21 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 're
 
 import { call } from '../../api/client.ts'
 import { AssistantMarkdown } from '../chat/AssistantMarkdown.tsx'
-import { CheckIcon, RefreshIcon } from '../Icons.tsx'
+import { rawFileHref } from '../../utils/shares.ts'
+import { CheckIcon, DownloadIcon, ExternalLinkIcon, RefreshIcon } from '../Icons.tsx'
 import { CodeEditor } from './CodeEditor.tsx'
 import panelStyles from './DetailsPanel.module.css'
 import { getDraft, putDraft } from './drafts.ts'
 import styles from './FileView.module.css'
+import { ShareButton } from './ShareButton.tsx'
 
 /**
  * One editor tab in the details panel, dsh-style: text opens straight into a
  * live CodeMirror editor, typing lights the dirty dot, and ✓ or Ctrl+S writes
  * the whole file back via `files.write`. Markdown gets a rendered preview
- * (sharing the chat's renderer) with a preview/edit switch in the head.
+ * (sharing the chat's renderer) with a preview/edit switch in the head, and
+ * HTML a sandboxed one beside its source. Any file can be opened in a new
+ * tab, downloaded, or shared as a link.
  */
 export function FileView({
   path,
@@ -39,6 +43,8 @@ export function FileView({
   const [hint, setHint] = useState<string | null>(null)
 
   const markdown = /\.(md|markdown)$/i.test(path)
+  const html = /\.html?$/i.test(path)
+  const previewable = markdown || html
 
   /**
    * The on-disk text `draft` was typed on. Set with the draft and cleared with
@@ -179,7 +185,7 @@ export function FileView({
           <span className={styles.dir}>{`\u200E${dirname(path)}\u200E`}</span>
           <span className={styles.name}>{basename(path)}</span>
         </span>
-        {markdown && data?.kind === 'text' && (
+        {previewable && data?.kind === 'text' && (
           <div className={styles.modeSwitch}>
             <button
               className={mdMode === 'preview' ? styles.modeButtonActive : styles.modeButton}
@@ -193,7 +199,7 @@ export function FileView({
               onClick={() => setMdMode('edit')}
               type="button"
             >
-              编辑
+              {markdown ? '编辑' : '源码'}
             </button>
           </div>
         )}
@@ -214,6 +220,14 @@ export function FileView({
             </button>
           </>
         )}
+        {/* As saved on disk: an unsaved buffer is not what these hand out. */}
+        <a className={panelStyles.iconButton} href={rawFileHref(path)} target="_blank" rel="noopener noreferrer" title="在新标签页打开">
+          <ExternalLinkIcon size={13} />
+        </a>
+        <a className={panelStyles.iconButton} href={rawFileHref(path, true)} download={basename(path)} title="下载">
+          <DownloadIcon size={13} />
+        </a>
+        <ShareButton path={path} />
         <button
           className={panelStyles.iconButton}
           onClick={() => void load()}
@@ -269,6 +283,11 @@ export function FileView({
           <div className={styles.mdPreview}>
             <AssistantMarkdown text={draft ?? data.content} />
           </div>
+        ) : html && mdMode === 'preview' ? (
+          // Scripts run, but in an opaque origin: no cookie, no access to this
+          // page, and the API refuses its cross-site requests. Single-file
+          // pages only — relative resources have no address to load from.
+          <iframe className={styles.htmlPreview} sandbox="allow-scripts" srcDoc={draft ?? data.content} title={basename(path)} />
         ) : (
           <CodeEditor
             path={path}
@@ -295,7 +314,7 @@ export function FileView({
         <div className={styles.note}>文件过大，仅显示前 256 KB，编辑已禁用（共 {formatSize(data.size)}）</div>
       )}
       {hint && <div className={styles.note}>{hint}</div>}
-      {draft !== null && (!markdown || mdMode === 'edit') && (
+      {draft !== null && (!previewable || mdMode === 'edit') && (
         <div className={styles.note}>Ctrl+S 保存 · Esc 放弃修改</div>
       )}
     </div>

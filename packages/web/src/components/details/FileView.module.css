@@ -148,3 +148,81 @@
   color: var(--ccw-text-primary);
   background: var(--ccw-bg-hover);
 }
+
+/* HTML runs in a sandboxed frame on a white page, as a browser would show it. */
+.htmlPreview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  border: 0;
+}
+
+/* --- share popover --------------------------------------------------------- */
+
+.shareRoot {
+  position: relative;
+  flex: none;
+}
+
+.sharePopover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ccw-space-2);
+  width: 300px;
+  padding: var(--ccw-space-3);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-strong);
+  border-radius: var(--ccw-radius-md);
+  box-shadow: var(--ccw-shadow-popover);
+}
+
+.shareTitle {
+  font-size: var(--ccw-text-sm);
+  font-weight: 600;
+}
+
+.shareTtls {
+  display: flex;
+  gap: 2px;
+}
+
+.shareLink {
+  display: flex;
+  gap: var(--ccw-space-1);
+}
+
+.shareInput {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+  color: inherit;
+  background: var(--ccw-bg-sunken);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.shareAction {
+  flex: none;
+  padding: 4px 12px;
+  font-size: var(--ccw-text-sm);
+  color: #fff;
+  background: var(--ccw-accent);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.shareAction:disabled {
+  opacity: 0.6;
+}
+
+.shareNote {
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+}
+

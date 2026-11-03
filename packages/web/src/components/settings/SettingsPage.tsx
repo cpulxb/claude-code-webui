@@ -9,12 +9,13 @@ import { notificationsSupported } from '../Attention.tsx'
 import dialog from '../auth/Auth.module.css'
 import { ConfirmDialog } from '../ConfirmDialog.tsx'
 import { CodeEditor } from '../details/CodeEditor.tsx'
-import { ArrowLeftIcon, BoxIcon, BracesIcon, MonitorIcon, PlugIcon } from '../Icons.tsx'
+import { ArrowLeftIcon, BoxIcon, BracesIcon, MonitorIcon, PlugIcon, ShareIcon } from '../Icons.tsx'
 import { ChannelEditor } from './ChannelEditor.tsx'
 import { ChannelList } from './ChannelList.tsx'
 import { ModelList, type UpstreamAnswer } from './ModelList.tsx'
 import { RoleMap } from './RoleMap.tsx'
 import styles from './Settings.module.css'
+import { SharesSection } from './SharesSection.tsx'
 
 type Json = Record<string, unknown>
 
@@ -30,6 +31,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: JSX.Element }[] = [
   { id: 'channels', label: '渠道', icon: <PlugIcon /> },
   { id: 'models', label: '模型', icon: <BoxIcon /> },
   { id: 'json', label: 'settings.json', icon: <BracesIcon /> },
+  { id: 'shares', label: '分享', icon: <ShareIcon /> },
 ]
 
 const LAYOUTS: [ChatLayout, string, string][] = [
@@ -432,6 +434,9 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
           )}
         </>
       )
+      break
+    case 'shares':
+      content = <SharesSection />
       break
     case 'json':
       content = (

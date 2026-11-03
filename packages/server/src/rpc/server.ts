@@ -1,12 +1,15 @@
 import { createServer as createHttpServer, type IncomingMessage, type RequestListener, type ServerResponse } from 'node:http'
 import { createServer as createHttpsServer } from 'node:https'
+import { basename } from 'node:path'
 import type { Duplex } from 'node:stream'
 
 import {
   API_AUTH_PATH,
   API_EVENTS_PATH,
+  API_FILES_RAW_PATH,
   API_RPC_PATH,
   API_TERM_PATH,
+  SHARE_PATH,
   type RpcMethod,
   type RpcResponse,
   type ServerEvent,
@@ -14,7 +17,9 @@ import {
 import { WebSocketServer, type WebSocket } from 'ws'
 
 import type { AuthGate, Principal } from '../auth/gate.ts'
+import { sendFile } from '../files/raw.ts'
 import { resolveInWorkspace } from '../files/roots.ts'
+import { serveShare } from '../files/shares.ts'
 import { serveStatic } from '../http/static.ts'
 import type { SessionManager } from '../session/manager.ts'
 import { attachTerminal, resolveShell, terminalSize } from '../terminal/pty.ts'
@@ -78,6 +83,15 @@ export function startServer(options: {
   const onRequest: RequestListener = (req, res) => {
     setSecurityHeaders(res, tls !== undefined)
     const path = pathOf(req.url)
+    // Share links need no device: the token is the whole grant.
+    if (path.startsWith(`${SHARE_PATH}/`)) {
+      void serveShare(req, res).catch((error) => {
+        console.error('[ccw] share failed', error)
+        if (!res.headersSent) res.writeHead(500)
+        res.end()
+      })
+      return
+    }
     if (path !== '/api' && !path.startsWith('/api/')) {
       if (!webRoot) {
         respond(res, 404, { ok: false, error: 'not found' })
@@ -119,6 +133,14 @@ export function startServer(options: {
     }
     if (!principal) {
       respond(res, 401, { ok: false, error: 'unauthorized' })
+      return
+    }
+    if ((req.method === 'GET' || req.method === 'HEAD') && path === API_FILES_RAW_PATH) {
+      void serveRaw(req, res).catch((error) => {
+        console.error('[ccw] raw file failed', error)
+        if (!res.headersSent) respond(res, 500, { ok: false, error: message(error) })
+        else res.destroy()
+      })
       return
     }
     if (req.method === 'POST' && path === API_RPC_PATH) {
@@ -275,6 +297,22 @@ function setSecurityHeaders(res: ServerResponse, tls: boolean): void {
   res.setHeader('x-frame-options', 'DENY')
   res.setHeader('content-security-policy', "frame-ancestors 'none'")
   if (tls) res.setHeader('strict-transport-security', 'max-age=15552000')
+}
+
+/**
+ * `GET /api/files/raw?path=`: a workspace file for this device to open in a
+ * tab or download. Same containment as the file RPCs, and the same vague 404
+ * for a path outside every workspace.
+ */
+async function serveRaw(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const query = parseTarget(req.url)?.searchParams
+  const requested = query?.get('path')
+  const path = requested ? await resolveInWorkspace(requested).catch(() => null) : null
+  if (!path) {
+    respond(res, 404, { ok: false, error: 'not found' })
+    return
+  }
+  await sendFile(req, res, path, { name: basename(path), download: query?.get('download') === '1' })
 }
 
 /** Request path, or '' — which matches no route — when the target is unparseable. */

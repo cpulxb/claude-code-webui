@@ -1082,7 +1082,7 @@ export function sessionHref(sessionId: string): string {
   return `/s/${sessionId}`
 }
 
-export const SETTINGS_SECTIONS = ['general', 'channels', 'models', 'json'] as const
+export const SETTINGS_SECTIONS = ['general', 'channels', 'models', 'json', 'shares'] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 
 export function settingsHref(section: SettingsSection): string {

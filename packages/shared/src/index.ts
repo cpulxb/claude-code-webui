@@ -416,6 +416,16 @@ export type Channel = { id: string; name: string; settings: Record<string, unkno
  */
 export type ChannelLibrary = { channels: Channel[]; activeId: string | null; revision: string }
 
+/** How long a share link lives; `never` lasts until it is revoked. */
+export const SHARE_TTLS = { '1h': 60 * 60 * 1000, '1d': 24 * 60 * 60 * 1000, '7d': 7 * 24 * 60 * 60 * 1000, never: null } as const
+export type ShareTtl = keyof typeof SHARE_TTLS
+
+/**
+ * A link to one workspace file that opens without pairing, at
+ * `/share/<token>/<name>`, until `expiresAt` (null: until revoked).
+ */
+export type Share = { id: string; token: string; path: string; name: string; createdAt: number; expiresAt: number | null }
+
 /** One entry of an upstream channel's `/v1/models`. */
 export type UpstreamModel = {
   id: string
@@ -612,6 +622,12 @@ export type RpcMap = {
     params: { cwd: string; filename: string; data: string }
     result: { path: string; size: number }
   }
+  /** A link to `path` that opens without pairing; see `Share`. Only files inside a workspace. */
+  'shares.create': { params: { path: string; ttl: ShareTtl }; result: Share }
+  /** The links still valid, newest first. */
+  'shares.list': { params: Record<string, never>; result: { shares: Share[] } }
+  /** The link stops working at once. */
+  'shares.revoke': { params: { id: string }; result: Record<string, never> }
   /** Changed files in `cwd`, or `{ kind: 'none' }` when it is not a git repo. */
   'scm.status': { params: { cwd: string }; result: { status: ScmStatus } }
   /**
@@ -763,6 +779,13 @@ export const API_EVENTS_PATH = '/api/events'
 /** Query: `cwd` (absolute, must be a known workspace), `cols`, `rows`. */
 export const API_TERM_PATH = '/api/term'
 export const DEFAULT_PORT = 3090
+/**
+ * GET `?path=` (absolute, inside a workspace), `&download=1` for a download:
+ * the file itself, for this device to open in a tab or save.
+ */
+export const API_FILES_RAW_PATH = '/api/files/raw'
+/** Outside `/api`: a share link is opened from other sites and by people with no device cookie. */
+export const SHARE_PATH = '/share'
 
 /**
  * Pairing and device management. Plain HTTP routes rather than RPC methods:
