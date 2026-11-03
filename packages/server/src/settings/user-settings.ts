@@ -58,13 +58,13 @@ export async function writeUserSettings(settings: unknown, revision: string, cwd
   return readUserSettings(cwd)
 }
 
-async function writePrivate(path: string, content: string, mode: number): Promise<void> {
+export async function writePrivate(path: string, content: string, mode: number): Promise<void> {
   await writeFile(path, content, { mode })
   // `mode` only applies when writeFile creates the file.
   await chmod(path, mode)
 }
 
-async function readIfExists(path: string): Promise<string | null> {
+export async function readIfExists(path: string): Promise<string | null> {
   try {
     return await readFile(path, 'utf8')
   } catch (error) {
@@ -73,7 +73,7 @@ async function readIfExists(path: string): Promise<string | null> {
   }
 }
 
-function hash(raw: string): string {
+export function hash(raw: string): string {
   return createHash('sha256').update(raw).digest('hex')
 }
 
@@ -97,7 +97,7 @@ function parse(raw: string, path: string): Record<string, unknown> {
  * A malformed settings.json breaks every CLI session on the machine, the
  * terminal's included, so the fields the CLI is strict about are checked here.
  */
-function validate(settings: unknown): asserts settings is Record<string, unknown> {
+export function validate(settings: unknown): asserts settings is Record<string, unknown> {
   if (!isObject(settings)) throw new Error('设置必须是一个 JSON 对象')
   const { env, model, modelPicker } = settings
   if (env !== undefined) {

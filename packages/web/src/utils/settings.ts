@@ -32,7 +32,7 @@ export const ROLE_KEYS = [
   'CLAUDE_CODE_SUBAGENT_MODEL',
 ] as const
 /** Superseded by the Haiku mapping, so only shown where a file still sets it. */
-const LEGACY_ROLE = 'ANTHROPIC_SMALL_FAST_MODEL'
+export const LEGACY_ROLE = 'ANTHROPIC_SMALL_FAST_MODEL'
 
 /** Stands in for a credential in the JSON view; left as is, the saved value is kept. */
 export const SECRET_MASK = '********'

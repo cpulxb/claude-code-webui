@@ -403,6 +403,19 @@ export type CliConfigRow = {
   overriddenBy?: CliConfigOverride
 }
 
+/**
+ * A saved channel: the part of settings.json the channel and model forms
+ * write (address, key, role mappings, default model, `modelPicker`), in
+ * settings.json's own shape. Switching to it writes that part over the file.
+ */
+export type Channel = { id: string; name: string; settings: Record<string, unknown> }
+
+/**
+ * `~/.config/claude-code-webui/channels.json`. The active channel is the one
+ * settings.json holds; its entry here is refreshed whenever the page saves.
+ */
+export type ChannelLibrary = { channels: Channel[]; activeId: string | null; revision: string }
+
 /** One entry of an upstream channel's `/v1/models`. */
 export type UpstreamModel = {
   id: string
@@ -678,6 +691,22 @@ export type RpcMap = {
   'settings.fetchModels': {
     params: { baseUrl: string; authField: 'ANTHROPIC_AUTH_TOKEN' | 'ANTHROPIC_API_KEY'; key: string }
     result: { models: UpstreamModel[] }
+  }
+  /** The saved channels, from the WebUI's own config directory; empty until the first save. */
+  'channels.read': { params: Record<string, never>; result: ChannelLibrary }
+  /**
+   * Replaces the channel list, refused when it changed since `revision` was
+   * read. With `settings`, settings.json is written too — switching channels
+   * changes both — and both revisions are checked before either is written.
+   */
+  'channels.write': {
+    params: {
+      channels: Channel[]
+      activeId: string | null
+      revision: string
+      settings?: { settings: Record<string, unknown>; revision: string; cwd?: string }
+    }
+    result: { library: ChannelLibrary; settings: UserSettings | null }
   }
   /** The terminal's `/config` rows in `cwd`, which decides the project's own settings. Takes a few seconds: the CLI is asked. */
   'config.read': { params: { cwd: string }; result: { rows: CliConfigRow[] } }

@@ -1,36 +1,22 @@
-import type { SettingsOverride, UserSettings } from '@ccw/shared'
+import type { ChannelLibrary, SettingsOverride, UserSettings } from '@ccw/shared'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 
 import { call } from '../../api/client.ts'
 import { settingsHref, useActiveSessionValue, useStore, type ChatLayout, type SettingsSection } from '../../store/session.ts'
-import {
-  applyForm,
-  formProblems,
-  fullModelId,
-  maskSecrets,
-  SECRET_MASK,
-  toForm,
-  unmaskSecrets,
-  type AuthField,
-  type SettingsForm,
-} from '../../utils/settings.ts'
+import { channelProblems, fromLibrary, newChannelId, switchTo, toLibrary, type ChannelDraft } from '../../utils/channels.ts'
+import { applyForm, formProblems, maskSecrets, SECRET_MASK, toForm, unmaskSecrets, type SettingsForm } from '../../utils/settings.ts'
 import { notificationsSupported } from '../Attention.tsx'
 import dialog from '../auth/Auth.module.css'
+import { ConfirmDialog } from '../ConfirmDialog.tsx'
 import { CodeEditor } from '../details/CodeEditor.tsx'
-import { ArrowLeftIcon, BoxIcon, BracesIcon, ChevronRightIcon, EyeIcon, EyeOffIcon, MonitorIcon, PlugIcon } from '../Icons.tsx'
+import { ArrowLeftIcon, BoxIcon, BracesIcon, MonitorIcon, PlugIcon } from '../Icons.tsx'
+import { ChannelEditor } from './ChannelEditor.tsx'
+import { ChannelList } from './ChannelList.tsx'
 import { ModelList, type UpstreamAnswer } from './ModelList.tsx'
+import { RoleMap } from './RoleMap.tsx'
 import styles from './Settings.module.css'
 
 type Json = Record<string, unknown>
-
-const ROLE_LABELS: Record<string, string> = {
-  ANTHROPIC_DEFAULT_OPUS_MODEL: 'Opus',
-  ANTHROPIC_DEFAULT_SONNET_MODEL: 'Sonnet',
-  ANTHROPIC_DEFAULT_HAIKU_MODEL: 'Haiku',
-  ANTHROPIC_DEFAULT_FABLE_MODEL: 'Fable',
-  CLAUDE_CODE_SUBAGENT_MODEL: '子 agent',
-  ANTHROPIC_SMALL_FAST_MODEL: 'Small fast（旧）',
-}
 
 const SOURCE_LABELS: Record<SettingsOverride['source'], string> = {
   project: '项目配置',
@@ -109,14 +95,19 @@ function parseJson(text: string): Json {
 
 const showAsJson = (settings: Json): string => JSON.stringify(maskSecrets(settings), null, 2)
 
+/** Which upstream answer belongs to a form: one asked with another address or key is another channel's. */
+const connectionOf = (form: SettingsForm): string => JSON.stringify([form.baseUrl.trim(), form.authField, form.key])
+
 /**
  * The settings page at `/settings/<section>`, a section per sidebar entry:
  * what only this browser keeps, then the user-level settings.json as the
  * channel and model forms and as the whole file in JSON, each following the
- * other's edits. The draft spans the sections, so moving between them keeps
- * it; nothing is written until 保存, and leaving the page drops what was not
- * saved. Live sessions pick a saved channel up at their next model refresh —
- * the composer runs one every few seconds.
+ * other's edits, and the saved channels to switch between. The form is the
+ * active channel. The draft spans the sections, so moving between them keeps
+ * it; nothing is written until 保存 — or a channel's switch, which saves at
+ * once — and leaving the page drops what was not saved. Live sessions pick a
+ * saved channel up at their next model refresh — the composer runs one every
+ * few seconds.
  */
 export function SettingsPage({ section, onLeave }: { section: SettingsSection; onLeave: () => void }): JSX.Element {
   const cwd = useActiveSessionValue((session) => session.cwd)
@@ -132,8 +123,16 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
   const [typed, setTyped] = useState<string | null>(null)
   /** Why `typed` does not parse; the form waits until it does. */
   const [jsonError, setJsonError] = useState<string | null>(null)
-  const [showKey, setShowKey] = useState(false)
-  const [rolesOpen, setRolesOpen] = useState(false)
+  /** The channel list as last read or saved. */
+  const [library, setLibrary] = useState<ChannelLibrary | null>(null)
+  /** The channels as edited; the active entry's form is stale, the page's `form` stands for it. */
+  const [drafts, setDrafts] = useState<ChannelDraft[]>([])
+  const [activeId, setActiveId] = useState('')
+  /** What `toLibrary` gave for the channels as read, to tell when they were edited. */
+  const [baseline, setBaseline] = useState('')
+  /** The channel open in the 渠道 section's editor, or null for the list. */
+  const [editing, setEditing] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<ChannelDraft | null>(null)
   /** The last 获取模型列表, with the channel it was asked of. */
   const [asked, setAsked] = useState<(UpstreamAnswer & { channel: string }) | null>(null)
   const [fetching, setFetching] = useState(false)
@@ -154,12 +153,21 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
     setError(null)
   }
 
+  const showLibrary = (next: ChannelLibrary, settings: Json): void => {
+    const derived = fromLibrary(next, settings)
+    setLibrary(next)
+    setDrafts(derived.drafts)
+    setActiveId(derived.activeId)
+    setBaseline(JSON.stringify(toLibrary(derived.drafts, derived.activeId, toForm(settings))))
+  }
+
   const load = async (): Promise<void> => {
     const request = ++requests.current
     try {
-      const next = await call('settings.read', cwd ? { cwd } : {})
+      const [next, channels] = await Promise.all([call('settings.read', cwd ? { cwd } : {}), call('channels.read', {})])
       if (request !== requests.current) return
       show(next)
+      showLibrary(channels, next.settings)
       setSaved(false)
     } catch (cause) {
       if (request === requests.current) setError(describe(cause))
@@ -167,9 +175,11 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
   }
 
   const draft: Json | null = jsonError !== null ? null : typed === null ? applyForm(base, form) : base
-  const dirty = loaded !== null && (draft === null || JSON.stringify(draft) !== JSON.stringify(loaded.settings))
-  const problems = jsonError !== null ? [`JSON 有误：${jsonError}`] : formProblems(form)
-  const canSave = loaded !== null && dirty && problems.length === 0 && !saving
+  const settingsDirty = loaded !== null && (draft === null || JSON.stringify(draft) !== JSON.stringify(loaded.settings))
+  const channelsDirty = library !== null && JSON.stringify(toLibrary(drafts, activeId, form)) !== baseline
+  const dirty = settingsDirty || channelsDirty
+  const problems = jsonError !== null ? [`JSON 有误：${jsonError}`] : [...formProblems(form), ...channelProblems(drafts, activeId)]
+  const canSave = loaded !== null && library !== null && dirty && problems.length === 0 && !saving
 
   // Read again as the session beneath changes, for the overrides its project
   // adds — a reload of this page opens that session a moment later. Never
@@ -181,21 +191,62 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
 
   useEffect(() => page.current?.focus(), [])
 
-  const save = async (): Promise<void> => {
-    if (!canSave || !draft) return
+  /**
+   * Writes the channel list, with settings.json when it changed, in one
+   * request that checks both revisions before writing either. The active
+   * channel is saved as `settings` makes it.
+   */
+  const persist = async (settings: Json, channels: ChannelDraft[], active: string): Promise<void> => {
+    if (!loaded || !library) return
     requests.current += 1
     setSaving(true)
     setError(null)
     try {
-      const next = await call('settings.write', { settings: draft, revision: loaded.revision, ...(cwd ? { cwd } : {}) })
+      const changed = JSON.stringify(settings) !== JSON.stringify(loaded.settings)
+      const result = await call('channels.write', {
+        ...toLibrary(channels, active, toForm(settings)),
+        revision: library.revision,
+        ...(changed ? { settings: { settings, revision: loaded.revision, ...(cwd ? { cwd } : {}) } } : {}),
+      })
       void refreshModels()
-      show(next)
+      const written = result.settings ?? loaded
+      show(written)
+      showLibrary(result.library, written.settings)
       setSaved(true)
     } catch (cause) {
       setError(describe(cause))
     } finally {
       setSaving(false)
     }
+  }
+
+  const save = async (): Promise<void> => {
+    if (!canSave || !draft) return
+    await persist(draft, drafts, activeId)
+  }
+
+  /** Turning a channel on: settings.json switches to it at once, the one it leaves keeping its latest form. */
+  const activate = (id: string): void => {
+    const target = drafts.find((entry) => entry.id === id)
+    if (!loaded || !target || dirty || saving || id === activeId) return
+    const kept = drafts.map((entry) => (entry.id === activeId ? { ...entry, form } : entry))
+    void persist(switchTo(loaded.settings, target.form), kept, id)
+  }
+
+  const patchChannel = (id: string, next: Partial<ChannelDraft>): void =>
+    setDrafts((current) => current.map((entry) => (entry.id === id ? { ...entry, ...next } : entry)))
+
+  const addChannel = (): void => {
+    const id = newChannelId()
+    setDrafts((current) => [...current, { id, name: '', form: toForm({}) }])
+    setEditing(id)
+  }
+
+  const duplicateChannel = (id: string): void => {
+    const source = drafts.find((entry) => entry.id === id)
+    if (!source) return
+    const copy = { id: newChannelId(), name: `${source.name.trim()} 副本`, form: structuredClone(id === activeId ? form : source.form) }
+    setDrafts((current) => current.flatMap((entry) => (entry.id === id ? [entry, copy] : [entry])))
   }
 
   // Keys stay on the page: the workspace beneath listens on the window for
@@ -228,13 +279,13 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
   }
 
   // A list fetched with another address or key belongs to another channel: it is dropped once those change.
-  const channel = JSON.stringify([form.baseUrl.trim(), form.authField, form.key])
-  const upstream = asked?.channel === channel ? asked : null
+  const upstreamOf = (of: SettingsForm): UpstreamAnswer | null => (asked?.channel === connectionOf(of) ? asked : null)
 
-  const fetchModels = async (): Promise<void> => {
+  const fetchModels = async (of: SettingsForm): Promise<void> => {
+    const channel = connectionOf(of)
     setFetching(true)
     try {
-      const { models } = await call('settings.fetchModels', { baseUrl: form.baseUrl, authField: form.authField, key: form.key })
+      const { models } = await call('settings.fetchModels', { baseUrl: of.baseUrl, authField: of.authField, key: of.key })
       setAsked({ channel, models, error: null })
     } catch (cause) {
       setAsked({ channel, models: [], error: describe(cause) })
@@ -243,13 +294,8 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
     }
   }
 
-  const pickerIds = form.models.filter((row) => row.model.trim()).map((row) => ({ id: fullModelId(row), label: row.label }))
-  const known = new Set(pickerIds.map(({ id }) => id))
-  const roleChoices = [
-    ...pickerIds,
-    ...(upstream?.models ?? []).filter(({ id }) => !known.has(id)).map(({ id, owner }) => ({ id, label: owner ?? '' })),
-  ]
-  const rolesSet = Object.values(form.roles).filter((value) => value.trim()).length
+  const activeName = drafts.find((entry) => entry.id === activeId)?.name.trim() || '未命名渠道'
+  const edited = drafts.find((entry) => entry.id === editing)
 
   let status: JSX.Element | null = null
   if (error) {
@@ -264,7 +310,7 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
   } else if (problems.length > 0) {
     status = <span className={styles.statusError}>{problems[0]}</span>
   } else if (saved && !dirty) {
-    status = <span className={styles.statusSaved}>已保存。渠道和模型列表在会话空闲时切换，其他设置对新会话生效。</span>
+    status = <span className={styles.statusSaved}>已保存，当前渠道是「{activeName}」。渠道和模型列表在会话空闲时切换，其他设置对新会话生效。</span>
   } else if (dirty) {
     status = <span className={styles.statusDirty}>有未保存的修改，离开这个页面就会丢弃</span>
   }
@@ -326,66 +372,36 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
       )
       break
     case 'channels':
-      content = (
+      content = edited ? (
+        fileForm(
+          <ChannelEditor
+            key={edited.id}
+            name={edited.name}
+            onName={(name) => patchChannel(edited.id, { name })}
+            form={edited.id === activeId ? form : edited.form}
+            onChange={edited.id === activeId ? patch : (next) => patchChannel(edited.id, { form: { ...edited.form, ...next } })}
+            active={edited.id === activeId}
+            upstream={upstreamOf(edited.id === activeId ? form : edited.form)}
+            fetching={fetching}
+            onFetch={() => void fetchModels(edited.id === activeId ? form : edited.form)}
+            onBack={() => setEditing(null)}
+          />,
+        )
+      ) : (
         <>
           {notices}
           {fileForm(
-            <section className={styles.section}>
-              <div className={dialog.sectionTitle}>渠道</div>
-              <div className={styles.field}>
-                <label className={styles.label} htmlFor="ccw-settings-url">
-                  请求地址
-                </label>
-                <input
-                  id="ccw-settings-url"
-                  className={`${styles.input} ${problems.some((p) => p.startsWith('请求地址')) ? styles.invalid : ''}`}
-                  value={form.baseUrl}
-                  onChange={(event) => patch({ baseUrl: event.target.value })}
-                  placeholder="留空使用官方地址，例如 https://api.example.com"
-                  spellCheck={false}
-                />
-              </div>
-              <div className={styles.field}>
-                <label className={styles.label} htmlFor="ccw-settings-auth">
-                  认证字段
-                </label>
-                <select
-                  id="ccw-settings-auth"
-                  className={styles.input}
-                  value={form.authField}
-                  onChange={(event) => patch({ authField: event.target.value as AuthField })}
-                >
-                  <option value="ANTHROPIC_AUTH_TOKEN">ANTHROPIC_AUTH_TOKEN（Authorization: Bearer）</option>
-                  <option value="ANTHROPIC_API_KEY">ANTHROPIC_API_KEY（x-api-key）</option>
-                </select>
-              </div>
-              <div className={styles.field}>
-                <label className={styles.label} htmlFor="ccw-settings-key">
-                  Key
-                </label>
-                <div className={styles.secret}>
-                  <input
-                    id="ccw-settings-key"
-                    className={styles.input}
-                    type={showKey ? 'text' : 'password'}
-                    value={form.key}
-                    onChange={(event) => patch({ key: event.target.value })}
-                    placeholder="留空使用 CLI 自己的登录"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                  <button
-                    className={styles.iconButton}
-                    onClick={() => setShowKey(!showKey)}
-                    type="button"
-                    title={showKey ? '隐藏' : '显示'}
-                    aria-label={showKey ? '隐藏 Key' : '显示 Key'}
-                  >
-                    {showKey ? <EyeOffIcon size={15} /> : <EyeIcon size={15} />}
-                  </button>
-                </div>
-              </div>
-            </section>,
+            <ChannelList
+              drafts={drafts}
+              activeId={activeId}
+              activeForm={form}
+              locked={saving ? '保存中…' : dirty ? '有未保存的修改，先保存或放弃（重新载入）再切换渠道' : null}
+              onActivate={activate}
+              onEdit={setEditing}
+              onDuplicate={duplicateChannel}
+              onDelete={(id) => setDeleting(drafts.find((entry) => entry.id === id) ?? null)}
+              onAdd={addChannel}
+            />,
           )}
         </>
       )
@@ -394,67 +410,24 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
       content = (
         <>
           {notices}
+          <div className={dialog.muted}>
+            当前渠道「{activeName}」的模型。要换一套模型，到
+            <a
+              className={styles.inlineLink}
+              href={settingsHref('channels')}
+              onClick={(event) => {
+                event.preventDefault()
+                setSettingsSection('channels')
+              }}
+            >
+              渠道
+            </a>
+            里切换。
+          </div>
           {fileForm(
             <>
-              <ModelList form={form} onChange={patch} upstream={upstream} fetching={fetching} onFetch={() => void fetchModels()} />
-
-              <section className={styles.section}>
-                <button
-                  className={styles.disclosure}
-                  onClick={() => setRolesOpen(!rolesOpen)}
-                  type="button"
-                  aria-expanded={rolesOpen}
-                >
-                  <span className={rolesOpen ? styles.chevronOpen : styles.chevron}>
-                    <ChevronRightIcon size={14} />
-                  </span>
-                  角色映射
-                  {rolesSet > 0 && <span className={styles.count}>{rolesSet}</span>}
-                </button>
-                {rolesOpen && (
-                  <>
-                    <div className={dialog.muted}>
-                      Claude Code 内部仍按 opus、sonnet、haiku 这些别名调用模型，比如后台的小任务和子 agent。接第三方网关时，要把它们映射到网关认识的模型。
-                    </div>
-                    <button
-                      className={styles.add}
-                      onClick={() =>
-                        patch({ roles: Object.fromEntries(Object.keys(form.roles).map((key) => [key, form.defaultModel])) })
-                      }
-                      disabled={!form.defaultModel}
-                      type="button"
-                      title={form.defaultModel ? `全部设为 ${form.defaultModel}` : '先在模型列表里选一个默认模型'}
-                    >
-                      全部设为默认模型
-                    </button>
-                    <div className={styles.roles}>
-                      {Object.entries(form.roles).map(([key, value]) => (
-                        <div className={styles.field} key={key}>
-                          <label className={styles.label} htmlFor={`ccw-settings-${key}`} title={key}>
-                            {ROLE_LABELS[key] ?? key}
-                          </label>
-                          <input
-                            id={`ccw-settings-${key}`}
-                            className={styles.input}
-                            list="ccw-picker-models"
-                            value={value}
-                            onChange={(event) => patch({ roles: { ...form.roles, [key]: event.target.value } })}
-                            placeholder={key}
-                            spellCheck={false}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <datalist id="ccw-picker-models">
-                      {roleChoices.map(({ id, label }) => (
-                        <option key={id} value={id}>
-                          {label}
-                        </option>
-                      ))}
-                    </datalist>
-                  </>
-                )}
-              </section>
+              <ModelList form={form} onChange={patch} upstream={upstreamOf(form)} fetching={fetching} onFetch={() => void fetchModels(form)} />
+              <RoleMap form={form} onChange={patch} upstream={upstreamOf(form)?.models ?? []} />
             </>,
           )}
         </>
@@ -524,6 +497,21 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
           <div className={section === 'json' ? `${styles.card} ${styles.cardFill}` : styles.card}>{content}</div>
         </div>
       </div>
+
+      {deleting && (
+        <ConfirmDialog
+          title="删除渠道"
+          message={`删除渠道「${deleting.name.trim() || '未命名渠道'}」？点保存后才会真正删除。`}
+          confirmLabel="删除"
+          danger
+          onConfirm={() => {
+            setDrafts((current) => current.filter((entry) => entry.id !== deleting.id))
+            if (editing === deleting.id) setEditing(null)
+            setDeleting(null)
+          }}
+          onCancel={() => setDeleting(null)}
+        />
+      )}
 
       <div className={styles.footer}>
         <div className={styles.status} role="status">
