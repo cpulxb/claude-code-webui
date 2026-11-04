@@ -33,6 +33,7 @@ import { ScmView } from './ScmView.tsx'
 import { SkillsSection } from './SkillsSection.tsx'
 import { StartPage } from './StartPage.tsx'
 import { TerminalView } from './TerminalView.tsx'
+import { UsageSection } from './UsageSection.tsx'
 
 /**
  * One panel tab. Editor tabs are keyed by absolute path and terminals by a
@@ -236,7 +237,7 @@ export function DetailsPanel({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onReveal, update, openTerminal])
 
-  // `/mcp`, `/skills`, `/plugins` and `/status` from the composer: bring up 详情 at that section.
+  // `/mcp`, `/skills`, `/plugins`, `/status` and `/usage` from the composer: bring up 详情 at that section.
   useEffect(() => {
     let release = (): void => {}
     const onShow = (event: Event): void => {
@@ -650,6 +651,10 @@ function InfoPane({
           <Field label="认证" value={(account.apiKeySource ?? account.tokenSource)!} />
         )}
       </div>
+
+      {/* Next to the account it bills, and above the sections that fill in late
+          (plugins take seconds), which would push it off when `/usage` pins it. */}
+      <UsageSection sessionId={sessionId} attached={attached} status={status} />
 
       {/* Keyed by cwd: switching workspaces drops open diffs and pending confirms. */}
       <ScmSection key={cwd} cwd={cwd} turnStatus={status} fsVersion={fsVersion} onOpen={onOpenScm} />

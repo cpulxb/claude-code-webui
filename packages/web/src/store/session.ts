@@ -18,6 +18,7 @@ import type {
   SubagentMeta,
   TurnTotals,
   UpdateStatus,
+  UsageReport,
 } from '@ccw/shared'
 import { mergeProjectSessions, PERMISSION_MODES } from '@ccw/shared'
 import { create } from 'zustand'
@@ -104,6 +105,13 @@ export type SessionState = {
   pendingPermissions: PermissionRequest[]
   /** `/context` breakdown, refreshed after each turn. Null until the first one. */
   contextUsage: ContextUsage | null
+  /**
+   * `/usage`, read by the 详情 section while it is up. `scanning` covers the
+   * slow read that includes `behaviors`; the quick re-reads after each turn
+   * leave that part out and keep the last scan's. `scanQueued` is a scan the
+   * `/usage` command asked for and the section has yet to start.
+   */
+  usage: { report: UsageReport | null; scanQueued: boolean; scanning: boolean; error: string | null }
   /**
    * Mid-turn context total, read off each streamed assistant message's API
    * usage. Null while idle — between turns the authoritative snapshot above
@@ -203,6 +211,13 @@ type Store = {
   rewindFiles: (nodeId: string, dryRun: boolean) => Promise<RewindFilesResult>
   /** Bumps `fsVersion` after an out-of-band write (editor-tab save). */
   touchFs: (sessionId: string) => void
+  /**
+   * Reads `/usage` into `usage`; `behaviors` adds the scan of the last week's
+   * local transcripts. A read of the same kind already out is joined, not repeated.
+   */
+  loadUsage: (sessionId: string, behaviors: boolean) => Promise<void>
+  /** Marks a scan for the 详情 section to start once its own first reads are out. */
+  queueUsageScan: (sessionId: string) => void
   /** Shows a subagent's conversation in the chat pane; null goes back to the main thread. */
   openAgent: (toolUseId: string | null) => Promise<void>
   stopAgent: (toolUseId: string) => Promise<void>
@@ -246,6 +261,7 @@ function newSession(sessionId: string, cwd: string, attached: boolean): SessionS
     model: null,
     pendingPermissions: [],
     contextUsage: null,
+    usage: { report: null, scanQueued: false, scanning: false, error: null },
     liveTokens: null,
     turnStats: null,
     fsVersion: 0,
@@ -344,6 +360,9 @@ const modelRequests = new Map<string, object>()
  * requests would otherwise collect one stuck call per tick until close.
  */
 const flagRequests = new Set<string>()
+
+/** `/usage` reads in flight by session and kind; see `loadUsage`. */
+const usageReads = new Map<string, Promise<void>>()
 
 // A history read can finish after a new session or prompt arrives. Replay only
 // those newer sidebar updates on top of it, and ignore older overlapping reads.
@@ -981,6 +1000,45 @@ export const useStore = create<Store>()(
       set((state) => {
         const session = state.sessions[sessionId]
         if (session) session.fsVersion += 1
+      }),
+
+    loadUsage: (sessionId, behaviors) => {
+      const key = `${sessionId}:${behaviors}`
+      const pending = usageReads.get(key)
+      if (pending) return pending
+      const update = (apply: (usage: SessionState['usage']) => void): void =>
+        set((state) => {
+          const session = state.sessions[sessionId]
+          if (session) apply(session.usage)
+        })
+      const read = (async () => {
+        if (behaviors)
+          update((usage) => {
+            usage.scanQueued = false
+            usage.scanning = true
+          })
+        try {
+          const { usage: report } = await call('session.usage', { sessionId, behaviors })
+          update((usage) => {
+            // A quick re-read says nothing about behaviors; a scan's null means there are none to show.
+            usage.report = behaviors ? report : { ...report, behaviors: usage.report?.behaviors ?? null }
+            usage.error = null
+          })
+        } catch (error) {
+          update((usage) => void (usage.error = errorMessage(error)))
+        } finally {
+          usageReads.delete(key)
+          if (behaviors) update((usage) => void (usage.scanning = false))
+        }
+      })()
+      usageReads.set(key, read)
+      return read
+    },
+
+    queueUsageScan: (sessionId) =>
+      set((state) => {
+        const session = state.sessions[sessionId]
+        if (session) session.usage.scanQueued = true
       }),
 
     openAgent: async (toolUseId) => {

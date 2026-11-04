@@ -488,3 +488,90 @@
   font-family: var(--ccw-font-mono);
   font-size: var(--ccw-text-xs);
 }
+
+/* `/usage`: sub-heads inside the section, quota bars, the contributors list. */
+.usageHead {
+  display: flex;
+  gap: var(--ccw-space-3);
+  align-items: baseline;
+  margin: var(--ccw-space-3) 0 var(--ccw-space-1);
+}
+
+.usageSub {
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-secondary);
+}
+
+.usageHead .toggle:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.rangeActive {
+  color: var(--ccw-text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.usageModel {
+  display: flex;
+  flex-direction: column;
+  padding: 3px 0;
+}
+
+.usageMeta {
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-faint);
+  overflow-wrap: anywhere;
+}
+
+.usageGroup {
+  margin-top: var(--ccw-space-2);
+}
+
+.usagePct {
+  flex: none;
+  min-width: 32px;
+  color: var(--ccw-text-faint);
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+}
+
+.usageText {
+  min-width: 0;
+  color: var(--ccw-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.quota {
+  padding: 3px 0;
+}
+
+.quotaHead {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-secondary);
+}
+
+.quotaHead .usagePct {
+  text-align: right;
+}
+
+.quotaTrack {
+  height: 6px;
+  margin: 4px 0 3px;
+  overflow: hidden;
+  background: var(--ccw-bg-sunken);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.quotaFill {
+  height: 100%;
+  background: var(--ccw-accent);
+  border-radius: inherit;
+}
+
+.quotaFill[data-high] {
+  background: var(--ccw-warning);
+}

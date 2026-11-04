@@ -7,6 +7,7 @@ import type {
   PermissionUpdate,
   RewindFilesResult,
   SDKControlGetContextUsageResponse,
+  SDKControlGetUsageResponse,
   SDKMessage,
   SessionMessage,
   SlashCommand,
@@ -27,6 +28,12 @@ export type {
 
 /** The `/context` breakdown: per-category tokens plus the CLI's own grid rows. */
 export type ContextUsage = SDKControlGetContextUsageResponse
+
+/**
+ * `/usage`: the session's cost and token totals, the claude.ai plan's quota
+ * windows, and what in the last day or week of local sessions used them.
+ */
+export type UsageReport = SDKControlGetUsageResponse
 
 /** The states the terminal's `/skills` menu cycles through. */
 export type SkillState = 'on' | 'name-only' | 'user-invocable-only' | 'off'
@@ -487,6 +494,11 @@ export type RpcMap = {
   'session.commands': { params: { sessionId: string }; result: { commands: SlashCommand[] } }
   'session.models': { params: { sessionId: string }; result: { models: ModelInfo[]; model?: string } }
   'session.contextUsage': { params: { sessionId: string }; result: { usage: ContextUsage } }
+  /**
+   * `behaviors` adds the scan behind "What's contributing to your usage", which
+   * reads every transcript of the last seven days; without it that part is null.
+   */
+  'session.usage': { params: { sessionId: string; behaviors?: boolean }; result: { usage: UsageReport } }
   /**
    * Restores checkpointed files to their state just before a user message.
    * `dryRun` previews the counts without touching the tree. Requires a live

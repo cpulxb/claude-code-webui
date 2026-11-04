@@ -199,6 +199,42 @@ test('/mcp, /skills, /plugins and /status ask the details panel for their sectio
   assert.deepEqual(seen, ['mcp', 'skills', 'plugins', 'status'])
 })
 
+test('/usage queues a scan for the details panel; quick re-reads keep its findings', async () => {
+  const scanned = { day: { request_count: 3, session_count: 1, behaviors: [], agents: [], skills: [], plugins: [], mcp_servers: [] } }
+  scanned.week = scanned.day
+  const report = (behaviors) => ({
+    session: { total_cost_usd: 1, total_api_duration_ms: 0, total_duration_ms: 0, total_lines_added: 0, total_lines_removed: 0, model_usage: {} },
+    subscription_type: 'pro',
+    rate_limits_available: true,
+    rate_limits: { five_hour: { utilization: 61, resets_at: '2026-11-04T16:40:00.000Z' } },
+    behaviors,
+  })
+  const f = await fixture({ 'session.usage': ({ behaviors }) => ({ usage: report(behaviors ? scanned : null) }) })
+  const usage = () => useStore.getState().sessions[f.sessionId].usage
+  const seen = []
+  const listener = (event) => seen.push(event.detail)
+  window.addEventListener(SHOW_INFO_EVENT, listener)
+  await runLocalCommand(parseLocalCommand('/usage'))
+  window.removeEventListener(SHOW_INFO_EVENT, listener)
+  // The scan holds the CLI for seconds, so the section starts it after its own first reads.
+  assert.deepEqual(seen, ['usage'])
+  assert.deepEqual(calls, [])
+  assert.equal(usage().scanQueued, true)
+
+  const scan = useStore.getState().loadUsage(f.sessionId, true)
+  assert.equal(usage().scanQueued, false)
+  assert.equal(usage().scanning, true)
+  await scan
+  assert.equal(usage().scanning, false)
+  assert.deepEqual(usage().report.behaviors, scanned)
+
+  // Two quick reads at once go out as one, and keep the last scan's findings.
+  calls = []
+  await Promise.all([useStore.getState().loadUsage(f.sessionId, false), useStore.getState().loadUsage(f.sessionId, false)])
+  assert.deepEqual(calls, [{ method: 'session.usage', params: { sessionId: f.sessionId, behaviors: false } }])
+  assert.deepEqual(usage().report.behaviors, scanned)
+})
+
 test('/config asks the details panel for its 配置 tab', async () => {
   await fixture()
   let shown = 0

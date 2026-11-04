@@ -135,6 +135,10 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
       usage: await manager.require(sessionId).contextUsage(),
     }),
 
+    'session.usage': async ({ sessionId, behaviors }) => ({
+      usage: await manager.require(sessionId).usage(behaviors === true),
+    }),
+
     'session.rewindFiles': async ({ sessionId, userMessageId, dryRun }) => ({
       rewind: await manager.require(sessionId).rewindFiles(userMessageId, dryRun ?? false),
     }),

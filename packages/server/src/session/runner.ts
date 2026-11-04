@@ -27,6 +27,7 @@ import type {
   SessionSummary,
   SkillInfo,
   SkillState,
+  UsageReport,
 } from '@ccw/shared'
 
 import { resolveClaudeExecutable } from '../config.ts'
@@ -522,6 +523,17 @@ export class SessionRunner {
   /** The same breakdown the terminal's `/context` command renders. */
   async contextUsage(): Promise<ContextUsage> {
     return this.#query.getContextUsage()
+  }
+
+  /**
+   * The terminal's `/usage`. The SDK marks the request experimental and will
+   * rename it once it settles, so this is the one place that names it. Plan
+   * quotas come from the rate-limit headers of the CLI's own API calls when the
+   * claude.ai usage endpoint does not answer, so they can be null before the
+   * first turn.
+   */
+  async usage(behaviors: boolean): Promise<UsageReport> {
+    return this.#query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: !behaviors })
   }
 
   /** Checkpoint rewind of tracked files to their state at a user message. */

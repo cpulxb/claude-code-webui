@@ -19,6 +19,7 @@ export const LOCAL_COMMANDS: SlashCommand[] = [
   { name: 'skills', description: '查看 skills，设置各自的开关', argumentHint: '' },
   { name: 'plugins', aliases: ['plugin'], description: '查看并管理已安装的插件', argumentHint: '' },
   { name: 'status', description: '查看版本、账号与运行状态', argumentHint: '' },
+  { name: 'usage', description: '查看会话费用、套餐额度和用量来源', argumentHint: '' },
   { name: 'config', description: '查看并修改 Claude Code 的设置', argumentHint: '[key=value]' },
 ]
 
@@ -97,6 +98,13 @@ export async function runLocalCommand(command: LocalCommand): Promise<void> {
     case 'skills':
     case 'plugins':
     case 'status':
+      window.dispatchEvent(new CustomEvent(SHOW_INFO_EVENT, { detail: command.name }))
+      return
+
+    case 'usage':
+      // Queued in the store, not sent by an event: the 详情 tab may not be up to
+      // hear one yet, nor the session attached. The section starts it when both are.
+      store.queueUsageScan(session.sessionId)
       window.dispatchEvent(new CustomEvent(SHOW_INFO_EVENT, { detail: command.name }))
       return
 
