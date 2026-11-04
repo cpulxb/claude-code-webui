@@ -1,18 +1,18 @@
 /**
- * Files the composer cannot send inline (the Messages API only takes images,
- * PDF and plain text) are uploaded into `<cwd>/upload/` and referenced as
- * `@upload/<name>` instead. Only these extensions are taken; the server also
- * checks the bytes look like the kind the extension claims.
+ * Composer files are saved into `<cwd>/upload/` and referenced as
+ * `@upload/<name>`, not sent as inline attachments. The server also checks
+ * the bytes match the extension; accepting a video does not imply the model
+ * can decode it.
  */
 export const UPLOAD_DIR = 'upload'
 
-/**
- * Per file. Uploads travel base64 inside a JSON RPC body capped at 32MB
- * (`MAX_BODY_BYTES` on the server); 20MB inflates to ~26.7MB.
- */
-export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+/** Per file, streamed as a raw HTTP request body (without base64 expansion). */
+export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 export const UPLOAD_KINDS = {
+  image: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+  pdf: ['pdf'],
+  video: ['mp4', 'm4v', 'mov', 'webm', 'mkv', 'avi', 'mpeg', 'mpg', 'ogv', '3gp', '3g2'],
   /** Macro-enabled variants (docm, xlsm, pptm) are deliberately absent. */
   office: ['docx', 'xlsx', 'pptx', 'doc', 'xls', 'ppt'],
   zip: ['zip'],

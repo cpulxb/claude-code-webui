@@ -634,10 +634,9 @@ export type RpcMap = {
    */
   'files.write': { params: { path: string; content: string }; result: { bytesWritten: number } }
   /**
-   * Saves a file into `<cwd>/upload/` for the prompt to reference, for types
-   * the API cannot take inline (docx and the like). `data` is base64. Only
-   * the `UPLOAD_KINDS` extensions are taken, and only when the bytes match;
-   * a taken name gets a numbered suffix. `path` is relative to `cwd`.
+   * Legacy base64 upload; new callers use `API_FILES_UPLOAD_PATH` to stream
+   * bytes without the RPC body's size limit. The same type checks, quota and
+   * non-overwriting names apply. `path` is relative to `cwd`.
    */
   'files.upload': {
     params: { cwd: string; filename: string; data: string }
@@ -811,6 +810,8 @@ export const DEFAULT_PORT = 3090
  * the file itself, for this device to open in a tab or save.
  */
 export const API_FILES_RAW_PATH = '/api/files/raw'
+/** POST `?cwd=&filename=`, application/octet-stream body; returns the files.upload envelope. */
+export const API_FILES_UPLOAD_PATH = '/api/files/upload'
 /** Outside `/api`: a share link is opened from other sites and by people with no device cookie. */
 export const SHARE_PATH = '/share'
 

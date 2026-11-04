@@ -2,6 +2,7 @@ import {
   API_AUTH_PATH,
   API_DEVICES_PATH,
   API_EVENTS_PATH,
+  API_FILES_UPLOAD_PATH,
   API_PAIR_PATH,
   API_PAIRING_CODE_PATH,
   API_REVOKE_PATH,
@@ -45,6 +46,65 @@ export async function call<M extends RpcMethod>(method: M, params: RpcParams<M>)
   const body = (await response.json()) as RpcResponse<M>
   if (!body.ok) throw new Error(body.error)
   return body.result
+}
+
+export type UploadRequest = {
+  cwd: string
+  file: File
+  signal: AbortSignal
+  /** Bytes sent, not a simulated timer; completion still waits for server validation. */
+  onProgress?: (loaded: number) => void
+}
+
+/** Raw bytes avoid base64 inflation; XHR exposes upload progress and real cancellation. */
+export function uploadFile({ cwd, file, signal, onProgress }: UploadRequest): Promise<RpcResult<'files.upload'>> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('上传已取消', 'AbortError'))
+      return
+    }
+    const xhr = new XMLHttpRequest()
+    const url = new URL(API_FILES_UPLOAD_PATH, window.location.href)
+    url.searchParams.set('cwd', cwd)
+    url.searchParams.set('filename', file.name)
+    const abort = (): void => xhr.abort()
+    const finish = (result: RpcResult<'files.upload'> | Error): void => {
+      signal.removeEventListener('abort', abort)
+      if (result instanceof Error) reject(result)
+      else resolve(result)
+    }
+    xhr.open('POST', url.toString())
+    xhr.responseType = 'json'
+    xhr.setRequestHeader('content-type', 'application/octet-stream')
+    xhr.upload.onprogress = (event) => onProgress?.(Math.min(file.size, event.loaded))
+    // Even when a browser omits its last progress event, distinguish "sent"
+    // from "accepted": only the JSON response below marks the file ready.
+    xhr.upload.onload = () => onProgress?.(file.size)
+    xhr.onload = () => {
+      if (xhr.status === 401) notifyUnauthorized()
+      const body = xhr.response as RpcResponse<'files.upload'> | null
+      if (
+        xhr.status >= 200 && xhr.status < 300 && body?.ok &&
+        typeof body.result?.path === 'string' && typeof body.result.size === 'number'
+      ) {
+        finish(body.result)
+      } else {
+        const fallback = xhr.status === 413
+          ? '文件过大，服务器或反向代理拒绝了上传'
+          : `上传失败（HTTP ${xhr.status}），请检查网络或服务器配置`
+        finish(new Error(body && !body.ok && typeof body.error === 'string' ? body.error : fallback))
+      }
+    }
+    xhr.onerror = () => finish(new Error('网络连接中断，请重试上传'))
+    xhr.ontimeout = () => finish(new Error('上传超时，请重试'))
+    xhr.onabort = () => finish(new DOMException('上传已取消', 'AbortError'))
+    signal.addEventListener('abort', abort, { once: true })
+    try {
+      xhr.send(file)
+    } catch (cause) {
+      finish(cause instanceof Error ? cause : new Error(String(cause)))
+    }
+  })
 }
 
 export const fetchAuthStatus = (): Promise<AuthStatus> => authRequest('GET', API_AUTH_PATH)

@@ -1,10 +1,10 @@
-import { MAX_UPLOAD_BYTES, uploadKind, type Attachment, type FileSuggestion, type ModelInfo } from '@ccw/shared'
+import type { FileSuggestion, ModelInfo } from '@ccw/shared'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/shallow'
 
 import { call } from '../../api/client.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
-import { fileToAttachment, fileToBase64, isSupportedAttachment } from '../../utils/attachments.ts'
+import { withUploads } from '../../utils/attachments.ts'
 import { LOCAL_COMMANDS, parseLocalCommand, runLocalCommand } from '../../utils/local-commands.ts'
 import { findModel, modelLabel } from '../../utils/models.ts'
 import { useNarrow } from '../../utils/narrow.ts'
@@ -21,41 +21,13 @@ import { QuoteChips } from './QuoteChips.tsx'
 import { applyTrigger, detectTrigger, type Trigger } from './trigger.ts'
 import { TriggerMenu, type MenuItem } from './TriggerMenu.tsx'
 import { TurnStatus } from './TurnStatus.tsx'
+import { UploadChips } from './UploadChips.tsx'
+import { useUploads } from './useUploads.ts'
 
 const FILE_SUGGEST_DEBOUNCE_MS = 90
 const MODEL_REFRESH_MS = 2000
-/** Per-file cap, kept below what the API accepts after base64 inflation. */
-const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
-const MAX_ATTACHMENTS = 10
-/**
- * Total raw bytes per message. The server rejects request bodies over 32MB
- * (`MAX_BODY_BYTES` in packages/server/src/rpc/server.ts) and attachments
- * travel as base64, which inflates by 4/3 — so 24MB of raw bytes would already
- * fill that body. 18MB leaves room for the prompt text and the JSON envelope,
- * and stops MAX_ATTACHMENTS × MAX_ATTACHMENT_BYTES (50MB raw, ~66MB encoded)
- * from being accepted into a request the server is certain to reject.
- */
-const MAX_ATTACHMENT_TOTAL_BYTES = 18 * 1024 * 1024
 /** A touch keyboard has no Shift+Enter, so there Enter adds a line and the send button sends. */
 const TOUCH = window.matchMedia('(pointer: coarse)')
-
-/**
- * A file uploaded into `<cwd>/upload/` because the API cannot take it inline;
- * the prompt references it as `@<path>`. `path` is null while it uploads.
- */
-type Upload = { key: number; name: string; path: string | null }
-
-/** The prompt with the uploads referenced after it, where the CLI picks `@` mentions up. */
-function withUploads(uploads: Upload[], text: string): string {
-  const refs = uploads.map((upload) => `@${upload.path}`).join(' ')
-  if (!refs) return text
-  return text ? `${text}\n\n${refs}` : refs
-}
-
-/** Raw bytes behind a base64 payload, give or take the two padding chars. */
-function rawBytes(data: string): number {
-  return Math.floor((data.length * 3) / 4)
-}
 
 /** Grows the box to its text, up to the stylesheet's max-height. */
 function fitHeight(element: HTMLTextAreaElement): void {
@@ -105,10 +77,9 @@ export function Composer(): JSX.Element | null {
   const [text, setText] = useState('')
   // The terminal's bash mode: a leading `!` runs the rest in the session's cwd.
   const shellMode = text.trimStart().startsWith('!')
-  const [attachments, setAttachments] = useState<Attachment[]>([])
-  const [uploads, setUploads] = useState<Upload[]>([])
-  const uploading = uploads.some((upload) => upload.path === null)
+  const { uploads, blockReason, addFiles, cancelUpload, retryUpload, removeUpload, clearUploads } = useUploads(activeId, cwd)
   const [attachError, setAttachError] = useState<string | null>(null)
+  useEffect(() => setAttachError(null), [activeId, cwd])
   const [trigger, setTrigger] = useState<Trigger | null>(null)
   const [activeIndex, setActiveIndex] = useState(0)
   const [files, setFiles] = useState<FileSuggestion[]>([])
@@ -124,7 +95,6 @@ export function Composer(): JSX.Element | null {
   const modelPillRef = useRef<HTMLButtonElement>(null)
   const modelsRef = useRef<HTMLDivElement>(null)
   const fileSeqRef = useRef(0)
-  const uploadSeqRef = useRef(0)
   const quoteCountRef = useRef(quotes.length)
 
   // Commands bound to a terminal (statusline, vim mode…) are meaningless in a
@@ -336,26 +306,25 @@ export function Composer(): JSX.Element | null {
   )
 
   const submit = useCallback(() => {
-    // An upload still on its way has no path to reference yet.
-    if (uploading) return
+    // Never silently omit an unfinished, failed or cancelled attachment.
+    if (closed || blockReason) return
     const trimmed = text.trim()
-    if (!trimmed && attachments.length === 0 && uploads.length === 0) return
+    if (!trimmed && uploads.length === 0) return
     // Attachments and quotes make it a prompt: neither a shell command nor a
     // local command has anywhere to put them.
-    const plain = attachments.length === 0 && uploads.length === 0 && quotes.length === 0
+    const plain = uploads.length === 0 && quotes.length === 0
     const command = shellMode && plain ? trimmed.slice(1).trim() : null
     if (command === '') return
     const local = plain ? parseLocalCommand(trimmed) : null
     if (command) void runShell(command)
     else if (local) void runLocalCommand(local)
-    else void send(withQuotes(quotes, withUploads(uploads, trimmed)), attachments)
+    else void send(withQuotes(quotes, withUploads(uploads, trimmed)))
     setText('')
-    setAttachments([])
-    setUploads([])
+    clearUploads()
     setAttachError(null)
     setTrigger(null)
     setQuotes([])
-  }, [text, attachments, uploads, uploading, quotes, shellMode, send, runShell, setQuotes])
+  }, [text, uploads, blockReason, closed, quotes, shellMode, send, runShell, setQuotes, clearUploads])
 
   // The `/` button. A slash is only a command at the very start of the input —
   // see `detectTrigger` — so it goes there rather than at the caret.
@@ -433,65 +402,15 @@ export function Composer(): JSX.Element | null {
     }
   }
 
-  /** Uploads one file into `<cwd>/upload/`; its chip shows until it is sent or removed. */
-  const upload = async (file: File): Promise<void> => {
-    if (cwd === undefined) return
-    const key = ++uploadSeqRef.current
-    setUploads((current) => [...current, { key, name: file.name, path: null }])
-    try {
-      const { path } = await call('files.upload', { cwd, filename: file.name, data: await fileToBase64(file) })
-      // A chip removed mid-upload stays removed; the file stays on the server.
-      setUploads((current) => current.map((item) => (item.key === key ? { ...item, path } : item)))
-    } catch (cause) {
-      setUploads((current) => current.filter((item) => item.key !== key))
-      setAttachError(`${file.name}：上传失败，${cause instanceof Error ? cause.message : String(cause)}`)
-    }
-  }
-
-  const addFiles = async (list: FileList | File[]): Promise<void> => {
-    const rejected: string[] = []
-    const accepted: File[] = []
-    const toUpload: File[] = []
-    // Both budgets shrink as files are taken, so one drop of many files is
-    // capped exactly like several drops of one file.
-    let room = MAX_ATTACHMENTS - attachments.length - uploads.length
-    let budget = MAX_ATTACHMENT_TOTAL_BYTES - attachments.reduce((sum, item) => sum + rawBytes(item.data), 0)
-    let noRoom = false
-    let noBudget = false
-    for (const file of list) {
-      if (!isSupportedAttachment(file)) {
-        // What the API cannot take inline goes to the server, if it is a type allowed there.
-        if (!uploadKind(file.name)) rejected.push(`${file.name}：不支持的类型 ${file.type || '未知'}`)
-        else if (file.size > MAX_UPLOAD_BYTES) rejected.push(`${file.name}：超过 ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB`)
-        else if (room <= 0) noRoom = true
-        else {
-          toUpload.push(file)
-          room -= 1
-        }
-      } else if (file.size > MAX_ATTACHMENT_BYTES)
-        rejected.push(`${file.name}：超过 ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB`)
-      else if (room <= 0) noRoom = true
-      else if (file.size > budget) noBudget = true
-      else {
-        accepted.push(file)
-        room -= 1
-        budget -= file.size
-      }
-    }
-    if (noRoom) rejected.push(`最多 ${MAX_ATTACHMENTS} 个附件`)
-    if (noBudget) rejected.push(`附件总大小不能超过 ${MAX_ATTACHMENT_TOTAL_BYTES / (1024 * 1024)} MB`)
-    setAttachError(rejected.length > 0 ? rejected.join('；') : null)
-    for (const file of toUpload) void upload(file)
-    if (accepted.length === 0) return
-    const added = await Promise.all(accepted.map(fileToAttachment))
-    setAttachments((current) => [...current, ...added])
+  const pickFiles = (files: Iterable<File>): void => {
+    if (!closed) setAttachError(addFiles(files))
   }
 
   const onPaste = (event: React.ClipboardEvent): void => {
     const pasted = [...event.clipboardData.files]
     if (pasted.length === 0) return
     event.preventDefault()
-    void addFiles(pasted)
+    pickFiles(pasted)
   }
 
   const mode = MODE_META[permissionMode]
@@ -502,7 +421,21 @@ export function Composer(): JSX.Element | null {
     <div className={styles.wrap}>
       <div className={styles.inner}>
         {running && <TurnStatus />}
-        <div className={`${styles.box} ${shellMode ? styles.boxShell : ''}`} style={{ position: 'relative' }}>
+        <div
+          className={`${styles.box} ${shellMode ? styles.boxShell : ''}`}
+          style={{ position: 'relative' }}
+          onDragOver={(event) => {
+            if (event.dataTransfer.types.includes('Files')) {
+              event.preventDefault()
+              event.dataTransfer.dropEffect = closed ? 'none' : 'copy'
+            }
+          }}
+          onDrop={(event) => {
+            if (event.dataTransfer.files.length === 0) return
+            event.preventDefault()
+            pickFiles(event.dataTransfer.files)
+          }}
+        >
           {trigger?.kind === '/' && (
             <CommandPalette
               entries={entries}
@@ -566,42 +499,17 @@ export function Composer(): JSX.Element | null {
             <QuoteChips quotes={quotes} onRemove={(index) => setQuotes(quotes.filter((_, i) => i !== index))} />
           )}
 
-          {attachError && <div className={styles.attachError}>{attachError}</div>}
-
-          {attachments.length + uploads.length > 0 && (
-            <div className={styles.attachments}>
-              {attachments.map((attachment, index) => (
-                <span key={index} className={styles.chip}>
-                  {attachment.filename ?? attachment.mediaType}
-                  <button
-                    className={styles.chipRemove}
-                    onClick={() => setAttachments((current) => current.filter((_, i) => i !== index))}
-                    type="button"
-                    aria-label="移除附件"
-                  >
-                    <XIcon size={12} />
-                  </button>
-                </span>
-              ))}
-              {uploads.map((item) => (
-                <span
-                  key={`upload-${item.key}`}
-                  className={`${styles.chip} ${item.path === null ? styles.chipPending : ''}`}
-                  title={item.path ? `已上传到 ${item.path}，发送时以 @${item.path} 引用` : '正在上传到服务器'}
-                >
-                  {item.path === null ? `${item.name} · 上传中…` : item.path}
-                  <button
-                    className={styles.chipRemove}
-                    onClick={() => setUploads((current) => current.filter((upload) => upload.key !== item.key))}
-                    type="button"
-                    aria-label="移除附件"
-                  >
-                    <XIcon size={12} />
-                  </button>
-                </span>
-              ))}
+          {attachError && (
+            <div className={styles.attachError} role="alert">
+              <span>{attachError}</span>
+              <button className={styles.chipRemove} onClick={() => setAttachError(null)} type="button" aria-label="关闭上传错误提示">
+                <XIcon size={14} />
+              </button>
             </div>
           )}
+
+          <UploadChips uploads={uploads} onCancel={cancelUpload} onRetry={retryUpload} onRemove={removeUpload} />
+          {blockReason && <div className={styles.uploadHint}>{blockReason}</div>}
 
           <textarea
             ref={textareaRef}
@@ -639,9 +547,9 @@ export function Composer(): JSX.Element | null {
             <button
               className={styles.send}
               onClick={submit}
-              disabled={uploading || (!text.trim() && attachments.length === 0 && uploads.length === 0)}
+              disabled={closed || blockReason !== null || (!text.trim() && uploads.length === 0)}
               type="button"
-              title={uploading ? '等文件上传完再发送' : '发送'}
+              title={blockReason ?? '发送'}
             >
               <ArrowUpIcon />
             </button>
@@ -652,7 +560,7 @@ export function Composer(): JSX.Element | null {
             multiple
             hidden
             onChange={(event) => {
-              if (event.target.files) void addFiles(event.target.files)
+              if (event.target.files) pickFiles(event.target.files)
               event.target.value = ''
             }}
           />
@@ -663,7 +571,9 @@ export function Composer(): JSX.Element | null {
             className={styles.iconButton}
             onClick={() => fileInputRef.current?.click()}
             type="button"
-            title="添加附件"
+            title="上传附件到项目 upload/，发送时以 @路径 引用"
+            aria-label="添加附件"
+            disabled={closed}
           >
             <AttachIcon />
           </button>

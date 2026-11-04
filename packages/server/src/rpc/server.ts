@@ -7,6 +7,7 @@ import {
   API_AUTH_PATH,
   API_EVENTS_PATH,
   API_FILES_RAW_PATH,
+  API_FILES_UPLOAD_PATH,
   API_RPC_PATH,
   API_TERM_PATH,
   SHARE_PATH,
@@ -20,6 +21,7 @@ import type { AuthGate, Principal } from '../auth/gate.ts'
 import { sendFile } from '../files/raw.ts'
 import { resolveInWorkspace } from '../files/roots.ts'
 import { serveShare } from '../files/shares.ts'
+import { serveUpload } from '../files/upload-http.ts'
 import { serveStatic } from '../http/static.ts'
 import type { SessionManager } from '../session/manager.ts'
 import { attachTerminal, resolveShell, terminalSize } from '../terminal/pty.ts'
@@ -110,11 +112,16 @@ export function startServer(options: {
       respond(res, 403, { ok: false, error: 'forbidden origin' })
       return
     }
-    // Another site can POST text/plain here without a CORS preflight and
-    // without reading the answer — enough to act through the loopback
-    // exemption. A JSON content type forces the preflight, which fails.
-    if (req.method === 'POST' && !req.headers['content-type']?.startsWith('application/json')) {
-      respond(res, 415, { ok: false, error: 'content-type must be application/json' })
+    // Non-safelisted media types force a CORS preflight, which fails for
+    // another site's page, including through the loopback exemption. Only
+    // the upload route takes binary bodies; no other POST gate is relaxed.
+    const contentType = req.headers['content-type']
+    const upload = path === API_FILES_UPLOAD_PATH
+    const acceptedType = upload
+      ? contentType?.split(';', 1)[0]?.trim().toLowerCase() === 'application/octet-stream'
+      : contentType?.startsWith('application/json')
+    if (req.method === 'POST' && !acceptedType) {
+      respond(res, 415, { ok: false, error: `content-type must be ${upload ? 'application/octet-stream' : 'application/json'}` })
       return
     }
     const principal = auth.identify(req)
@@ -133,6 +140,14 @@ export function startServer(options: {
     }
     if (!principal) {
       respond(res, 401, { ok: false, error: 'unauthorized' })
+      return
+    }
+    if (req.method === 'POST' && path === API_FILES_UPLOAD_PATH) {
+      void serveUpload(req, res).catch((error) => {
+        console.error('[ccw] upload route failed', error)
+        if (!res.headersSent) respond(res, 500, { ok: false, error: message(error) })
+        else res.destroy()
+      })
       return
     }
     if ((req.method === 'GET' || req.method === 'HEAD') && path === API_FILES_RAW_PATH) {
