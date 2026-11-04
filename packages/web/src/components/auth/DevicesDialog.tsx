@@ -1,6 +1,6 @@
 import type { AuthStatus, DeviceInfo, PairingCode } from '@ccw/shared'
 import QRCode from 'qrcode'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 
 import { createPairingCode, fetchAuthStatus, listDevices, revokeDevice } from '../../api/client.ts'
 import { ConfirmDialog } from '../ConfirmDialog.tsx'
@@ -18,7 +18,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }): JSX.Element
   const [generating, setGenerating] = useState(false)
   /** This browser's own device, waiting on the confirm before it is revoked. */
   const [revokingSelf, setRevokingSelf] = useState<DeviceInfo | null>(null)
-  const now = useNow(pending !== null)
+  const now = useNow(pending?.code.expiresAt)
 
   const refresh = async (): Promise<void> => {
     try {
@@ -179,15 +179,20 @@ export function DevicesDialog({ onClose }: { onClose: () => void }): JSX.Element
   )
 }
 
-/** Re-renders every second while `active`, for the code's countdown. */
-function useNow(active: boolean): number {
+/**
+ * Re-renders every second while a code is showing, for its countdown. Keyed on
+ * the code's expiry so a refreshed code resyncs the clock at once instead of
+ * counting from up to a second ago.
+ */
+function useNow(expiresAt: number | undefined): number {
   const [now, setNow] = useState(Date.now)
-  useEffect(() => {
-    if (!active) return
+  // Layout effect: the resync lands before paint, so a stale time never shows.
+  useLayoutEffect(() => {
+    if (expiresAt === undefined) return
     setNow(Date.now())
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
-  }, [active])
+  }, [expiresAt])
   return now
 }
 

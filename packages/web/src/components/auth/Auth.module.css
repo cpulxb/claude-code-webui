@@ -242,8 +242,11 @@
   background: var(--ccw-bg-hover);
 }
 
+/* On a narrow dialog the text drops under the QR rather than squeezing the code
+   onto two lines. */
 .pairing {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--ccw-space-4);
   align-items: center;
 }
@@ -309,6 +312,7 @@
 
 .pairingText {
   display: flex;
+  flex: 1 1 180px;
   flex-direction: column;
   gap: var(--ccw-space-2);
 }
@@ -318,6 +322,7 @@
   font-size: 26px;
   font-weight: 600;
   letter-spacing: 0.1em;
+  white-space: nowrap;
 }
 
 .codeExpired {
