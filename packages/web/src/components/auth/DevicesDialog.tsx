@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 
 import { createPairingCode, fetchAuthStatus, listDevices, revokeDevice } from '../../api/client.ts'
 import { ConfirmDialog } from '../ConfirmDialog.tsx'
-import { XIcon } from '../Icons.tsx'
+import { RefreshIcon, XIcon } from '../Icons.tsx'
 import styles from './Auth.module.css'
 import { describeAuthError } from './PairingScreen.tsx'
 
@@ -14,6 +14,8 @@ export function DevicesDialog({ onClose }: { onClose: () => void }): JSX.Element
   const [devices, setDevices] = useState<DeviceInfo[] | null>(null)
   const [pending, setPending] = useState<{ code: PairingCode; qr: string | null } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** A code request is in flight; guards against double clicks minting two codes. */
+  const [generating, setGenerating] = useState(false)
   /** This browser's own device, waiting on the confirm before it is revoked. */
   const [revokingSelf, setRevokingSelf] = useState<DeviceInfo | null>(null)
   const now = useNow(pending !== null)
@@ -42,6 +44,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }): JSX.Element
 
   const addDevice = async (): Promise<void> => {
     setError(null)
+    setGenerating(true)
     try {
       const code = await createPairingCode()
       // A QR pointing at localhost would open the phone's own localhost, so on
@@ -52,6 +55,8 @@ export function DevicesDialog({ onClose }: { onClose: () => void }): JSX.Element
       setPending({ code, qr })
     } catch (cause) {
       setError(describeAuthError(cause))
+    } finally {
+      setGenerating(false)
     }
   }
 
@@ -66,6 +71,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }): JSX.Element
   }
 
   const secondsLeft = pending ? Math.max(0, Math.ceil((pending.code.expiresAt - now) / 1000)) : 0
+  const expired = pending !== null && secondsLeft === 0
 
   return (
     <div className={styles.backdrop} onMouseDown={onClose}>
@@ -108,20 +114,47 @@ export function DevicesDialog({ onClose }: { onClose: () => void }): JSX.Element
 
         <div className={styles.section}>
           <div className={styles.sectionTitle}>添加设备</div>
-          {pending && secondsLeft > 0 ? (
+          {pending ? (
             <div className={styles.pairing}>
-              {pending.qr && <img className={styles.qr} src={pending.qr} alt="配对二维码" width={192} height={192} />}
-              <div className={styles.pairingText}>
-                <div className={styles.code}>{pending.code.code}</div>
-                <div className={styles.muted}>
-                  {pending.qr ? '用新设备扫码，或在它的配对页输入上面的码。' : '在新设备上打开服务器的远程地址，输入上面的码。'}
-                  {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')} 后失效，只能用一次。
+              {pending.qr && (
+                <div className={styles.qrBox}>
+                  <img className={styles.qr} src={pending.qr} alt="配对二维码" width={192} height={192} />
+                  {expired && (
+                    <button
+                      className={styles.qrExpired}
+                      onClick={() => void addDevice()}
+                      disabled={generating}
+                      type="button"
+                      aria-label="二维码已失效，点击刷新"
+                    >
+                      <span className={generating ? `${styles.qrRefresh} ${styles.spinning}` : styles.qrRefresh}>
+                        <RefreshIcon size={20} />
+                      </span>
+                      二维码已失效，点击刷新
+                    </button>
+                  )}
                 </div>
+              )}
+              <div className={styles.pairingText}>
+                <div className={expired ? `${styles.code} ${styles.codeExpired}` : styles.code}>{pending.code.code}</div>
+                {expired ? (
+                  <div className={styles.muted}>配对码已失效，请重新生成。</div>
+                ) : (
+                  <div className={styles.muted}>
+                    {pending.qr ? '用新设备扫码，或在它的配对页输入上面的码。' : '在新设备上打开服务器的远程地址，输入上面的码。'}
+                    {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')} 后失效，只能用一次。
+                  </div>
+                )}
+                {expired && !pending.qr && (
+                  <button className={styles.button} onClick={() => void addDevice()} disabled={generating} type="button">
+                    重新生成
+                  </button>
+                )}
               </div>
             </div>
           ) : (
-            <button className={styles.button} onClick={() => void addDevice()} type="button">
-              {pending ? '已过期，重新生成配对码' : '生成配对码'}
+            <button className={styles.button} onClick={() => void addDevice()} disabled={generating} type="button">
+              生成配对码
             </button>
           )}
         </div>
