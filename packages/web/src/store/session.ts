@@ -554,7 +554,7 @@ export const useStore = create<Store>()(
           }
         } else if (at) {
           await moveWindow(set, get, sessionId, at).catch((error: unknown) => {
-            pushNotice(set, sessionId, 'error', `读取历史记录失败：${String(error)}`)
+            pushNotice(set, sessionId, 'error', `读取历史记录失败：${errorMessage(error)}`)
             // Still where it was asked to go, not "gone from the session".
             set((state) => {
               const session = state.sessions[sessionId]
@@ -601,7 +601,7 @@ export const useStore = create<Store>()(
       } catch (error) {
         set((state) => {
           const current = state.sessions[sessionId]
-          if (current) current.historyError = `读取更早的历史记录失败：${String(error)}`
+          if (current) current.historyError = `读取更早的历史记录失败：${errorMessage(error)}`
         })
       } finally {
         set((state) => {
@@ -637,7 +637,7 @@ export const useStore = create<Store>()(
       } catch (error) {
         set((state) => {
           const current = state.sessions[sessionId]
-          if (current) current.newerError = `读取更新的历史记录失败：${String(error)}`
+          if (current) current.newerError = `读取更新的历史记录失败：${errorMessage(error)}`
         })
       } finally {
         set((state) => {
@@ -662,7 +662,7 @@ export const useStore = create<Store>()(
       try {
         await moveWindow(set, get, sessionId)
       } catch (error) {
-        pushNotice(set, sessionId, 'error', `回到最新的消息失败：${String(error)}`)
+        pushNotice(set, sessionId, 'error', `回到最新的消息失败：${errorMessage(error)}`)
       } finally {
         set((state) => {
           const current = state.sessions[sessionId]
@@ -782,7 +782,7 @@ export const useStore = create<Store>()(
           const session = state.sessions[sessionId]
           if (session) session.transcript.nodes = session.transcript.nodes.filter((node) => node.id !== echoId)
         })
-        pushNotice(set, sessionId, 'error', `命令执行失败（${command}）：${String(error)}`)
+        pushNotice(set, sessionId, 'error', `命令执行失败（${command}）：${errorMessage(error)}`)
         return
       }
       set((state) => {
@@ -803,7 +803,7 @@ export const useStore = create<Store>()(
       try {
         await get().renameSavedSession(sessionId, session.cwd, title)
       } catch (error) {
-        pushNotice(set, sessionId, 'error', `重命名失败：${String(error)}`)
+        pushNotice(set, sessionId, 'error', `重命名失败：${errorMessage(error)}`)
         return
       }
       pushNotice(set, sessionId, 'info', `会话已重命名为「${title.trim()}」`)
@@ -831,7 +831,7 @@ export const useStore = create<Store>()(
           ...(title ? { title } : {}),
         }))
       } catch (error) {
-        pushNotice(set, sessionId, 'error', `分叉失败：${String(error)}`)
+        pushNotice(set, sessionId, 'error', `分叉失败：${errorMessage(error)}`)
         return
       }
       await get().openSession(forked, session.cwd)
@@ -900,7 +900,7 @@ export const useStore = create<Store>()(
           const session = state.sessions[sessionId]
           if (!session) return
           session.ultracode = !on
-          session.error = `切换 Ultracode 失败：${String(error)}`
+          session.error = `切换 Ultracode 失败：${errorMessage(error)}`
         })
       }
     },
@@ -924,7 +924,7 @@ export const useStore = create<Store>()(
       } catch (error) {
         set((state) => {
           const session = state.sessions[sessionId]
-          if (session) session.error = `读取模型列表失败：${String(error)}`
+          if (session) session.error = `读取模型列表失败：${errorMessage(error)}`
         })
       }
     },
@@ -1564,7 +1564,7 @@ async function attachToSend(set: Setter, get: () => Store, sessionId: string): P
   } catch (error) {
     set((state) => {
       const session = state.sessions[sessionId]
-      if (session) session.error = `无法启动会话：${String(error)}`
+      if (session) session.error = `无法启动会话：${errorMessage(error)}`
     })
     return false
   }
@@ -1604,9 +1604,14 @@ async function startTurn(set: Setter, sessionId: string, uuid: string, text: str
       if (!session) return
       setSessionStatus(session, 'idle')
       session.turnStats = null
-      session.error = `发送失败：${String(error)}`
+      session.error = `发送失败：${errorMessage(error)}`
     })
   }
+}
+
+/** What went wrong as the user reads it: the message alone, without the `Error: ` that String() puts before it. */
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function pushNotice(set: Setter, sessionId: string, level: 'info' | 'error', text: string): void {
@@ -1626,7 +1631,7 @@ function eagerAttach(set: Setter, get: () => Store, sessionId: string): void {
   attach(set, get, sessionId).catch((error: unknown) => {
     set((state) => {
       const session = state.sessions[sessionId]
-      if (session) session.error = `无法恢复会话：${String(error)}`
+      if (session) session.error = `无法恢复会话：${errorMessage(error)}`
     })
   })
 }
@@ -1771,7 +1776,7 @@ async function loadHistory(set: Setter, get: () => Store, sessionId: string, cwd
     set((state) => {
       const session = state.sessions[sessionId]
       if (!session) return
-      session.historyError = `读取历史记录失败：${String(error)}`
+      session.historyError = `读取历史记录失败：${errorMessage(error)}`
       // For the retry, which should land where this was meant to.
       if (at) session.anchor = { id: at }
     })

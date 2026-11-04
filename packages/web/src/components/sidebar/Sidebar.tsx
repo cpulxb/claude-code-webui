@@ -6,15 +6,22 @@ import { sessionHref, useProjectCwd, useStore } from '../../store/session.ts'
 import { ACTIVITY_LABEL, activityOf, mostUrgent, type Activity } from '../../utils/session-activity.ts'
 import { sessionTitle } from '../../utils/session-title.ts'
 import { DevicesDialog } from '../auth/DevicesDialog.tsx'
+import { ErrorNotice } from '../ErrorNotice.tsx'
 import {
   BrandMark,
   ChevronsUpDownIcon,
   CircleArrowUpIcon,
   FolderIcon,
+  GearIcon,
   GitBranchIcon,
+  MoonIcon,
   PanelLeftIcon,
   PencilIcon,
+  RefreshIcon,
+  SearchIcon,
+  SmartphoneIcon,
   SquarePenIcon,
+  SunIcon,
   XIcon,
 } from '../Icons.tsx'
 import { DirectoryPicker } from './DirectoryPicker.tsx'
@@ -35,7 +42,8 @@ type SearchHit = SessionSummary & { cwd: string }
  * fuzzy-ranked list across every project, so other projects stay one search
  * away.
  */
-export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element {
+export function Sidebar(props: { onCollapse: () => void; theme: 'light' | 'dark'; onToggleTheme: () => void }): JSX.Element {
+  const { onCollapse } = props
   const projects = useStore((state) => state.projects)
   const activeId = useStore((state) => state.activeId)
   // Two string slices rather than the whole `sessions` record: immer replaces
@@ -186,7 +194,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
           Claude Code
         </span>
         <span className={styles.spacer} />
-        <button className={styles.iconButton} onClick={onCollapse} type="button" title="收起侧栏">
+        <button className={styles.iconButton} onClick={onCollapse} type="button" title="收起侧栏" aria-label="收起侧栏">
           <PanelLeftIcon />
         </button>
       </div>
@@ -207,24 +215,28 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
 
       {/* With a project chosen, a new session needs no directory dialog; the
           switcher's "其他目录" is the way to start one anywhere else. */}
-      <button
-        className={styles.newButton}
-        onClick={() => (currentCwd ? startSession(currentCwd) : setPicking(true))}
-        type="button"
-        title={currentCwd ? `在 ${basename(currentCwd)} 新建会话` : '选择目录并新建会话'}
-      >
-        <SquarePenIcon size={14} />
-        新会话
-      </button>
+      <div className={styles.actions}>
+        <button
+          className={styles.newButton}
+          onClick={() => (currentCwd ? startSession(currentCwd) : setPicking(true))}
+          type="button"
+          title={currentCwd ? `在 ${basename(currentCwd)} 新建会话` : '选择目录并新建会话'}
+        >
+          <SquarePenIcon size={15} />
+          新会话
+        </button>
 
-      <input
-        className={styles.search}
-        value={query}
-        placeholder="搜索所有项目的会话…"
-        onChange={(event) => setQuery(event.target.value)}
-        onKeyDown={onSearchKeyDown}
-        aria-label="搜索会话"
-      />
+        <label className={styles.search}>
+          <SearchIcon size={14} />
+          <input
+            value={query}
+            placeholder="搜索所有项目的会话"
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={onSearchKeyDown}
+            aria-label="搜索会话"
+          />
+        </label>
+      </div>
 
       {picking && (
         <DirectoryPicker
@@ -235,8 +247,20 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
       )}
 
       {/* The eager attach behind an open runs after `openSession` resolves, so
-          its failure only reaches here through the session's own error. */}
-      {(error ?? sessionError) && <div className={styles.error}>{error ?? sessionError}</div>}
+          its failure reaches here only as the session's own error — shown
+          when the conversation, which says it under the thread, is not. */}
+      {error ? (
+        <div className={styles.error}>
+          <ErrorNotice text={error} compact onDismiss={() => setError(null)} />
+        </div>
+      ) : (
+        sessionError &&
+        activeCwd === undefined && (
+          <div className={styles.error}>
+            <ErrorNotice text={sessionError} compact />
+          </div>
+        )
+      )}
 
       {/* Keyed so switching projects starts the new list at its top, not at
           the scroll offset a long one like ~ was left at. */}
@@ -288,40 +312,64 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
           <span className={styles.updateMark}>
             <CircleArrowUpIcon size={14} />
           </span>
-          <span className={styles.updateText}>新版本 v{update.latest}</span>
-          <span className={styles.updateAction}>{updateAction(update.progress)}</span>
+          <span className={styles.updateText}>
+            <strong>新版本 v{update.latest}</strong>
+            <span>{updateAction(update.progress)}</span>
+          </span>
         </button>
       )}
 
+      {/* Status on the left, actions as icons on the right: four text buttons in
+          one row squeezed the connection state down to "已…". */}
       <div className={styles.foot}>
-        <span
-          className={`${styles.statusDot} ${connection === 'open' ? styles.statusOpen : ''} ${
-            connection === 'closed' ? styles.statusClosed : ''
-          }`}
-        />
-        <span className={styles.footStatus}>
-          {connection === 'open' ? '已连接' : connection === 'connecting' ? '连接中…' : '连接断开，重试中'}
+        <span className={styles.footStatus} title="与 server 的事件流">
+          <span
+            className={`${styles.statusDot} ${connection === 'open' ? styles.statusOpen : ''} ${
+              connection === 'closed' ? styles.statusClosed : ''
+            }`}
+          />
+          <span className={styles.footStatusText}>
+            {connection === 'open' ? '已连接' : connection === 'connecting' ? '连接中…' : '连接断开，重试中'}
+          </span>
         </span>
+        {update && (
+          <span className={styles.footVersion} title="Claude Code WebUI 版本">
+            {updateCheck === 'running' ? '检查中…' : updateCheck === 'upToDate' ? '已是最新' : `v${update.current}`}
+          </span>
+        )}
         <span className={styles.spacer} />
         {update && (
-          <>
-            <span title="Claude Code WebUI 版本">v{update.current}</span>
-            <button
-              className={styles.footButton}
-              onClick={checkForUpdate}
-              disabled={updateCheck === 'running'}
-              type="button"
-              title="立即检查有没有新版本"
-            >
-              {updateCheck === 'running' ? '检查中…' : updateCheck === 'upToDate' ? '已是最新' : '检查更新'}
-            </button>
-          </>
+          <button
+            className={`${styles.iconButton} ${updateCheck === 'running' ? styles.spinning : ''}`}
+            onClick={checkForUpdate}
+            disabled={updateCheck === 'running'}
+            type="button"
+            title="立即检查有没有新版本"
+            aria-label="检查更新"
+          >
+            <RefreshIcon size={15} />
+          </button>
         )}
-        <button className={styles.footButton} onClick={() => setSettingsSection('general')} type="button" title="渠道、模型和 settings.json">
-          设置
+        <button
+          className={styles.iconButton}
+          onClick={props.onToggleTheme}
+          type="button"
+          title="切换主题"
+          aria-label="切换主题"
+        >
+          {props.theme === 'light' ? <MoonIcon size={15} /> : <SunIcon size={15} />}
         </button>
-        <button className={styles.footButton} onClick={() => setShowDevices(true)} type="button" title="已配对的设备">
-          设备
+        <button className={styles.iconButton} onClick={() => setShowDevices(true)} type="button" title="已配对的设备" aria-label="已配对的设备">
+          <SmartphoneIcon size={15} />
+        </button>
+        <button
+          className={styles.iconButton}
+          onClick={() => setSettingsSection('general')}
+          type="button"
+          title="设置：渠道、模型和 settings.json"
+          aria-label="设置"
+        >
+          <GearIcon size={15} />
         </button>
       </div>
 
@@ -334,7 +382,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
 function updateAction(progress: UpdateProgress | null): string {
   switch (progress?.state) {
     case undefined:
-      return '更新'
+      return '查看并更新'
     case 'running':
       return '更新中…'
     case 'restarting':
@@ -428,8 +476,13 @@ function ProjectSwitcher(props: {
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <FolderIcon size={14} />
-        <span className={styles.switcherName}>{props.cwd ? basename(props.cwd) : '选择项目'}</span>
+        <span className={styles.switcherIcon}>
+          <FolderIcon size={15} />
+        </span>
+        <span className={styles.switcherText}>
+          <span className={styles.switcherName}>{props.cwd ? basename(props.cwd) : '选择项目'}</span>
+          {props.cwd && <span className={styles.switcherPath}>{props.cwd.replace(/^\/root(?=\/|$)/, '~')}</span>}
+        </span>
         {elsewhere && elsewhere !== 'idle' && <ActivityDot activity={elsewhere} prefix="其他项目：" />}
         <span className={styles.switcherCaret}>
           <ChevronsUpDownIcon size={14} />
@@ -461,7 +514,9 @@ function ProjectSwitcher(props: {
                 aria-selected={project.cwd === props.cwd}
               >
                 <span className={styles.hitTitleLine}>
-                  <ActivityDot activity={mostUrgent(project.sessions, unread)} />
+                  <span className={styles.lead}>
+                    <ActivityDot activity={mostUrgent(project.sessions, unread)} />
+                  </span>
                   <span className={`${styles.itemTitle} ${project.cwd === props.cwd ? styles.switcherCurrent : ''}`}>
                     {basename(project.cwd)}
                   </span>
@@ -538,28 +593,32 @@ function SessionList(props: {
                   <SessionRowBody session={session} activity={activityOf(session, unread[session.sessionId])} />
                 </a>
               )}
-              {/* A session nobody has written to yet has no transcript to retitle. */}
-              {renaming !== session.sessionId && session.summary && (
-                <button
-                  className={styles.itemAction}
-                  onClick={() => setRenaming(session.sessionId)}
-                  type="button"
-                  title="重命名"
-                  aria-label="重命名会话"
-                >
-                  <PencilIcon size={12} />
-                </button>
-              )}
-              {session.live && (
-                <button
-                  className={styles.itemAction}
-                  onClick={() => props.onClose(session.sessionId)}
-                  type="button"
-                  title="关闭会话（结束它的 CLI 进程）"
-                  aria-label="关闭会话"
-                >
-                  <XIcon size={12} />
-                </button>
+              {((renaming !== session.sessionId && session.summary) || session.live) && (
+                <span className={styles.itemActions}>
+                  {/* A session nobody has written to yet has no transcript to retitle. */}
+                  {renaming !== session.sessionId && session.summary && (
+                    <button
+                      className={styles.itemAction}
+                      onClick={() => setRenaming(session.sessionId)}
+                      type="button"
+                      title="重命名"
+                      aria-label="重命名会话"
+                    >
+                      <PencilIcon size={12} />
+                    </button>
+                  )}
+                  {session.live && (
+                    <button
+                      className={styles.itemAction}
+                      onClick={() => props.onClose(session.sessionId)}
+                      type="button"
+                      title="关闭会话（结束它的 CLI 进程）"
+                      aria-label="关闭会话"
+                    >
+                      <XIcon size={12} />
+                    </button>
+                  )}
+                </span>
               )}
             </div>
           ))}
@@ -616,15 +675,17 @@ function SearchResults(props: {
             </span>
           </a>
           {hit.live && (
-            <button
-              className={styles.itemAction}
-              onClick={() => props.onClose(hit.sessionId)}
-              type="button"
-              title="关闭会话（结束它的 CLI 进程）"
-              aria-label="关闭会话"
-            >
-              <XIcon size={12} />
-            </button>
+            <span className={styles.itemActions}>
+              <button
+                className={styles.itemAction}
+                onClick={() => props.onClose(hit.sessionId)}
+                type="button"
+                title="关闭会话（结束它的 CLI 进程）"
+                aria-label="关闭会话"
+              >
+                <XIcon size={12} />
+              </button>
+            </span>
           )}
         </div>
       ))}
@@ -646,7 +707,10 @@ function SessionRowBody({ session, activity }: { session: SessionSummary; activi
   const news = activity === 'done' || activity === 'error'
   return (
     <>
-      <ActivityDot activity={activity} />
+      {/* The dot's column, held open without one so the titles line up. */}
+      <span className={styles.lead}>
+        <ActivityDot activity={activity} />
+      </span>
       <span className={`${styles.itemTitle} ${news ? styles.itemNews : ''}`}>{sessionTitle(session.summary)}</span>
       {activity === 'running' || activity === 'waiting' ? (
         <span className={`${styles.itemAge} ${styles[`note-${activity}`]}`}>{activity === 'running' ? '运行中' : '待确认'}</span>
@@ -657,7 +721,7 @@ function SessionRowBody({ session, activity }: { session: SessionSummary; activi
   )
 }
 
-function ActivityDot({ activity, prefix = '' }: { activity: Activity | null; prefix?: string }): JSX.Element | null {
+export function ActivityDot({ activity, prefix = '' }: { activity: Activity | null; prefix?: string }): JSX.Element | null {
   if (!activity) return null
   const label = prefix + ACTIVITY_LABEL[activity]
   return <span className={`${styles.dot} ${styles[`dot-${activity}`]}`} title={label} aria-label={label} role="img" />
@@ -694,7 +758,7 @@ function RenameInput(props: { title: string; onDone: (title: string | null) => v
 }
 
 /** A plain click opens the session here; a modified one (new tab, new window) is the browser's. */
-function openInPlace(event: React.MouseEvent, open: () => void): void {
+export function openInPlace(event: React.MouseEvent, open: () => void): void {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
   event.preventDefault()
   open()
@@ -720,7 +784,7 @@ function basename(path: string): string {
   return path.split('/').filter(Boolean).at(-1) ?? path
 }
 
-function age(timestamp: number): string {
+export function age(timestamp: number): string {
   const minutes = Math.floor((Date.now() - timestamp) / 60_000)
   if (minutes < 60) return `${Math.max(minutes, 1)}分钟`
   const hours = Math.floor(minutes / 60)

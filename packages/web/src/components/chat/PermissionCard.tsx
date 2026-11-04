@@ -3,6 +3,7 @@ import { useState } from 'react'
 
 import { findAgentById } from '../../render/nodes.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
+import { ShieldAlertIcon } from '../Icons.tsx'
 import styles from './PermissionCard.module.css'
 
 /**
@@ -23,11 +24,22 @@ export function PermissionCard({ request }: { request: PermissionRequest }): JSX
   )
 
   return (
-    <div className={styles.card}>
-      {agent && <div className={styles.reason}>来自子代理：{agent}</div>}
-      <div className={styles.title}>{request.title ?? `Claude 想要使用 ${request.toolName}`}</div>
+    <div className={styles.card} data-permission="" role="group" aria-label="权限请求">
+      {agent && <div className={styles.agent}>来自子代理：{agent}</div>}
+      <div className={styles.head}>
+        <span className={styles.icon}>
+          <ShieldAlertIcon size={15} />
+        </span>
+        <span className={styles.title}>{request.title ?? `Claude 想要使用 ${request.toolName}`}</span>
+        <span className={styles.tool}>{request.toolName}</span>
+      </div>
       {request.description && <div className={styles.description}>{request.description}</div>}
-      {detail && <div className={styles.detail}>{detail}</div>}
+      {detail && (
+        <pre className={styles.detail}>
+          {typeof request.input['command'] === 'string' && <span className={styles.prompt}>$ </span>}
+          {detail}
+        </pre>
+      )}
       {request.decisionReason && <div className={styles.reason}>触发原因：{request.decisionReason}</div>}
 
       <div className={styles.actions}>

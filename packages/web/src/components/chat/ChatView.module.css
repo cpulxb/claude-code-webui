@@ -19,7 +19,13 @@
   position: relative;
   max-width: 780px;
   margin: 0 auto;
-  padding: var(--ccw-space-5) var(--ccw-space-5) var(--ccw-space-6);
+  padding: 28px 28px 40px;
+}
+
+@media (max-width: 640px) {
+  .stream {
+    padding: 20px 16px 28px;
+  }
 }
 
 .empty {
@@ -86,8 +92,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   color: var(--ccw-text-muted);
   background: var(--ccw-bg-base);
   border: 1px solid var(--ccw-border-l1);
@@ -119,25 +125,59 @@
 
 /* The condensed layout draws a prompt as claude.ai and DeepSeek do: a filled
    bubble on the right, sized to its text and set well apart from the turn
-   before, so each exchange visibly starts anew. bg-hover is lighter than the
-   page in both themes; bg-sunken turns darker in the dark one. */
+   before, so each exchange visibly starts anew. The tail corner points at
+   the reply below. */
 .condensed .userTurn {
   width: fit-content;
-  max-width: 85%;
-  margin: 48px 0 var(--ccw-space-5) auto;
-  background: var(--ccw-bg-hover);
+  max-width: 82%;
+  padding: 10px 16px;
+  margin: 44px 0 50px auto;
+  line-height: 1.6;
+  background: var(--ccw-bg-bubble);
   border-color: transparent;
-  border-radius: var(--ccw-radius-lg);
+  border-radius: 18px 18px 6px 18px;
 }
 
 .condensed .userTurn:first-child {
   margin-top: 0;
 }
 
-/* Beside the bubble rather than over it, where they would cover a short prompt. */
+/* Under the bubble, in the room its bottom margin leaves, rather than beside
+   or over it: there they took the prompt's width on a phone and covered a
+   short one. Shown on hover with a pointer. */
 .condensed .turnActions {
-  right: 100%;
-  padding-right: 6px;
+  top: 100%;
+  right: 0;
+  gap: 2px;
+  padding-top: 4px;
+}
+
+.condensed .turnAction {
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: none;
+}
+
+.condensed .turnAction:hover {
+  background: var(--ccw-bg-hover);
+}
+
+@media (pointer: coarse) {
+  .condensed .turnActions {
+    gap: 4px;
+  }
+
+  .condensed .turnAction {
+    width: 36px;
+    height: 32px;
+  }
+}
+
+@media (max-width: 640px) {
+  .condensed .userTurn {
+    max-width: 88%;
+  }
 }
 
 /* Sits tight under the bubble it belongs to, ahead of the reply below. */
@@ -147,10 +187,15 @@
   align-items: center;
   padding: var(--ccw-space-2) var(--ccw-space-3);
   margin: -10px 0 var(--ccw-space-4);
+  border-radius: var(--ccw-radius-md);
   font-size: var(--ccw-text-sm);
   color: var(--ccw-text-secondary);
   background: var(--ccw-bg-raised);
-  border-radius: var(--ccw-radius-sm);
+}
+
+/* Below the actions, which sit in the bubble's bottom margin. */
+.condensed .rewindCard {
+  margin-top: -16px;
 }
 
 .rewindError {
@@ -233,11 +278,126 @@
   background: var(--ccw-gray-300);
 }
 
+/* --- a condensed turn: one mark for the whole reply ------------------ */
+
+/* The brand star in a gutter beside the turn's output, in place of a dot and
+   rail per row, so a reply reads as one piece. */
+.turn {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  column-gap: 12px;
+}
+
+.turnMark {
+  display: flex;
+  justify-content: center;
+  padding-top: 6px;
+  color: var(--ccw-accent);
+}
+
+.turnLive .turnMark > svg {
+  animation: twinkle 1.6s ease-in-out infinite;
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(0.6);
+  }
+
+  50% {
+    transform: rotate(90deg) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turnLive .turnMark > svg {
+    animation: none;
+  }
+}
+
+/* A phone has no width to spare for the gutter: the mark sits in the page
+   margin and the reply takes the full width. */
+@media (max-width: 640px) {
+  .condensed {
+    padding-left: 22px;
+  }
+
+  .turn {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .turnMark {
+    position: absolute;
+    top: 7px;
+    left: -17px;
+    padding: 0;
+  }
+
+  .turnMark > svg {
+    width: 11px;
+    height: 11px;
+  }
+}
+
+/* The mark speaks for the turn, so its rows drop their own dot and rail —
+   the folded ones too, a level further down. */
+.turnBody .row,
+.pending > .row {
+  padding-left: 0;
+}
+
+.turnBody .row::before,
+.turnBody .row::after,
+.pending > .row::before,
+.pending > .row::after {
+  display: none;
+}
+
+.turnBody .rowError,
+.pending > .rowError {
+  color: var(--ccw-danger);
+}
+
+/* The session's error, under the newest turn. */
+.errorRow {
+  margin: var(--ccw-space-2) 0 var(--ccw-space-4);
+}
+
+/* Prompts held for the user, under the newest turn. */
+.condensed .pending {
+  padding-left: 34px;
+}
+
+/* On a phone the permission prompt stays over the composer, however far back
+   the thread is read, so answering it never means scrolling down to find it. */
+@media (max-width: 640px) {
+  .condensed .pending {
+    padding-left: 0;
+  }
+
+  .pending:has(> [data-permission]) {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    padding-bottom: var(--ccw-space-2);
+  }
+}
+
 /* Replies get claude.ai's reading type: a serif for Latin, with CJK falling
    through to the UI's sans. Thinking and code keep the interface's faces. */
 .prose {
   font-family: var(--ccw-font-serif);
   font-size: var(--ccw-text-prose);
+  line-height: 1.72;
+  text-wrap: pretty;
+}
+
+@media (pointer: coarse) {
+  .prose {
+    font-size: 16px;
+  }
 }
 
 /* Centred on the taller first line — which a leading thinking toggle is not. */
@@ -506,12 +666,47 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--ccw-space-3);
-  padding-top: var(--ccw-space-2);
-  margin: var(--ccw-space-2) 0 var(--ccw-space-5);
-  font-size: var(--ccw-text-sm);
-  color: var(--ccw-text-faint);
-  border-top: 1px solid var(--ccw-border-l2);
+  gap: 10px;
+  min-height: 26px;
+  margin: 0 0 var(--ccw-space-4);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats > .turnAction {
+  width: 26px;
+  height: 26px;
+  margin-left: -6px;
+  background: none;
+  border: none;
+}
+
+.stats > .turnAction:hover {
+  background: var(--ccw-bg-hover);
+}
+
+.statsFull {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Condensed: the time is the figure read every turn; the rest wait for a
+   hover over the turn, and a touch screen, which has none, goes without. */
+.condensed .statsFull {
+  opacity: 0;
+  transition: opacity var(--ccw-duration-fast) var(--ccw-ease);
+}
+
+.condensed .turn:hover .statsFull {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .condensed .statsFull {
+    display: none;
+  }
 }
 
 .statsError {

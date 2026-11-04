@@ -11,8 +11,8 @@
   display: grid;
   flex: none;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: var(--ccw-h-sm);
+  height: var(--ccw-h-sm);
   color: var(--ccw-text-muted);
   border-radius: var(--ccw-radius-sm);
 }

@@ -5,11 +5,21 @@ import { call } from '../../api/client.ts'
 import { settingsHref, useActiveSessionValue, useStore, type ChatLayout, type SettingsSection } from '../../store/session.ts'
 import { channelProblems, fromLibrary, newChannelId, switchTo, toLibrary, type ChannelDraft } from '../../utils/channels.ts'
 import { applyForm, formProblems, maskSecrets, SECRET_MASK, toForm, unmaskSecrets, type SettingsForm } from '../../utils/settings.ts'
+import { NARROW, useNarrow } from '../../utils/narrow.ts'
 import { notificationsSupported } from '../Attention.tsx'
 import dialog from '../auth/Auth.module.css'
 import { ConfirmDialog } from '../ConfirmDialog.tsx'
 import { CodeEditor } from '../details/CodeEditor.tsx'
-import { ArrowLeftIcon, BoxIcon, BracesIcon, MonitorIcon, PlugIcon, ShareIcon } from '../Icons.tsx'
+import {
+  ArrowLeftIcon,
+  BoxIcon,
+  BracesIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  MonitorIcon,
+  PlugIcon,
+  ShareIcon,
+} from '../Icons.tsx'
 import { ChannelEditor } from './ChannelEditor.tsx'
 import { ChannelList } from './ChannelList.tsx'
 import { ModelList, type UpstreamAnswer } from './ModelList.tsx'
@@ -26,18 +36,37 @@ const SOURCE_LABELS: Record<SettingsOverride['source'], string> = {
   managed: '组织管理配置',
 }
 
-const SECTIONS: { id: SettingsSection; label: string; icon: JSX.Element }[] = [
-  { id: 'general', label: '通用', icon: <MonitorIcon /> },
-  { id: 'channels', label: '渠道', icon: <PlugIcon /> },
-  { id: 'models', label: '模型', icon: <BoxIcon /> },
-  { id: 'json', label: 'settings.json', icon: <BracesIcon /> },
-  { id: 'shares', label: '分享', icon: <ShareIcon /> },
+const SECTIONS: { id: SettingsSection; label: string; desc: string; icon: JSX.Element }[] = [
+  { id: 'general', label: '通用', desc: '对话显示和提醒，只保存在这个浏览器里', icon: <MonitorIcon /> },
+  { id: 'channels', label: '渠道', desc: '连接哪个服务、用哪把密钥', icon: <PlugIcon /> },
+  { id: 'models', label: '模型', desc: '当前渠道的模型列表和角色映射', icon: <BoxIcon /> },
+  { id: 'json', label: 'settings.json', desc: '直接编辑配置文件', icon: <BracesIcon /> },
+  { id: 'shares', label: '分享', desc: '管理已发出的分享链接', icon: <ShareIcon /> },
 ]
 
 const LAYOUTS: [ChatLayout, string, string][] = [
   ['compact', '简洁', '连续的工具调用合成一行，跑完的回合只露出最终回复'],
   ['detailed', '详细', '每次工具调用都是一张展开的卡片'],
 ]
+
+/** A thumbnail of each layout: a prompt, then the turn as that layout draws it. */
+function LayoutPreview({ layout }: { layout: ChatLayout }): JSX.Element {
+  return (
+    <span className={styles.preview} aria-hidden="true">
+      <span className={`${styles.previewLine} ${styles.previewPrompt}`} />
+      {layout === 'compact' ? (
+        <span className={styles.previewFold} />
+      ) : (
+        <>
+          <span className={styles.previewCard} />
+          <span className={styles.previewCard} />
+        </>
+      )}
+      <span className={`${styles.previewLine} ${styles.previewWide}`} />
+      <span className={styles.previewLine} />
+    </span>
+  )
+}
 
 /** The desktop-notification switch, and what the browser says about it. */
 function NotifySetting(): JSX.Element {
@@ -63,27 +92,39 @@ function NotifySetting(): JSX.Element {
     }
   }
 
+  // Text and control share a row: the text column gives way (min-width: 0),
+  // the switch never does, so a phone no longer breaks the label a glyph a line.
   return (
-    <>
-      <label className={styles.check}>
+    <div className={styles.prefs}>
+      <label className={styles.pref}>
+        <span className={styles.prefText}>
+          <span className={styles.prefLabel}>桌面通知</span>
+          <span className={styles.prefDesc}>页面不在前台时，会话跑完、出错或等你确认就弹出通知</span>
+          {!supported ? (
+            <span className={styles.prefWarning}>当前地址不支持桌面通知：需要通过 HTTPS 或 localhost 打开。</span>
+          ) : permission === 'denied' ? (
+            <span className={styles.prefWarning}>
+              浏览器已阻止这个网站的通知。到地址栏左侧的网站设置里把「通知」改成允许，再回来打开。
+            </span>
+          ) : null}
+        </span>
         <input
+          className={styles.checkSwitch}
           type="checkbox"
+          role="switch"
           checked={notify && permission === 'granted'}
           disabled={!supported}
           onChange={(event) => void toggle(event.target.checked)}
         />
-        桌面通知
-        <span className={dialog.muted}>页面不在前台时，会话跑完、出错或等你确认就弹出通知</span>
       </label>
-      {!supported ? (
-        <div className={styles.warning}>当前地址不支持桌面通知：需要通过 HTTPS 或 localhost 打开。</div>
-      ) : permission === 'denied' ? (
-        <div className={styles.warning}>
-          浏览器已阻止这个网站的通知。到地址栏左侧的网站设置里把「通知」改成允许，再回来打开。
-        </div>
-      ) : null}
-      <div className={dialog.muted}>标签页标题会显示需要你关注的会话数，例如「(2) Claude Code」，不需要授权。</div>
-    </>
+      <div className={styles.pref}>
+        <span className={styles.prefText}>
+          <span className={styles.prefLabel}>标签页计数</span>
+          <span className={styles.prefDesc}>标签页标题会显示需要你关注的会话数，例如「(2) Claude Code」，不需要授权</span>
+        </span>
+        <span className={styles.prefValue}>始终开启</span>
+      </div>
+    </div>
   )
 }
 
@@ -143,6 +184,12 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const page = useRef<HTMLDivElement>(null)
+  const narrow = useNarrow()
+  // A phone opens on the list of sections, as its settings apps do; a link
+  // to one of the others opens that one.
+  const [picking, setPicking] = useState(() => NARROW.matches && section === 'general')
+  const listing = narrow && picking
+  const current = SECTIONS.find(({ id }) => id === section) ?? SECTIONS[0]!
   /** Counts reads and writes, so a read still out cannot land over a later one. */
   const requests = useRef(0)
 
@@ -352,24 +399,31 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
       content = (
         // Not part of settings.json: it takes effect at once, with nothing to save.
         <section className={styles.section}>
-          <div className={dialog.sectionTitle}>对话显示</div>
+          <div className={styles.groupTitle}>对话显示</div>
           <div className={styles.choices} role="radiogroup" aria-label="对话显示">
             {LAYOUTS.map(([value, label, note]) => (
-              <label key={value} className={styles.check}>
+              <label key={value} className={`${styles.choice} ${chatLayout === value ? styles.choiceOn : ''}`}>
                 <input
+                  className={styles.choiceInput}
                   type="radio"
                   name="ccw-chat-layout"
                   checked={chatLayout === value}
                   onChange={() => setChatLayout(value)}
                 />
-                {label}
-                <span className={dialog.muted}>{note}</span>
+                <LayoutPreview layout={value} />
+                <span className={styles.choiceText}>
+                  <span className={styles.choiceTitle}>
+                    <span className={styles.radio} />
+                    {label}
+                  </span>
+                  <span className={styles.choiceNote}>{note}</span>
+                </span>
               </label>
             ))}
           </div>
-          <div className={`${dialog.sectionTitle} ${styles.subTitle}`}>提醒</div>
+          <div className={`${styles.groupTitle} ${styles.subTitle}`}>提醒</div>
           <NotifySetting />
-          <div className={dialog.muted}>以上只保存在这个浏览器里，切换后立即生效，不用点保存。</div>
+          <div className={dialog.muted}>以上切换后立即生效，不用点保存。</div>
         </section>
       )
       break
@@ -441,7 +495,6 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
     case 'json':
       content = (
         <>
-          <div className={dialog.sectionTitle}>settings.json</div>
           <div className={dialog.muted}>
             和「渠道」「模型」里的表单互相同步。密钥显示为 {SECRET_MASK}，保持不变就不会修改；要查看或修改密钥，在表单里改。这里的大多数设置对新会话生效。
           </div>
@@ -466,42 +519,89 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
   return (
     <div ref={page} className={styles.page} tabIndex={-1} onKeyDown={onKeyDown} role="region" aria-label="设置">
       <div className={styles.head}>
-        <button className={styles.back} onClick={onLeave} type="button" title="回到会话，没保存的修改会丢弃">
-          <ArrowLeftIcon size={15} />
-          返回
-        </button>
-        <span className={styles.title}>设置</span>
-        {loaded && (
+        {narrow ? (
+          <button
+            className={styles.iconButton}
+            onClick={listing ? onLeave : () => setPicking(true)}
+            type="button"
+            title={listing ? '回到会话，没保存的修改会丢弃' : '所有设置'}
+            aria-label={listing ? '回到会话' : '所有设置'}
+          >
+            <ChevronLeftIcon size={20} />
+          </button>
+        ) : (
+          <button className={styles.back} onClick={onLeave} type="button" title="回到会话，没保存的修改会丢弃">
+            <ArrowLeftIcon size={15} />
+            返回
+          </button>
+        )}
+        <span className={styles.title}>{narrow && !listing ? current.label : '设置'}</span>
+        {loaded && !narrow && (
           <span className={styles.path} title={loaded.path}>
             {loaded.path}
           </span>
         )}
       </div>
 
-      <div className={styles.body}>
-        <nav className={styles.nav} aria-label="设置分类">
-          {SECTIONS.map(({ id, label, icon }) => (
-            // Links, so a section can be opened in a new tab or have its address copied.
-            <a
-              key={id}
-              href={settingsHref(id)}
-              className={id === section ? `${styles.navItem} ${styles.navItemActive}` : styles.navItem}
-              aria-current={id === section ? 'page' : undefined}
-              onClick={(event) => {
-                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-                event.preventDefault()
-                setSettingsSection(id)
-              }}
-            >
-              {icon}
-              {label}
-            </a>
-          ))}
-        </nav>
-        <div className={styles.content}>
-          <div className={section === 'json' ? `${styles.card} ${styles.cardFill}` : styles.card}>{content}</div>
+      {listing ? (
+        <div className={styles.listPage}>
+          <div className={styles.hero}>设置</div>
+          {loaded && <div className={styles.heroPath}>{loaded.path}</div>}
+          <nav className={styles.list} aria-label="设置分类">
+            {SECTIONS.map(({ id, label, desc, icon }) => (
+              <a
+                key={id}
+                href={settingsHref(id)}
+                className={styles.listRow}
+                onClick={(event) => {
+                  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                  event.preventDefault()
+                  setSettingsSection(id)
+                  setPicking(false)
+                }}
+              >
+                <span className={styles.listIcon}>{icon}</span>
+                <span className={styles.listText}>
+                  {label}
+                  <span className={styles.listDesc}>{desc}</span>
+                </span>
+                <ChevronRightIcon size={16} />
+              </a>
+            ))}
+          </nav>
         </div>
-      </div>
+      ) : (
+        <div className={styles.body}>
+          <nav className={styles.nav} aria-label="设置分类">
+            {SECTIONS.map(({ id, label, icon }) => (
+              // Links, so a section can be opened in a new tab or have its address copied.
+              <a
+                key={id}
+                href={settingsHref(id)}
+                className={id === section ? `${styles.navItem} ${styles.navItemActive}` : styles.navItem}
+                aria-current={id === section ? 'page' : undefined}
+                onClick={(event) => {
+                  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                  event.preventDefault()
+                  setSettingsSection(id)
+                }}
+              >
+                {icon}
+                {label}
+              </a>
+            ))}
+          </nav>
+          <div className={styles.content}>
+            <div className={section === 'json' ? `${styles.card} ${styles.cardFill}` : styles.card}>
+              <header className={styles.pageHead}>
+                <h2>{current.label}</h2>
+                <p>{current.desc}</p>
+              </header>
+              {content}
+            </div>
+          </div>
+        </div>
+      )}
 
       {deleting && (
         <ConfirmDialog
@@ -518,20 +618,18 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
         />
       )}
 
-      <div className={styles.footer}>
-        <div className={styles.status} role="status">
-          {status}
+      {/* Only once there is something to say or save: a grayed-out 保存 sitting
+          under every section read as a control that was broken. */}
+      {(status || canSave || saving) && (
+        <div className={styles.footer}>
+          <div className={styles.status} role="status">
+            {status}
+          </div>
+          <button className={styles.save} onClick={() => void save()} disabled={!canSave} type="button" title="Ctrl/⌘ + S">
+            {saving ? '保存中…' : '保存'}
+          </button>
         </div>
-        <button
-          className={`${dialog.button} ${dialog.primary}`}
-          onClick={() => void save()}
-          disabled={!canSave}
-          type="button"
-          title="Ctrl/⌘ + S"
-        >
-          {saving ? '保存中…' : '保存'}
-        </button>
-      </div>
+      )}
     </div>
   )
 }

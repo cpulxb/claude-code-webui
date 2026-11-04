@@ -1,102 +1,142 @@
 .root {
+  container-type: inline-size;
   display: flex;
   height: 100%;
   padding: var(--ccw-space-5) var(--ccw-space-4);
   overflow-y: auto;
 }
 
+/* Centred in the panel both ways. Its width follows the panel's: the whole
+   of a narrow one, a growing share of a wider one, never past a reading width. */
 .inner {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ccw-space-6);
-  align-items: center;
   width: 100%;
-  margin: auto 0;
+  max-width: clamp(420px, 60cqi, 560px);
+  margin: auto;
 }
 
-.mark {
-  display: flex;
-  color: var(--ccw-text-faint);
+/* Which workspace every row below opens into. */
+.head {
+  padding: 0 var(--ccw-space-2) var(--ccw-space-4);
 }
 
-.cards {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  width: 100%;
-  max-width: 460px;
+.title {
+  overflow: hidden;
+  font-family: var(--ccw-font-serif);
+  font-size: var(--ccw-text-xl);
+  font-weight: 500;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.card {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  padding: 16px 20px;
-  text-align: left;
+.path {
+  margin-top: 4px;
+  overflow: hidden;
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One framed list rather than a card each: five things to open, one glance. */
+.list {
+  overflow: hidden;
   background: var(--ccw-bg-base);
   border: 1px solid var(--ccw-border-l1);
   border-radius: var(--ccw-radius-lg);
-  transition:
-    background var(--ccw-duration-fast) var(--ccw-ease),
-    border-color var(--ccw-duration-fast) var(--ccw-ease);
 }
 
-.card:hover:not(:disabled) {
+.row {
+  display: flex;
+  gap: var(--ccw-space-3);
+  align-items: center;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 14px 8px 12px;
+  color: var(--ccw-text-faint);
+  text-align: left;
+  transition: background var(--ccw-duration-fast) var(--ccw-ease);
+}
+
+.row + .row {
+  border-top: 1px solid var(--ccw-border-l2);
+}
+
+.row:hover:not(:disabled) {
   background: var(--ccw-bg-raised);
-  border-color: var(--ccw-border-strong);
 }
 
 /* 详情 and 配置 before a session is open. */
-.card:disabled {
+.row:disabled {
   cursor: default;
   opacity: 0.5;
 }
 
-.cardIcon {
+.icon {
   display: flex;
   flex: none;
+  align-items: center;
   justify-content: center;
-  width: 26px;
+  width: 32px;
+  height: 32px;
+  color: var(--ccw-text-secondary);
+  background: var(--ccw-bg-raised);
+  border-radius: var(--ccw-radius-md);
 }
 
-/* dsh paints its terminal and browser glyphs this blue. */
-.blueIcon {
-  display: flex;
-  color: #4a7cf7;
-}
-
-.cardText {
+.text {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
   min-width: 0;
+  line-height: 1.35;
 }
 
-.cardTitle {
-  font-size: 15px;
-  line-height: 1.4;
+.rowTitle {
+  font-weight: 500;
   color: var(--ccw-text-primary);
 }
 
-.cardSubtitle {
+.subtitle {
   overflow: hidden;
   font-size: var(--ccw-text-sm);
-  line-height: 1.4;
   color: var(--ccw-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .shortcut {
+  display: inline-flex;
   flex: none;
-  font-size: var(--ccw-text-base);
+  align-items: center;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 10.5px;
   color: var(--ccw-text-muted);
+  white-space: nowrap;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-bottom-width: 2px;
+  border-radius: var(--ccw-radius-xs);
 }
 
-/* No keyboard to press them on. */
+.chevron {
+  display: flex;
+  flex: none;
+}
+
+.touchOnly {
+  display: none;
+}
+
+/* No keyboard to press them on: a chevron in the shortcut's place. */
 @media (pointer: coarse) {
   .shortcut {
     display: none;
+  }
+
+  .touchOnly {
+    display: flex;
   }
 }

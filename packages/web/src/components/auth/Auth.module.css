@@ -190,7 +190,7 @@
 
 .muted {
   font-size: var(--ccw-text-sm);
-  color: var(--ccw-text-faint);
+  color: var(--ccw-text-muted);
 }
 
 .device {

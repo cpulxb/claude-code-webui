@@ -7,10 +7,24 @@
 
 .header {
   display: flex;
+  flex: none;
   gap: var(--ccw-space-2);
   align-items: center;
-  padding: var(--ccw-space-3) var(--ccw-space-4);
+  height: 52px;
+  padding: 0 var(--ccw-space-3) 0 var(--ccw-space-4);
   border-bottom: 1px solid var(--ccw-border-l2);
+}
+
+/* With the sidebar folded, its toggle is the first thing in the row. */
+.header > .iconButton:first-child {
+  margin-left: calc(-1 * var(--ccw-space-2));
+}
+
+.titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
 }
 
 .title {
@@ -21,10 +35,82 @@
   white-space: nowrap;
 }
 
-.subtitle {
+.sub {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+  white-space: nowrap;
+}
+
+.sub > svg {
   flex: none;
-  font-size: var(--ccw-text-sm);
+}
+
+.subText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sep {
   color: var(--ccw-text-faint);
+}
+
+.status {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  margin-left: 6px;
+  font-size: var(--ccw-text-xs);
+  font-weight: 500;
+  color: var(--ccw-accent-ink);
+  white-space: nowrap;
+  background: var(--ccw-accent-soft);
+  border-radius: var(--ccw-radius-pill);
+}
+
+.statusWaiting {
+  color: var(--ccw-warning);
+  background: var(--ccw-warning-soft);
+}
+
+.statusClosed {
+  color: var(--ccw-text-muted);
+  background: var(--ccw-bg-raised);
+}
+
+.dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.dot-running {
+  background: var(--ccw-accent);
+  animation: pulse 1.4s var(--ccw-ease) infinite;
+}
+
+.dot-waiting {
+  background: var(--ccw-warning);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot-running {
+    animation: none;
+  }
 }
 
 .spacer {
@@ -36,10 +122,13 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: var(--ccw-h-sm);
+  height: var(--ccw-h-sm);
   color: var(--ccw-text-muted);
   border-radius: var(--ccw-radius-sm);
+  transition:
+    background var(--ccw-duration-fast) var(--ccw-ease),
+    color var(--ccw-duration-fast) var(--ccw-ease);
 }
 
 .iconButton:hover {
@@ -47,25 +136,41 @@
   background: var(--ccw-bg-hover);
 }
 
+.iconButton[aria-pressed='true'] {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-selected);
+}
+
 /* A fingertip needs a bigger target than a pointer. */
 @media (pointer: coarse) {
   .iconButton {
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
+  }
+
+  /* The panels are drawers here, so the details toggle never stays pressed. */
+  .iconButton[aria-pressed='true'] {
+    background: none;
   }
 }
 
-.blank {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: var(--ccw-space-3);
-  align-items: center;
-  justify-content: center;
-  color: var(--ccw-text-faint);
-}
+/* Phone: the title takes the room between the two drawer buttons. */
+@media (max-width: 640px) {
+  .header {
+    height: 56px;
+    padding: 0 4px;
+  }
 
-.blankMark {
-  display: flex;
-  color: var(--ccw-accent);
+  .header > .iconButton:first-child {
+    margin-left: 0;
+  }
+
+  .titles {
+    flex: 1;
+    padding-left: 2px;
+  }
+
+  .header .spacer {
+    display: none;
+  }
 }

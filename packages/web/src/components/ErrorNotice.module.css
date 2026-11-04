@@ -1,0 +1,85 @@
+.notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  font-family: var(--ccw-font-ui);
+  font-size: var(--ccw-text-base);
+  line-height: 1.5;
+  background: var(--ccw-danger-soft);
+  border: 1px solid color-mix(in srgb, var(--ccw-danger) 22%, transparent);
+  border-radius: var(--ccw-radius-lg);
+}
+
+.icon {
+  display: flex;
+  flex: none;
+  padding-top: 1px;
+  color: var(--ccw-danger);
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  font-weight: 600;
+  color: var(--ccw-text-primary);
+}
+
+.detail {
+  color: var(--ccw-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.title + .detail {
+  margin-top: 2px;
+}
+
+.path {
+  padding: 0 4px;
+  font-family: var(--ccw-font-mono);
+  font-size: 0.92em;
+  color: var(--ccw-text-primary);
+  background: color-mix(in srgb, var(--ccw-bg-base) 70%, transparent);
+  border-radius: var(--ccw-radius-xs);
+}
+
+.dismiss {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: -1px -4px 0 0;
+  color: var(--ccw-text-muted);
+  border-radius: var(--ccw-radius-xs);
+}
+
+.dismiss:hover {
+  color: var(--ccw-text-primary);
+  background: color-mix(in srgb, var(--ccw-danger) 12%, transparent);
+}
+
+/* The sidebar's: one size down, to sit among its rows. */
+.compact {
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: var(--ccw-text-sm);
+  line-height: 1.45;
+  border-radius: var(--ccw-radius-md);
+}
+
+.compact .icon {
+  padding-top: 1px;
+}
+
+@media (pointer: coarse) {
+  .dismiss {
+    width: 32px;
+    height: 32px;
+    margin: -7px -8px -7px 0;
+  }
+}

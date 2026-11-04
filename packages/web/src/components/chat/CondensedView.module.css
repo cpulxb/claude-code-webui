@@ -1,67 +1,23 @@
-/* --- a run of steps --------------------------------------------------- */
+/* --- a run of steps, as a timeline ------------------------------------ */
 
-.runToggle {
-  display: flex;
-  gap: var(--ccw-space-2);
-  align-items: center;
-  max-width: 100%;
-  padding: 0;
-  font-size: var(--ccw-text-base);
-  color: var(--ccw-text-secondary);
-  text-align: left;
+.timeline {
+  position: relative;
+  font-family: var(--ccw-font-ui);
 }
 
-.runToggle:hover {
-  color: var(--ccw-text-primary);
+/* The rail through the icons, from the first row's to the last's. */
+.rail::before {
+  position: absolute;
+  top: 15px;
+  bottom: 15px;
+  left: 10.5px;
+  width: 1px;
+  content: '';
+  background: var(--ccw-border-l1);
 }
 
-.summary {
-  flex: none;
-}
-
-.failed {
-  flex: none;
-  color: var(--ccw-danger);
-}
-
-/* The step still running, so a live turn reads without opening the run. */
-.live {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ccw-text-faint);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.caret {
-  flex: none;
-  font-size: 8px;
-  color: var(--ccw-text-faint);
-  transition: transform var(--ccw-duration-fast) var(--ccw-ease);
-}
-
-.caretOpen {
-  transform: rotate(90deg);
-}
-
-/* claude.ai's list: one line per step in a bordered box. */
-.steps {
-  margin-top: var(--ccw-space-2);
-  overflow: hidden;
-  border: 1px solid var(--ccw-border-l1);
-  border-radius: var(--ccw-radius-md);
-}
-
-.boxedStep + .boxedStep {
-  border-top: 1px solid var(--ccw-border-l2);
-}
-
-.boxedStep > .stepHead {
-  padding: 5px var(--ccw-space-3);
-}
-
-.boxedStep > .stepHead:hover {
-  background: var(--ccw-bg-hover);
+.step {
+  position: relative;
 }
 
 /* --- one step --------------------------------------------------------- */
@@ -72,10 +28,22 @@
   align-items: center;
   width: 100%;
   min-width: 0;
+  height: 30px;
   padding: 0;
   font-size: var(--ccw-text-base);
   color: var(--ccw-text-secondary);
   text-align: left;
+}
+
+@media (pointer: coarse) {
+  .stepHead {
+    height: 38px;
+  }
+
+  .rail::before {
+    top: 19px;
+    bottom: 19px;
+  }
 }
 
 .stepHead:hover .target {
@@ -83,9 +51,39 @@
 }
 
 .icon {
+  position: relative;
   display: flex;
   flex: none;
-  color: var(--ccw-text-faint);
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--ccw-text-muted);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-sm);
+}
+
+.step-edit .icon {
+  color: var(--ccw-accent-ink);
+}
+
+.iconLive {
+  color: var(--ccw-accent);
+  border-color: color-mix(in srgb, var(--ccw-accent) 45%, transparent);
+  animation: pulse 1.4s var(--ccw-ease) infinite;
+}
+
+@keyframes pulse {
+  50% {
+    border-color: var(--ccw-border-l1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iconLive {
+    animation: none;
+  }
 }
 
 .verb {
@@ -96,12 +94,18 @@
 .target {
   min-width: 0;
   overflow: hidden;
+  font-family: var(--ccw-font-mono);
+  font-size: 12.5px;
   color: var(--ccw-text-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* Thinking's opening words and a call's description: prose rather than a path. */
+.described,
 .thought {
+  font-family: var(--ccw-font-ui);
+  font-size: var(--ccw-text-base);
   color: var(--ccw-text-muted);
 }
 
@@ -125,63 +129,99 @@
   flex: none;
   margin-left: auto;
   font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-faint);
+  color: var(--ccw-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .meta:empty {
   display: none;
 }
 
+.failed {
+  flex: none;
+  color: var(--ccw-danger);
+}
+
 /* An open step scrolls inside itself, as claude.ai's does, so one long diff
-   or output never pushes the rest of the turn a screen away. */
+   or output never pushes the rest of the turn a screen away. Indented past
+   the rail, under the step's own words. */
 .stepBody {
+  position: relative;
   max-height: 420px;
-  margin-top: var(--ccw-space-2);
+  padding: 2px 0 var(--ccw-space-2) 30px;
   overflow-y: auto;
 }
 
-.boxedStep > .stepBody {
-  padding: 0 var(--ccw-space-3) var(--ccw-space-3);
-  margin-top: 0;
-}
-
 .thinkingBody {
-  padding-left: var(--ccw-space-3);
-  margin: var(--ccw-space-2) 0;
+  position: relative;
+  padding: 2px 0 var(--ccw-space-2) 30px;
   font-size: var(--ccw-text-base);
   color: var(--ccw-text-secondary);
   white-space: pre-wrap;
-  border-left: 2px solid var(--ccw-border-l1);
-}
-
-.boxedStep > .thinkingBody {
-  margin: 0 var(--ccw-space-3) var(--ccw-space-3);
 }
 
 /* --- a finished turn's fold ------------------------------------------- */
 
-/* DeepSeek's 已完成，用时…: a ruled line over the reply it leaves out in the open. */
+/* 已完成，用时…: one quiet line over the reply it leaves out in the open. */
 .fold {
   display: flex;
-  gap: var(--ccw-space-2);
+  gap: 10px;
   align-items: center;
-  width: 100%;
-  padding: 0 0 var(--ccw-space-2);
-  margin-bottom: var(--ccw-space-4);
-  font-size: var(--ccw-text-sm);
-  color: var(--ccw-text-muted);
+  max-width: calc(100% + 10px);
+  height: 30px;
+  padding: 0 8px 0 10px;
+  margin: 0 0 var(--ccw-space-3) -10px;
+  font-family: var(--ccw-font-ui);
+  font-size: var(--ccw-text-base);
+  color: var(--ccw-text-secondary);
   text-align: left;
-  border-bottom: 1px solid var(--ccw-border-l2);
+  border-radius: var(--ccw-radius-md);
+  transition: background var(--ccw-duration-fast) var(--ccw-ease);
 }
 
 .fold:hover {
   color: var(--ccw-text-primary);
+  background: var(--ccw-bg-hover);
 }
 
-.foldDetail {
+.foldLabel {
+  flex: none;
+}
+
+.tally {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ccw-text-muted);
+}
+
+.tally > span {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+  align-items: center;
+  font-size: var(--ccw-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.caret {
+  display: flex;
+  flex: none;
   color: var(--ccw-text-faint);
+  transition: transform var(--ccw-duration-fast) var(--ccw-ease);
+}
+
+.caretOpen {
+  transform: rotate(90deg);
 }
 
 .foldBody {
-  margin-bottom: var(--ccw-space-2);
+  margin-bottom: var(--ccw-space-3);
+}
+
+@media (pointer: coarse) {
+  .fold {
+    height: 38px;
+  }
 }

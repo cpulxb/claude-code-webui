@@ -1,30 +1,67 @@
 .card {
-  padding: var(--ccw-space-3) var(--ccw-space-4);
+  padding: 14px 16px 16px;
   margin: var(--ccw-space-3) 0 var(--ccw-space-4);
+  font-family: var(--ccw-font-ui);
   background: var(--ccw-accent-soft);
-  border: 1px solid color-mix(in srgb, var(--ccw-accent) 35%, transparent);
-  border-radius: var(--ccw-radius-md);
+  border: 1px solid color-mix(in srgb, var(--ccw-accent) 30%, transparent);
+  border-radius: var(--ccw-radius-lg);
+}
+
+.head {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+}
+
+.icon {
+  display: flex;
+  flex: none;
+  color: var(--ccw-accent);
 }
 
 .title {
+  min-width: 0;
   font-weight: 600;
 }
 
+.tool {
+  flex: none;
+  height: 20px;
+  padding: 0 7px;
+  margin-left: auto;
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+  line-height: 20px;
+  color: var(--ccw-accent-ink);
+  background: color-mix(in srgb, var(--ccw-accent) 12%, transparent);
+  border-radius: var(--ccw-radius-xs);
+}
+
+/* Under the title, past the icon's column. */
 .description {
-  margin-top: var(--ccw-space-1);
+  margin: 4px 0 0 23px;
   font-size: var(--ccw-text-base);
   color: var(--ccw-text-secondary);
 }
 
 .detail {
-  padding: var(--ccw-space-2) var(--ccw-space-3);
-  margin-top: var(--ccw-space-2);
+  max-height: 240px;
+  padding: 10px 12px;
+  margin: 10px 0 0;
+  overflow: auto;
   font-family: var(--ccw-font-mono);
-  font-size: var(--ccw-text-sm);
+  font-size: 12.5px;
+  line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   background: var(--ccw-bg-base);
-  border-radius: var(--ccw-radius-sm);
+  border: 1px solid color-mix(in srgb, var(--ccw-accent) 18%, transparent);
+  border-radius: var(--ccw-radius-md);
+}
+
+.prompt {
+  color: var(--ccw-text-faint);
+  user-select: none;
 }
 
 .actions {
@@ -35,11 +72,17 @@
 }
 
 .button {
-  padding: 5px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--ccw-h-md);
+  padding: 0 14px;
   font-size: var(--ccw-text-base);
+  font-weight: 500;
   background: var(--ccw-bg-base);
   border: 1px solid var(--ccw-border-strong);
-  border-radius: var(--ccw-radius-sm);
+  border-radius: var(--ccw-radius-md);
+  transition: background var(--ccw-duration-fast) var(--ccw-ease);
 }
 
 .button:hover:not(:disabled) {
@@ -54,15 +97,27 @@
 .primary {
   color: #fff;
   background: var(--ccw-accent);
-  border-color: var(--ccw-accent);
+  border-color: transparent;
 }
 
 .primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--ccw-accent) 88%, black);
+  background: var(--ccw-accent-hover);
 }
 
 .danger {
   color: var(--ccw-danger);
+  background: transparent;
+  border-color: transparent;
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--ccw-danger-soft);
+}
+
+.agent {
+  margin-bottom: var(--ccw-space-2);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
 }
 
 .reason {
@@ -75,4 +130,51 @@
   margin-top: var(--ccw-space-2);
   font-size: var(--ccw-text-sm);
   color: var(--ccw-danger);
+}
+
+/* A thumb's targets: allow across the full width, the other two beneath. */
+@media (pointer: coarse) {
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Without 总是允许, 拒绝 is left alone on its row and takes it whole. */
+  .actions > .primary,
+  .actions > .primary + .danger {
+    grid-column: 1 / -1;
+  }
+
+  .button {
+    height: 44px;
+    font-size: var(--ccw-text-md);
+  }
+}
+
+/* Pinned over the composer on a phone: lifted off the thread it covers. */
+@media (max-width: 640px) {
+  .card {
+    margin: 0;
+    background: var(--ccw-bg-base);
+    border-color: color-mix(in srgb, var(--ccw-accent) 45%, transparent);
+    box-shadow: var(--ccw-shadow-popover);
+    animation: rise var(--ccw-duration-slow) var(--ccw-ease);
+  }
+
+  .detail {
+    max-height: 22vh;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    animation: none;
+  }
 }

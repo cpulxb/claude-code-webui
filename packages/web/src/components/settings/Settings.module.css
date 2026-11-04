@@ -7,16 +7,17 @@
   z-index: 90; /* over the workspace, under dialogs (100) and the model menu (110) */
   display: flex;
   flex-direction: column;
-  background: var(--ccw-bg-sidebar);
+  background: var(--ccw-bg-base);
   outline: none;
 }
 
 .head {
   display: flex;
-  gap: var(--ccw-space-3);
+  flex: none;
+  gap: 10px;
   align-items: center;
-  padding: var(--ccw-space-3) var(--ccw-space-4);
-  background: var(--ccw-bg-base);
+  height: 52px;
+  padding: 0 var(--ccw-space-4) 0 10px;
   border-bottom: 1px solid var(--ccw-border-l2);
 }
 
@@ -25,7 +26,8 @@
   flex: none;
   gap: 4px;
   align-items: center;
-  padding: 4px 10px 4px 6px;
+  height: var(--ccw-h-sm);
+  padding: 0 10px 0 6px;
   font-size: var(--ccw-text-base);
   color: var(--ccw-text-secondary);
   border-radius: var(--ccw-radius-sm);
@@ -44,10 +46,11 @@
 
 .path {
   min-width: 0;
+  margin-left: auto;
   overflow: hidden;
   font-family: var(--ccw-font-mono);
   font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-faint);
+  color: var(--ccw-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -55,7 +58,7 @@
 .body {
   display: grid;
   flex: 1;
-  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-columns: 232px minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -63,8 +66,9 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: var(--ccw-space-4) var(--ccw-space-3);
+  padding: 20px 12px;
   overflow-y: auto;
+  background: var(--ccw-bg-sidebar);
   border-right: 1px solid var(--ccw-border-l2);
 }
 
@@ -73,12 +77,18 @@
   flex: none;
   gap: 10px;
   align-items: center;
-  padding: 8px 12px;
+  height: var(--ccw-h-lg);
+  padding: 0 12px;
   font-size: var(--ccw-text-base);
   color: var(--ccw-text-secondary);
   text-decoration: none;
   white-space: nowrap;
   border-radius: var(--ccw-radius-md);
+}
+
+.navItem > svg {
+  flex: none;
+  color: var(--ccw-text-muted);
 }
 
 .navItem:hover {
@@ -93,21 +103,24 @@
   background: var(--ccw-bg-selected);
 }
 
+.navItemActive > svg {
+  color: var(--ccw-text-primary);
+}
+
+/* Room at the bottom for the save bar floating over the end of the page. */
 .content {
   min-height: 0;
-  padding: var(--ccw-space-4) var(--ccw-space-5);
   overflow-y: auto;
 }
 
+/* A column of reading width, set from the left: a 960px card left the page
+   lopsided at 1440 and its sentences too long to take in one go. */
 .card {
   display: flex;
   flex-direction: column;
   gap: var(--ccw-space-4);
-  max-width: 960px;
-  padding: var(--ccw-space-5);
-  background: var(--ccw-bg-base);
-  border: 1px solid var(--ccw-border-l1);
-  border-radius: var(--ccw-radius-lg);
+  max-width: 760px;
+  padding: 36px 48px 112px;
 }
 
 /* settings.json: the editor takes the whole height, and scrolls itself. */
@@ -115,6 +128,22 @@
   gap: var(--ccw-space-2);
   height: 100%;
   max-width: none;
+  padding-bottom: 88px;
+}
+
+.pageHead h2 {
+  margin: 0;
+  font-family: var(--ccw-font-serif);
+  font-size: var(--ccw-text-2xl);
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.pageHead p {
+  margin: 6px 0 0;
+  font-size: var(--ccw-text-base);
+  color: var(--ccw-text-muted);
 }
 
 /* A fieldset, so a JSON that does not parse disables the whole form at once. */
@@ -211,10 +240,29 @@
   color: var(--ccw-text-faint);
 }
 
+/* The reveal toggle sits inside the field's right edge, so the field spans
+   the same width as the ones above it. */
 .secret {
-  display: flex;
-  gap: var(--ccw-space-1);
-  align-items: center;
+  position: relative;
+}
+
+.secret .input {
+  padding-right: 38px;
+}
+
+/* Edge draws its own eye in password fields; one is enough. */
+.secret .input::-ms-reveal {
+  display: none;
+}
+
+.secret .iconButton {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--ccw-radius-xs);
+  transform: translateY(-50%);
 }
 
 .iconButton {
@@ -233,6 +281,13 @@
   background: var(--ccw-bg-hover);
 }
 
+@media (pointer: coarse) {
+  .head .iconButton {
+    width: 40px;
+    height: 40px;
+  }
+}
+
 .check {
   display: inline-flex;
   gap: 6px;
@@ -242,14 +297,315 @@
   cursor: pointer;
 }
 
-.subTitle {
-  margin-top: var(--ccw-space-2);
+.groupTitle {
+  font-size: var(--ccw-text-sm);
+  font-weight: 600;
+  color: var(--ccw-text-secondary);
 }
 
+.subTitle {
+  margin-top: var(--ccw-space-4);
+}
+
+/* --- 通用: layout cards and setting rows --------------------------------- */
+
 .choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--ccw-space-3);
+}
+
+/* Each layout as a card with a thumbnail of it, in place of a bare radio. */
+.choice {
   display: flex;
   flex-direction: column;
+  gap: var(--ccw-space-3);
+  padding: var(--ccw-space-3);
+  cursor: pointer;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-lg);
+  transition:
+    border-color var(--ccw-duration-fast) var(--ccw-ease),
+    box-shadow var(--ccw-duration-fast) var(--ccw-ease);
+}
+
+.choice:hover {
+  border-color: var(--ccw-border-strong);
+}
+
+.choiceOn,
+.choiceOn:hover {
+  border-color: var(--ccw-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ccw-accent) 14%, transparent);
+}
+
+/* The real radio stays for the keyboard and screen readers, out of sight. */
+.choiceInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.choice:has(.choiceInput:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--ccw-accent) 70%, transparent);
+  outline-offset: 2px;
+}
+
+.preview {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  height: 84px;
+  padding: 12px;
+  overflow: hidden;
+  background: var(--ccw-bg-raised);
+  border-radius: var(--ccw-radius-md);
+}
+
+.previewLine {
+  flex: none;
+  width: 75%;
+  height: 6px;
+  background: var(--ccw-border-strong);
+  border-radius: 3px;
+}
+
+.previewPrompt {
+  width: 60%;
+  margin-left: auto;
+  background: var(--ccw-bg-selected);
+}
+
+.previewWide {
+  width: 90%;
+}
+
+.previewFold {
+  flex: none;
+  width: 40%;
+  height: 6px;
+  background: color-mix(in srgb, var(--ccw-accent) 40%, transparent);
+  border-radius: 3px;
+}
+
+.previewCard {
+  flex: none;
+  height: 12px;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: 3px;
+}
+
+.choiceText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.choiceTitle {
+  display: flex;
   gap: var(--ccw-space-2);
+  align-items: center;
+  font-weight: 600;
+}
+
+.radio {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--ccw-border-strong);
+  border-radius: 50%;
+}
+
+.choiceOn .radio {
+  border: 5px solid var(--ccw-accent);
+}
+
+.choiceNote {
+  font-size: var(--ccw-text-sm);
+  line-height: 1.5;
+  color: var(--ccw-text-muted);
+}
+
+.prefs {
+  overflow: hidden;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-lg);
+}
+
+.pref {
+  display: flex;
+  gap: var(--ccw-space-4);
+  align-items: center;
+  min-height: 60px;
+  padding: 12px 16px;
+}
+
+label.pref {
+  cursor: pointer;
+}
+
+.pref + .pref {
+  border-top: 1px solid var(--ccw-border-l2);
+}
+
+/* The pair that keeps a row whole on a phone: the text gives way, the control never does. */
+.prefText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.prefLabel {
+  font-weight: 500;
+}
+
+.prefDesc {
+  margin-top: 2px;
+  font-size: var(--ccw-text-sm);
+  line-height: 1.5;
+  color: var(--ccw-text-muted);
+}
+
+.prefWarning {
+  margin-top: 6px;
+  font-size: var(--ccw-text-sm);
+  line-height: 1.5;
+  color: var(--ccw-warning);
+}
+
+.prefValue {
+  flex: none;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
+}
+
+/* A checkbox drawn as a switch: still a checkbox to the keyboard and to forms. */
+.checkSwitch {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  cursor: pointer;
+  background: var(--ccw-border-strong);
+  border-radius: var(--ccw-radius-pill);
+  transition: background 160ms var(--ccw-ease);
+  appearance: none;
+}
+
+.checkSwitch::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  content: '';
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 22%);
+  transition: transform 160ms var(--ccw-ease);
+}
+
+.checkSwitch:checked {
+  background: var(--ccw-accent);
+}
+
+.checkSwitch:checked::after {
+  transform: translateX(14px);
+}
+
+.checkSwitch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checkSwitch,
+  .checkSwitch::after {
+    transition: none;
+  }
+}
+
+/* --- phone: the list of sections ----------------------------------------- */
+
+.listPage {
+  flex: 1;
+  min-height: 0;
+  padding-bottom: var(--ccw-space-6);
+  overflow-y: auto;
+}
+
+.hero {
+  padding: 12px 20px 0;
+  font-family: var(--ccw-font-serif);
+  font-size: 30px;
+  font-weight: 500;
+}
+
+.heroPath {
+  padding: 2px 20px 20px;
+  overflow: hidden;
+  font-family: var(--ccw-font-mono);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list {
+  margin: 0 12px;
+  overflow: hidden;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-xl);
+}
+
+.listRow {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  min-height: 64px;
+  padding: 10px 14px;
+  color: var(--ccw-text-faint);
+  text-decoration: none;
+}
+
+.listRow + .listRow {
+  border-top: 1px solid var(--ccw-border-l2);
+}
+
+.listIcon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: var(--ccw-text-secondary);
+  background: var(--ccw-bg-raised);
+  border-radius: 10px;
+}
+
+.listText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  font-weight: 500;
+  color: var(--ccw-text-primary);
+}
+
+.listDesc {
+  font-size: var(--ccw-text-sm);
+  font-weight: 400;
+  color: var(--ccw-text-muted);
 }
 
 /* --- model rows --------------------------------------------------------- */
@@ -530,19 +886,65 @@
   border-radius: var(--ccw-radius-md);
 }
 
+/* Floats over the end of the column it saves, rather than a bar across the
+   whole page that holds a grayed-out button most of the time. */
 .footer {
+  position: absolute;
+  bottom: 20px;
+  left: calc(232px + 48px);
+  z-index: 2;
   display: flex;
-  gap: var(--ccw-space-2);
+  gap: 10px;
   align-items: center;
-  padding: var(--ccw-space-3) var(--ccw-space-5);
+  width: min(664px, calc(100% - 232px - 96px));
+  padding: 8px 8px 8px 16px;
   background: var(--ccw-bg-base);
-  border-top: 1px solid var(--ccw-border-l2);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-lg);
+  box-shadow: var(--ccw-shadow-popover);
+  animation: rise var(--ccw-duration-slow) var(--ccw-ease);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .footer {
+    animation: none;
+  }
 }
 
 .status {
   flex: 1;
   min-width: 0;
   font-size: var(--ccw-text-sm);
+}
+
+.save {
+  flex: none;
+  height: var(--ccw-h-md);
+  padding: 0 16px;
+  font-size: var(--ccw-text-base);
+  font-weight: 500;
+  color: #fff;
+  background: var(--ccw-accent);
+  border-radius: var(--ccw-radius-md);
+  transition: background var(--ccw-duration-fast) var(--ccw-ease);
+}
+
+.save:hover:not(:disabled) {
+  background: var(--ccw-accent-hover);
+}
+
+/* Shown, but with nothing left to save: after saving, or while the form has a problem. */
+.save:disabled {
+  color: var(--ccw-text-faint);
+  cursor: default;
+  background: var(--ccw-bg-sunken);
 }
 
 .statusError {
@@ -737,44 +1139,76 @@
 
 @media (max-width: 1024px) {
   .body {
-    grid-template-columns: 168px minmax(0, 1fr);
-  }
-}
-
-/* Phones: the cards meet the screen's edges, and each model row stacks its fields. */
-@media (max-width: 640px) {
-  .head {
-    padding: var(--ccw-space-2) var(--ccw-space-3);
-  }
-
-  /* The sections become a row of tabs above the card. */
-  .body {
-    grid-template-rows: auto minmax(0, 1fr);
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .nav {
-    flex-direction: row;
-    padding: var(--ccw-space-2) var(--ccw-space-3);
-    overflow-x: auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--ccw-border-l2);
-  }
-
-  .navItem {
-    padding: 6px 10px;
-  }
-
-  .content {
-    padding: var(--ccw-space-3);
+    grid-template-columns: 200px minmax(0, 1fr);
   }
 
   .card {
-    padding: var(--ccw-space-4);
+    padding-right: 32px;
+    padding-left: 32px;
   }
 
   .footer {
-    padding: var(--ccw-space-2) var(--ccw-space-3);
+    left: calc(200px + 32px);
+    width: min(664px, calc(100% - 200px - 64px));
+  }
+}
+
+/* Phones: the sections are a list of their own, so a section takes the
+   whole screen and its name moves up into the head; each model row stacks
+   its fields. */
+@media (max-width: 640px) {
+  .head {
+    height: 56px;
+    padding: 0 12px 0 4px;
+  }
+
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nav,
+  .pageHead {
+    display: none;
+  }
+
+  .card {
+    padding: 20px 16px 128px;
+  }
+
+  .cardFill {
+    padding-bottom: 96px;
+  }
+
+  .choices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .choice {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .preview {
+    width: 72px;
+    height: 72px;
+    padding: 9px;
+    gap: 5px;
+  }
+
+  .previewLine,
+  .previewFold {
+    height: 5px;
+  }
+
+  .previewCard {
+    height: 9px;
+  }
+
+  .footer {
+    right: 10px;
+    bottom: 12px;
+    left: 10px;
+    width: auto;
   }
 
   .roles {

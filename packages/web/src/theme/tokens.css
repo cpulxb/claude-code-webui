@@ -43,12 +43,18 @@
   --ccw-gray-900: #1a1a17;
 
   --ccw-accent: #c96442;
-  --ccw-accent-soft: #f6e9e3;
+  --ccw-accent-hover: #b4563a;
+  --ccw-accent-soft: #f7ebe4;
+  /* The accent as text on a light ground, where #c96442 itself is too thin. */
+  --ccw-accent-ink: #9a4529;
   /* Ultracode's purple, as in the VS Code extension's switch and pill. */
   --ccw-ultracode: #7c4dcc;
   --ccw-danger: #b4342a;
+  --ccw-danger-soft: #f8e7e5;
   --ccw-success: #2f7d4f;
-  --ccw-warning: #9a6b16;
+  --ccw-success-soft: #e5f1ea;
+  --ccw-warning: #93650f;
+  --ccw-warning-soft: #f7eedb;
 
   --ccw-bg-base: var(--ccw-gray-0);
   --ccw-bg-sidebar: var(--ccw-gray-25);
@@ -56,19 +62,24 @@
   --ccw-bg-sunken: var(--ccw-gray-100);
   --ccw-bg-hover: var(--ccw-gray-100);
   --ccw-bg-selected: var(--ccw-gray-200);
+  --ccw-bg-bubble: #f1f1ef;
 
   --ccw-border-l1: var(--ccw-gray-200);
   --ccw-border-l2: var(--ccw-gray-100);
   --ccw-border-strong: var(--ccw-gray-300);
 
-  --ccw-text-primary: var(--ccw-gray-900);
-  --ccw-text-secondary: var(--ccw-gray-600);
-  --ccw-text-muted: var(--ccw-gray-500);
-  --ccw-text-faint: var(--ccw-gray-400);
+  --ccw-text-primary: #1c1b18;
+  --ccw-text-secondary: #55534d;
+  /* 4.9:1 on white: the tier for metadata that has to be read. */
+  --ccw-text-muted: #6f6d66;
+  /* Decoration only; nothing that must be read sits in this tier. */
+  --ccw-text-faint: #9c9a91;
 
+  --ccw-radius-xs: 4px;
   --ccw-radius-sm: 6px;
-  --ccw-radius-md: 10px;
-  --ccw-radius-lg: 14px;
+  --ccw-radius-md: 8px;
+  --ccw-radius-lg: 12px;
+  --ccw-radius-xl: 16px;
   --ccw-radius-pill: 999px;
 
   --ccw-space-1: 4px;
@@ -77,6 +88,13 @@
   --ccw-space-4: 16px;
   --ccw-space-5: 24px;
   --ccw-space-6: 32px;
+
+  /* Control heights, so the buttons, fields and pills on one row line up.
+     Touch screens step each up a size. */
+  --ccw-h-xs: 22px;
+  --ccw-h-sm: 28px;
+  --ccw-h-md: 32px;
+  --ccw-h-lg: 36px;
 
   --ccw-font-ui:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
@@ -89,9 +107,13 @@
   --ccw-text-base: 13px;
   --ccw-text-md: 14px;
   --ccw-text-prose: 15px;
+  --ccw-text-lg: 17px;
+  --ccw-text-xl: 21px;
+  --ccw-text-2xl: 26px;
 
-  --ccw-shadow-popover: 0 8px 28px rgb(0 0 0 / 12%), 0 1px 3px rgb(0 0 0 / 8%);
-  --ccw-shadow-composer: 0 4px 20px rgb(0 0 0 / 7.5%);
+  --ccw-shadow-1: 0 1px 2px rgb(40 30 10 / 6%);
+  --ccw-shadow-composer: 0 1px 2px rgb(40 30 10 / 5%), 0 6px 24px rgb(40 30 10 / 7%);
+  --ccw-shadow-popover: 0 10px 32px rgb(30 20 5 / 14%), 0 1px 3px rgb(30 20 5 / 8%);
 
   --ccw-ease: cubic-bezier(0.32, 0.72, 0, 1);
   --ccw-duration-fast: 120ms;
@@ -101,25 +123,38 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --ccw-bg-base: #1a1a17;
+  --ccw-bg-base: #1b1a17;
   --ccw-bg-sidebar: #151512;
   --ccw-bg-raised: #232320;
-  --ccw-bg-sunken: #121210;
-  --ccw-bg-hover: #2b2b27;
-  --ccw-bg-selected: #33332e;
+  --ccw-bg-sunken: #121110;
+  --ccw-bg-hover: #2a2925;
+  --ccw-bg-selected: #33322d;
+  --ccw-bg-bubble: #2a2925;
 
-  --ccw-border-l1: #33332e;
-  --ccw-border-l2: #28282400;
-  --ccw-border-strong: #45453f;
+  --ccw-border-l1: #33312c;
+  --ccw-border-l2: #292824;
+  --ccw-border-strong: #46443d;
 
-  --ccw-text-primary: #eeeeec;
-  --ccw-text-secondary: #b9b9b1;
-  --ccw-text-muted: #8a8a82;
-  --ccw-text-faint: #66665f;
+  --ccw-text-primary: #edece7;
+  --ccw-text-secondary: #bdbbb2;
+  --ccw-text-muted: #94928a;
+  --ccw-text-faint: #6c6a62;
 
   --ccw-accent: #d97757;
-  --ccw-accent-soft: #3a251d;
+  --ccw-accent-hover: #e3876a;
+  --ccw-accent-soft: #3a261e;
+  --ccw-accent-ink: #eba387;
   --ccw-ultracode: #a281e8;
+  --ccw-danger: #e0675b;
+  --ccw-danger-soft: #3a1f1c;
+  --ccw-success: #5bb57f;
+  --ccw-success-soft: #1d2f24;
+  --ccw-warning: #d4a44a;
+  --ccw-warning-soft: #352a16;
+
+  --ccw-shadow-1: 0 1px 2px rgb(0 0 0 / 30%);
+  --ccw-shadow-composer: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 28px rgb(0 0 0 / 35%);
+  --ccw-shadow-popover: 0 12px 36px rgb(0 0 0 / 50%), 0 1px 3px rgb(0 0 0 / 40%);
 }
 
 * {
@@ -150,6 +185,14 @@ button {
   border: none;
 }
 
+/* One keyboard focus ring for everything. Zero specificity, and that matters:
+   this file loads after the component modules, so anything stronger would
+   override the fields that draw focus on their frame instead (outline: none). */
+:where(:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--ccw-accent) 70%, transparent);
+  outline-offset: 1px;
+}
+
 /* iOS Safari zooms the page into any focused field set under 16px and stays
    zoomed after. Important, because every field's own class sets a size. */
 @media (pointer: coarse) {
@@ -166,14 +209,14 @@ button {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--ccw-gray-300);
+  background: var(--ccw-border-strong);
   background-clip: padding-box;
   border: 3px solid transparent;
   border-radius: var(--ccw-radius-pill);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--ccw-gray-400);
+  background: var(--ccw-text-faint);
   background-clip: padding-box;
   border: 3px solid transparent;
 }

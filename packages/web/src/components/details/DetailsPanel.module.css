@@ -11,7 +11,16 @@
   gap: 2px;
   align-items: center;
   justify-content: flex-end;
-  padding: var(--ccw-space-2) var(--ccw-space-2) var(--ccw-space-2) var(--ccw-space-3);
+  height: 52px;
+  padding: 0 var(--ccw-space-2);
+  border-bottom: 1px solid var(--ccw-border-l2);
+}
+
+@media (max-width: 640px) {
+  .head {
+    height: 56px;
+    padding-left: 4px;
+  }
 }
 
 /* One row, browser style: tabs shrink to their minimum, then the strip
@@ -19,8 +28,10 @@
 .strip {
   display: flex;
   flex: 1;
+  gap: 2px;
   align-items: center;
   min-width: 0;
+  padding: 2px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -38,7 +49,7 @@
   max-width: 180px;
   height: 30px;
   color: var(--ccw-text-secondary);
-  border-radius: 8px;
+  border-radius: var(--ccw-radius-md);
 }
 
 /* dsh's hairline between tabs. It steps aside next to a hovered or active
@@ -59,14 +70,18 @@
 }
 
 .tab:hover {
-  background: var(--ccw-bg-raised);
+  background: var(--ccw-bg-hover);
 }
 
-/* The tab being read keeps its full name; the others give up the width. */
+/* The tab being read keeps its full name; the others give up the width. It
+   is lifted off the panel as a card, so which one is in front reads at once. */
 .tab.tabActive {
   flex-shrink: 0;
   color: var(--ccw-text-primary);
-  background: var(--ccw-bg-hover);
+  background: var(--ccw-bg-base);
+  box-shadow:
+    0 0 0 1px var(--ccw-border-l1),
+    var(--ccw-shadow-1);
 }
 
 .tabMain {
@@ -88,6 +103,7 @@
 .tabIcon {
   display: flex;
   flex: none;
+  color: var(--ccw-text-muted);
 }
 
 .tabLabel {
@@ -146,9 +162,9 @@
 }
 
 .tabDirtyDot {
-  width: 8px;
-  height: 8px;
-  background: #e8a33d;
+  width: 7px;
+  height: 7px;
+  background: var(--ccw-warning);
   border-radius: 50%;
 }
 
@@ -175,8 +191,8 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: var(--ccw-h-sm);
+  height: var(--ccw-h-sm);
   color: var(--ccw-text-muted);
   border-radius: var(--ccw-radius-sm);
 }
@@ -195,7 +211,11 @@
 
 @media (pointer: coarse) {
   .iconButton {
-    width: 36px;
+    width: 40px;
+    height: 40px;
+  }
+
+  .tab {
     height: 36px;
   }
 }

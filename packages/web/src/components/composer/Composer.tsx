@@ -7,6 +7,7 @@ import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import { fileToAttachment, fileToBase64, isSupportedAttachment } from '../../utils/attachments.ts'
 import { LOCAL_COMMANDS, parseLocalCommand, runLocalCommand } from '../../utils/local-commands.ts'
 import { findModel, modelLabel } from '../../utils/models.ts'
+import { useNarrow } from '../../utils/narrow.ts'
 import { withQuotes } from '../../utils/quotes.ts'
 import { ArrowUpIcon, StopIcon, XIcon } from '../Icons.tsx'
 import { buildPaletteEntries, CommandPalette, type PaletteEntry } from './CommandPalette.tsx'
@@ -86,6 +87,9 @@ export function Composer(): JSX.Element | null {
   const running = useActiveSessionValue((session) => session.status === 'running') ?? false
   const closed = useActiveSessionValue((session) => session.closed) ?? false
   const attached = useActiveSessionValue((session) => session.attached) ?? false
+  // Detached with an error: the attach failed, and the notice above says why.
+  const attachFailed = useActiveSessionValue((session) => !session.attached && session.error !== null) ?? false
+  const narrow = useNarrow()
   const permissionMode = useActiveSessionValue((session) => session.permissionMode) ?? 'default'
   const effort = useActiveSessionValue((session) => session.effort) ?? 'high'
   const model = useActiveSessionValue((session) => session.model) ?? null
@@ -608,9 +612,13 @@ export function Composer(): JSX.Element | null {
             placeholder={
               closed
                 ? '会话已结束 — 从侧栏重新打开即可继续'
-                : attached
-                  ? '输入消息，/ 唤出命令，@ 引用文件，! 执行 shell 命令'
-                  : '正在接管会话…'
+                : !attached
+                  ? attachFailed
+                    ? '没能接管会话，发送时会再试一次'
+                    : '正在接管会话…'
+                  : narrow
+                    ? '输入消息，/ 命令，@ 文件'
+                    : '输入消息，/ 唤出命令，@ 引用文件，! 执行 shell 命令'
             }
             onChange={(event) => updateText(event.target.value, event.target.selectionStart)}
             onKeyDown={onKeyDown}
@@ -618,86 +626,26 @@ export function Composer(): JSX.Element | null {
             onBlur={() => setTrigger(null)}
           />
 
-          <div className={styles.toolbar}>
+          {running ? (
             <button
-              className={styles.iconButton}
-              onClick={() => fileInputRef.current?.click()}
+              className={`${styles.send} ${styles.stop}`}
+              onClick={() => void interrupt()}
               type="button"
-              title="添加附件"
+              title="停止"
             >
-              <AttachIcon />
+              <StopIcon size={14} />
             </button>
-            <button className={styles.iconButton} onClick={openCommands} type="button" title="斜杠命令">
-              <SlashIcon />
-            </button>
-
-            {(models.length > 0 || model) && (
-              <button
-                ref={modelPillRef}
-                className={styles.modelPill}
-                type="button"
-                title="切换模型"
-                aria-haspopup="listbox"
-                aria-expanded={modelsOpen}
-                onClick={() => {
-                  if (modelsOpen) {
-                    setModelsOpen(false)
-                    return
-                  }
-                  setModesOpen(false)
-                  const current = findModel(models, model)
-                  setModelIndex(Math.max(0, current ? models.indexOf(current) : 0))
-                  setModelsOpen(true)
-                }}
-              >
-                <span>{pillModelName(models, model)}</span>
-                {pillEfforts.length > 0 && <span className={styles.modelPillEffort}>{EFFORT_LABEL[effort]}</span>}
-                {ultracode && ultracodeAvailable && <span className={styles.modelPillUltra}>· Ultracode</span>}
-              </button>
-            )}
-
-            <span className={styles.spacer} />
-
+          ) : (
             <button
-              className={styles.modeButton}
-              ref={modeButtonRef}
-              onClick={() => setModesOpen(!modesOpen)}
+              className={styles.send}
+              onClick={submit}
+              disabled={uploading || (!text.trim() && attachments.length === 0 && uploads.length === 0)}
               type="button"
-              aria-haspopup="menu"
-              aria-expanded={modesOpen}
+              title={uploading ? '等文件上传完再发送' : '发送'}
             >
-              <ModeIcon
-                mode={permissionMode}
-                size={14}
-                className={mode.danger ? styles.modeDanger : undefined}
-              />
-              <span className={mode.danger ? styles.modeDanger : ''}>{mode.label}</span>
+              <ArrowUpIcon />
             </button>
-
-            <ContextMeter usage={contextUsage} />
-
-            {running ? (
-              <button
-                className={`${styles.send} ${styles.stop}`}
-                onClick={() => void interrupt()}
-                type="button"
-                title="停止"
-              >
-                <StopIcon size={14} />
-              </button>
-            ) : (
-              <button
-                className={styles.send}
-                onClick={submit}
-                disabled={uploading || (!text.trim() && attachments.length === 0 && uploads.length === 0)}
-                type="button"
-                title={uploading ? '等文件上传完再发送' : '发送'}
-              >
-                <ArrowUpIcon />
-              </button>
-            )}
-          </div>
-
+          )}
           <input
             ref={fileInputRef}
             type="file"
@@ -709,9 +657,66 @@ export function Composer(): JSX.Element | null {
             }}
           />
         </div>
-        <div className={styles.hint}>
-          {shellMode ? 'Shell 模式 · Enter 在会话目录执行，输出会一并发给 Claude' : 'Enter 发送 · Shift+Enter 换行'}
+        {/* Out of the box, in a quiet row under it: the box is for writing. */}
+        <div className={styles.toolbar}>
+          <button
+            className={styles.iconButton}
+            onClick={() => fileInputRef.current?.click()}
+            type="button"
+            title="添加附件"
+          >
+            <AttachIcon />
+          </button>
+          <button className={styles.iconButton} onClick={openCommands} type="button" title="斜杠命令">
+            <SlashIcon />
+          </button>
+
+          {(models.length > 0 || model) && (
+            <button
+              ref={modelPillRef}
+              className={styles.modelPill}
+              type="button"
+              title="切换模型"
+              aria-haspopup="listbox"
+              aria-expanded={modelsOpen}
+              onClick={() => {
+                if (modelsOpen) {
+                  setModelsOpen(false)
+                  return
+                }
+                setModesOpen(false)
+                const current = findModel(models, model)
+                setModelIndex(Math.max(0, current ? models.indexOf(current) : 0))
+                setModelsOpen(true)
+              }}
+            >
+              <span>{pillModelName(models, model)}</span>
+              {pillEfforts.length > 0 && <span className={styles.modelPillEffort}>{EFFORT_LABEL[effort]}</span>}
+              {ultracode && ultracodeAvailable && <span className={styles.modelPillUltra}>· Ultracode</span>}
+            </button>
+          )}
+
+          <span className={styles.spacer} />
+
+          <button
+            className={styles.modeButton}
+            ref={modeButtonRef}
+            onClick={() => setModesOpen(!modesOpen)}
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={modesOpen}
+          >
+            <ModeIcon
+              mode={permissionMode}
+              size={14}
+              className={mode.danger ? styles.modeDanger : undefined}
+            />
+            <span className={mode.danger ? styles.modeDanger : ''}>{mode.label}</span>
+          </button>
+
+          <ContextMeter usage={contextUsage} />
         </div>
+        {shellMode && <div className={styles.hint}>Shell 模式 · Enter 在会话目录执行，输出会一并发给 Claude</div>}
       </div>
     </div>
   )

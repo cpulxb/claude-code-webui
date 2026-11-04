@@ -1,5 +1,5 @@
-import type { AuthStatus, ProjectGroup } from '@ccw/shared'
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import type { AuthStatus, ProjectGroup, SessionSummary } from '@ccw/shared'
+import { useCallback, useEffect, useState } from 'react'
 
 import { fetchAuthStatus, onUnauthorized } from './api/client.ts'
 import styles from './App.module.css'
@@ -9,23 +9,13 @@ import { PairingScreen } from './components/auth/PairingScreen.tsx'
 import { ChatView } from './components/chat/ChatView.tsx'
 import { Composer } from './components/composer/Composer.tsx'
 import { DetailsPanel } from './components/details/DetailsPanel.tsx'
-import { BrandMark, MoonIcon, PanelLeftIcon, PanelRightIcon, SunIcon } from './components/Icons.tsx'
+import { EmptyState } from './components/EmptyState.tsx'
+import { GitBranchIcon, MenuIcon, PanelLeftIcon, PanelRightIcon } from './components/Icons.tsx'
 import { SettingsPage } from './components/settings/SettingsPage.tsx'
 import { Sidebar } from './components/sidebar/Sidebar.tsx'
 import { followAddressBar, leaveSettings, useActiveSessionValue, useStore } from './store/session.ts'
+import { NARROW, useNarrow } from './utils/narrow.ts'
 import { sessionTitle } from './utils/session-title.ts'
-
-/** Phone widths, where the side panels become drawers. Matches the 640px media queries in the CSS modules. */
-const NARROW = window.matchMedia('(max-width: 640px)')
-
-function subscribeNarrow(onChange: () => void): () => void {
-  NARROW.addEventListener('change', onChange)
-  return () => NARROW.removeEventListener('change', onChange)
-}
-
-function useNarrow(): boolean {
-  return useSyncExternalStore(subscribeNarrow, () => NARROW.matches)
-}
 
 /**
  * Pairing gate. Off this machine the server answers nothing but the pairing
@@ -60,9 +50,11 @@ function Workspace(): JSX.Element {
   // replaces the object on every transcript mutation.
   const cwd = useActiveSessionValue((session) => session.cwd)
   const running = useActiveSessionValue((session) => session.status === 'running')
+  const waiting = useActiveSessionValue((session) => session.pendingPermissions.length > 0)
   const closed = useActiveSessionValue((session) => session.closed)
   const activeId = useStore((state) => state.activeId)
-  const summary = useStore(activeSummary)
+  const summary = useStore((state) => activeEntry(state)?.summary)
+  const branch = useStore((state) => activeEntry(state)?.gitBranch)
   const settingsSection = useStore((state) => state.settingsSection)
   const narrow = useNarrow()
 
@@ -78,6 +70,9 @@ function Workspace(): JSX.Element {
   useEffect(() => {
     document.documentElement.dataset['theme'] = theme
   }, [theme])
+
+  const toggleTheme = useCallback(() => setTheme((current) => (current === 'light' ? 'dark' : 'light')), [])
+  const status = waiting ? 'waiting' : running ? 'running' : null
 
   const collapseSidebar = useCallback(() => setSidebarCollapsed(true), [])
   const collapseDetails = useCallback(() => {
@@ -105,7 +100,7 @@ function Workspace(): JSX.Element {
         narrow={narrow}
         onCollapseSidebar={collapseSidebar}
         onCollapseDetails={collapseDetails}
-        sidebar={<Sidebar onCollapse={collapseSidebar} />}
+        sidebar={<Sidebar onCollapse={collapseSidebar} theme={theme} onToggleTheme={toggleTheme} />}
         details={
           <DetailsPanel
             onCollapse={collapseDetails}
@@ -118,29 +113,50 @@ function Workspace(): JSX.Element {
           <div className={styles.main}>
             <div className={styles.header}>
               {sidebarCollapsed && (
-                <button className={styles.iconButton} onClick={() => setSidebarCollapsed(false)} type="button" title="展开侧栏">
-                  <PanelLeftIcon />
+                <button
+                  className={styles.iconButton}
+                  onClick={() => setSidebarCollapsed(false)}
+                  type="button"
+                  title={narrow ? '会话列表' : '展开侧栏'}
+                  aria-label={narrow ? '会话列表' : '展开侧栏'}
+                >
+                  {narrow ? <MenuIcon size={20} /> : <PanelLeftIcon />}
                 </button>
               )}
-              <span className={styles.title} title={cwd !== undefined ? `${summary || '新会话'}\n${shortCwd(cwd)}` : undefined}>
-                {cwd !== undefined ? sessionTitle(summary) : 'Claude Code'}
-              </span>
-              {running && <span className={styles.subtitle}>运行中…</span>}
-              {closed && <span className={styles.subtitle}>会话已结束</span>}
+              {/* Which project and branch the conversation works in, under its title:
+                  on a phone the sidebar that says so is out of sight. */}
+              <div className={styles.titles} title={cwd !== undefined ? `${summary || '新会话'}\n${shortCwd(cwd)}` : undefined}>
+                <span className={styles.title}>{cwd !== undefined ? sessionTitle(summary) : 'Claude Code'}</span>
+                {cwd !== undefined && (
+                  <span className={styles.sub}>
+                    {narrow && status && <span className={`${styles.dot} ${styles[`dot-${status}`]}`} />}
+                    <span className={styles.subText}>{basename(cwd)}</span>
+                    {branch && (
+                      <>
+                        <span className={styles.sep}>/</span>
+                        <GitBranchIcon size={11} />
+                        <span className={styles.subText}>{branch}</span>
+                      </>
+                    )}
+                    {narrow && closed && <span className={styles.subText}>· 已结束</span>}
+                  </span>
+                )}
+              </div>
+              {!narrow && status && (
+                <span className={`${styles.status} ${status === 'waiting' ? styles.statusWaiting : ''}`}>
+                  <span className={`${styles.dot} ${styles[`dot-${status}`]}`} />
+                  {status === 'waiting' ? '等你确认' : '运行中'}
+                </span>
+              )}
+              {!narrow && closed && <span className={`${styles.status} ${styles.statusClosed}`}>会话已结束</span>}
               <span className={styles.spacer} />
-              <button
-                className={styles.iconButton}
-                onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-                type="button"
-                title="切换主题"
-              >
-                {theme === 'light' ? <MoonIcon /> : <SunIcon />}
-              </button>
               <button
                 className={styles.iconButton}
                 onClick={() => setDetailsCollapsed(!detailsCollapsed)}
                 type="button"
                 title="会话详情"
+                aria-label="会话详情"
+                aria-pressed={!detailsCollapsed}
               >
                 <PanelRightIcon />
               </button>
@@ -149,12 +165,7 @@ function Workspace(): JSX.Element {
             {cwd !== undefined ? (
               <ActiveConversation />
             ) : (
-              <div className={styles.blank}>
-                <span className={styles.blankMark}>
-                  <BrandMark size={28} />
-                </span>
-                <span>从左侧选择一个会话，或新建一个</span>
-              </div>
+              <EmptyState narrow={narrow} onShowSessions={() => setSidebarCollapsed(false)} />
             )}
           </div>
         }
@@ -176,16 +187,21 @@ function ActiveConversation(): JSX.Element {
 }
 
 /**
- * The active session's title, from its sidebar entry. Runs on every store
- * change — every streamed token — so it walks the list instead of copying it.
+ * The active session's sidebar entry, for its title and branch. Runs on every
+ * store change — every streamed token — so it walks the list instead of
+ * copying it, and callers select a primitive field off it.
  */
-function activeSummary(state: { projects: ProjectGroup[]; activeId: string | null }): string | undefined {
+function activeEntry(state: { projects: ProjectGroup[]; activeId: string | null }): SessionSummary | undefined {
   for (const project of state.projects) {
-    for (const entry of project.sessions) if (entry.sessionId === state.activeId) return entry.summary
+    for (const entry of project.sessions) if (entry.sessionId === state.activeId) return entry
   }
   return undefined
 }
 
 function shortCwd(cwd: string): string {
   return cwd.replace(/^\/root/, '~')
+}
+
+function basename(path: string): string {
+  return path.split('/').filter(Boolean).at(-1) ?? path
 }

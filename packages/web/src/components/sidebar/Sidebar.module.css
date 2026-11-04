@@ -8,9 +8,11 @@
 .head {
   container-type: inline-size;
   display: flex;
+  flex: none;
   gap: var(--ccw-space-2);
   align-items: center;
-  padding: var(--ccw-space-3) var(--ccw-space-3) var(--ccw-space-2);
+  height: 52px;
+  padding: 0 var(--ccw-space-2) 0 var(--ccw-space-4);
 }
 
 /* Set like claude.ai's wordmark, and shrunk with the sidebar the way theirs
@@ -21,9 +23,10 @@
   gap: 0.3em;
   align-items: center;
   font-family: var(--ccw-font-serif);
-  font-size: min(20px, 9.5cqi);
+  font-size: min(19px, 9.5cqi);
   font-weight: 500;
   line-height: 1;
+  letter-spacing: -0.01em;
   white-space: nowrap;
 }
 
@@ -33,8 +36,8 @@
 }
 
 .brandMark > svg {
-  width: 0.75em;
-  height: 0.75em;
+  width: 0.8em;
+  height: 0.8em;
 }
 
 .spacer {
@@ -46,86 +49,60 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: var(--ccw-h-sm);
+  height: var(--ccw-h-sm);
   color: var(--ccw-text-muted);
   border-radius: var(--ccw-radius-sm);
+  transition:
+    background var(--ccw-duration-fast) var(--ccw-ease),
+    color var(--ccw-duration-fast) var(--ccw-ease);
 }
 
-.iconButton:hover {
+.iconButton:hover:not(:disabled) {
   color: var(--ccw-text-primary);
   background: var(--ccw-bg-hover);
 }
 
-@media (pointer: coarse) {
-  .iconButton {
-    width: 36px;
-    height: 36px;
+.iconButton:disabled {
+  cursor: default;
+}
+
+.spinning > svg {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
-/* A plain row like the switcher above it, the way claude.ai lists "New". */
-.newButton {
-  display: flex;
-  gap: var(--ccw-space-2);
-  align-items: center;
-  width: calc(100% - var(--ccw-space-4));
-  padding: 6px var(--ccw-space-3);
-  margin: 0 var(--ccw-space-2) var(--ccw-space-2);
-  font-size: var(--ccw-text-md);
-  border-radius: var(--ccw-radius-md);
-}
-
-.newButton:hover {
-  background: var(--ccw-bg-hover);
-}
-
-.search {
-  width: calc(100% - var(--ccw-space-4));
-  padding: 5px var(--ccw-space-3);
-  margin: 0 var(--ccw-space-2) var(--ccw-space-3);
-  font: inherit;
-  font-size: var(--ccw-text-sm);
-  color: inherit;
-  background: var(--ccw-bg-base);
-  border: 1px solid var(--ccw-border-l1);
-  border-radius: var(--ccw-radius-md);
-  outline: none;
-}
-
-.search::placeholder {
-  color: var(--ccw-text-faint);
-}
-
-.search:focus {
-  border-color: var(--ccw-accent);
-}
-
-.list {
-  flex: 1;
-  min-height: 0;
-  padding-bottom: var(--ccw-space-4);
-  overflow-y: auto;
+@media (pointer: coarse) {
+  .iconButton {
+    width: 40px;
+    height: 40px;
+  }
 }
 
 /* --- project switcher -------------------------------------------------- */
 
 .switcher {
   position: relative;
+  flex: none;
   margin: 0 var(--ccw-space-2) var(--ccw-space-2);
 }
 
+/* The project as a small card: which directory everything below belongs to. */
 .switcherButton {
   display: flex;
-  gap: var(--ccw-space-2);
+  gap: 10px;
   align-items: center;
   width: 100%;
-  padding: 6px var(--ccw-space-3);
-  font-size: var(--ccw-text-md);
-  font-weight: 500;
+  padding: 7px 8px;
   color: var(--ccw-text-primary);
   text-align: left;
-  border-radius: var(--ccw-radius-md);
+  border-radius: var(--ccw-radius-lg);
+  transition: background var(--ccw-duration-fast) var(--ccw-ease);
 }
 
 .switcherButton:hover,
@@ -133,15 +110,40 @@
   background: var(--ccw-bg-hover);
 }
 
-.switcherButton > svg {
+.switcherIcon {
+  display: flex;
   flex: none;
-  color: var(--ccw-text-muted);
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  color: var(--ccw-text-secondary);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-md);
+  box-shadow: var(--ccw-shadow-1);
+}
+
+.switcherText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
 }
 
 .switcherName {
-  flex: 1;
-  min-width: 0;
   overflow: hidden;
+  font-size: var(--ccw-text-md);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switcherPath {
+  overflow: hidden;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -161,26 +163,30 @@
   display: flex;
   flex-direction: column;
   max-height: min(480px, 70vh);
+  padding: 4px;
   overflow: hidden;
   background: var(--ccw-bg-base);
   border: 1px solid var(--ccw-border-l1);
-  border-radius: var(--ccw-radius-md);
+  border-radius: var(--ccw-radius-lg);
   box-shadow: var(--ccw-shadow-popover);
 }
 
 .switcherFilter {
-  padding: var(--ccw-space-2) var(--ccw-space-3);
+  flex: none;
+  height: var(--ccw-h-md);
+  padding: 0 10px;
+  margin-bottom: 4px;
   font: inherit;
   font-size: var(--ccw-text-sm);
   color: inherit;
-  background: transparent;
+  background: var(--ccw-bg-raised);
   border: none;
-  border-bottom: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-md);
   outline: none;
 }
 
 .switcherFilter::placeholder {
-  color: var(--ccw-text-faint);
+  color: var(--ccw-text-muted);
 }
 
 .switcherList {
@@ -192,10 +198,16 @@
 .switcherRow {
   display: block;
   width: 100%;
-  padding: 5px var(--ccw-space-3);
+  padding: 6px 10px 6px 4px;
   font-size: var(--ccw-text-base);
   color: var(--ccw-text-secondary);
   text-align: left;
+  border-radius: var(--ccw-radius-md);
+}
+
+.switcherRow .hitMeta {
+  font-family: var(--ccw-font-mono);
+  font-size: 10.5px;
 }
 
 .switcherCurrent {
@@ -204,37 +216,129 @@
 }
 
 .switcherBrowse {
-  padding: var(--ccw-space-2) var(--ccw-space-3);
+  flex: none;
+  padding: 8px 10px;
+  margin-top: 4px;
   font-size: var(--ccw-text-sm);
-  color: var(--ccw-text-muted);
+  color: var(--ccw-text-secondary);
   text-align: left;
-  border-top: 1px solid var(--ccw-border-l1);
+  border-top: 1px solid var(--ccw-border-l2);
 }
 
 .switcherBrowse:hover {
   color: var(--ccw-text-primary);
+}
+
+/* --- new session and search ------------------------------------------- */
+
+.actions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 var(--ccw-space-2) var(--ccw-space-2);
+}
+
+.newButton {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  height: var(--ccw-h-lg);
+  padding: 0 12px;
+  font-size: var(--ccw-text-md);
+  font-weight: 500;
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-md);
+  box-shadow: var(--ccw-shadow-1);
+  transition: border-color var(--ccw-duration-fast) var(--ccw-ease);
+}
+
+.newButton:hover {
+  border-color: var(--ccw-border-strong);
+}
+
+.newButton > svg {
+  color: var(--ccw-accent);
+}
+
+.search {
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  height: var(--ccw-h-md);
+  padding: 0 10px 0 12px;
+  color: var(--ccw-text-faint);
+  cursor: text;
+  border-radius: var(--ccw-radius-md);
+  transition: background var(--ccw-duration-fast) var(--ccw-ease);
+}
+
+.search:hover,
+.search:focus-within {
   background: var(--ccw-bg-hover);
 }
 
-/* 今天 / 昨天 / … headings over the session list. */
-.bucket {
-  padding: var(--ccw-space-3) var(--ccw-space-3) var(--ccw-space-1);
-  font-size: var(--ccw-text-sm);
+.search > svg {
+  flex: none;
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  font-size: var(--ccw-text-base);
+  color: var(--ccw-text-primary);
+  background: none;
+  border: none;
+  outline: none;
+}
+
+.search input::placeholder {
   color: var(--ccw-text-muted);
+}
+
+@media (pointer: coarse) {
+  .newButton {
+    height: 44px;
+  }
+
+  .search {
+    height: 40px;
+    background: var(--ccw-bg-hover);
+  }
+}
+
+/* --- session list ------------------------------------------------------ */
+
+.list {
+  flex: 1;
+  min-height: 0;
+  padding: 0 var(--ccw-space-2) var(--ccw-space-4);
+  overflow-y: auto;
+}
+
+/* 今天 / 昨天 / … headings, held at the top so a long list says where it is. */
+.bucket {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 10px 10px 4px;
+  font-size: var(--ccw-text-xs);
+  font-weight: 600;
+  color: var(--ccw-text-muted);
+  letter-spacing: 0.02em;
+  background: var(--ccw-bg-sidebar);
 }
 
 /* Inset and rounded, so the selection reads as a pill rather than a band. */
 .item {
   position: relative;
   display: flex;
-  gap: var(--ccw-space-2);
-  align-items: baseline;
-  width: calc(100% - var(--ccw-space-4));
-  padding: 4px var(--ccw-space-1);
-  margin: 0 var(--ccw-space-2);
+  align-items: center;
   font-size: var(--ccw-text-md);
   color: var(--ccw-text-secondary);
-  text-align: left;
   border-radius: var(--ccw-radius-md);
 }
 
@@ -242,40 +346,14 @@
   display: flex;
   flex: 1;
   gap: var(--ccw-space-2);
-  align-items: baseline;
+  align-items: center;
   min-width: 0;
-  padding: 1px 6px;
-  color: inherit;
+  min-height: 32px;
+  padding: 5px 10px 5px 4px;
   font: inherit;
+  color: inherit;
   text-align: left;
   text-decoration: none;
-}
-
-/* A live row owns a CLI subprocess, so closing it needs to stay one click
-   away — but not so present that it competes with the title. Renaming sits
-   beside it on the same terms. */
-.itemAction {
-  display: flex;
-  flex: none;
-  padding: 0 2px;
-  color: var(--ccw-text-faint);
-  opacity: 0;
-}
-
-.item:hover .itemAction {
-  opacity: 1;
-}
-
-/* Without hover the button would be invisible yet still tappable, so a live
-   row could lose its CLI process to a tap near its right edge. */
-@media (hover: none) {
-  .itemAction {
-    opacity: 1;
-  }
-}
-
-.itemAction:hover {
-  color: var(--ccw-text-primary);
 }
 
 .item:hover {
@@ -286,6 +364,16 @@
 .itemActive:hover {
   color: var(--ccw-text-primary);
   background: var(--ccw-bg-selected);
+}
+
+/* The dot's column, held open without one so the titles line up. */
+.lead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  align-self: center;
 }
 
 .itemTitle {
@@ -299,14 +387,86 @@
 .itemAge {
   flex: none;
   font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-faint);
+  color: var(--ccw-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A live row owns a CLI subprocess, so closing it needs to stay one click
+   away — but not so present that it competes with the title. With a pointer
+   the buttons lay over the age on hover instead of taking a column of their
+   own, so the title keeps its width; renaming sits beside closing. */
+.itemActions {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+  padding-left: 20px;
+  visibility: hidden;
+  background: linear-gradient(to right, transparent, var(--ccw-bg-hover) 8px);
+  transform: translateY(-50%);
+}
+
+.itemActive .itemActions {
+  background: linear-gradient(to right, transparent, var(--ccw-bg-selected) 8px);
+}
+
+.item:hover .itemActions,
+.hitRow:hover .itemActions,
+.itemActions:focus-within {
+  visibility: visible;
+}
+
+.itemAction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ccw-h-xs);
+  height: var(--ccw-h-xs);
+  color: var(--ccw-text-muted);
+  border-radius: var(--ccw-radius-xs);
+}
+
+.itemAction:hover {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-border-l1);
+}
+
+/* Without hover the buttons would be invisible yet still tappable, so a live
+   row could lose its CLI process to a tap near its right edge. They take
+   their own column instead, always shown. */
+@media (hover: none) {
+  .itemActions {
+    position: static;
+    padding: 0 4px 0 0;
+    visibility: visible;
+    background: none;
+    transform: none;
+  }
+
+  .itemActive .itemActions {
+    background: none;
+  }
+
+  .itemAction {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+@media (pointer: coarse) {
+  .itemOpen {
+    min-height: 44px;
+  }
 }
 
 /* Takes the link's place at the link's size, so the row does not jump. */
 .renameInput {
   flex: 1;
   min-width: 0;
-  padding: 0 5px;
+  height: 26px;
+  padding: 0 6px;
+  margin: 3px 4px 3px 22px;
   font: inherit;
   color: var(--ccw-text-primary);
   background: var(--ccw-bg-base);
@@ -319,9 +479,10 @@
   display: flex;
   gap: 4px;
   align-items: center;
-  max-width: calc(100% - var(--ccw-space-4));
-  padding: 2px 8px;
-  margin: 0 var(--ccw-space-2) 0 var(--ccw-space-3);
+  max-width: 100%;
+  height: var(--ccw-h-xs);
+  padding: 0 8px;
+  margin: 4px 0 0 6px;
   font-size: var(--ccw-text-xs);
   color: var(--ccw-text-muted);
   border: 1px solid var(--ccw-border-l1);
@@ -348,51 +509,45 @@
 
 /* Two-line search result: title row plus a project · branch meta line. */
 .hitRow {
+  position: relative;
   display: flex;
-  gap: var(--ccw-space-2);
   align-items: center;
-  width: calc(100% - var(--ccw-space-4));
-  padding: 4px var(--ccw-space-1);
-  margin: 0 var(--ccw-space-2);
   font-size: var(--ccw-text-md);
   color: var(--ccw-text-secondary);
   border-radius: var(--ccw-radius-md);
-}
-
-@media (pointer: coarse) {
-  .item,
-  .hitRow {
-    padding-top: 10px;
-    padding-bottom: 10px;
-  }
-}
-
-.hitRow:hover .itemAction {
-  opacity: 1;
 }
 
 .hitOpen {
   display: block;
   flex: 1;
   min-width: 0;
-  padding: 1px 6px;
-  color: inherit;
+  padding: 5px 10px 5px 4px;
   font: inherit;
+  color: inherit;
   text-align: left;
   text-decoration: none;
+}
+
+@media (pointer: coarse) {
+  .hitOpen {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
 }
 
 .hitTitleLine {
   display: flex;
   gap: var(--ccw-space-2);
-  align-items: baseline;
+  align-items: center;
 }
 
+/* Under the title, past the dot's column. */
 .hitMeta {
   display: block;
+  padding-left: 22px;
   overflow: hidden;
   font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-faint);
+  color: var(--ccw-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -401,8 +556,8 @@
    sight (green, or red for an error) until opened, or a process left idle. */
 .dot {
   flex: none;
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
 }
 
@@ -413,7 +568,7 @@
 
 .dot-waiting {
   background: var(--ccw-warning);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ccw-warning) 30%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ccw-warning) 25%, transparent);
 }
 
 .dot-done {
@@ -425,7 +580,7 @@
 }
 
 .dot-idle {
-  background: var(--ccw-gray-300);
+  background: var(--ccw-border-strong);
 }
 
 @keyframes pulse {
@@ -435,7 +590,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dot-running {
+  .dot-running,
+  .spinning > svg {
     animation: none;
   }
 }
@@ -447,63 +603,33 @@
 }
 
 .note-running {
-  color: var(--ccw-accent);
+  font-weight: 500;
+  color: var(--ccw-accent-ink);
 }
 
 .note-waiting {
+  font-weight: 500;
   color: var(--ccw-warning);
 }
 
-.foot {
-  display: flex;
-  gap: var(--ccw-space-2);
-  align-items: center;
-  padding: var(--ccw-space-2) var(--ccw-space-3);
-  font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-faint);
-  white-space: nowrap;
-  border-top: 1px solid var(--ccw-border-l1);
-}
-
-/* The one item that gives way when the version and buttons need the room. */
-.footStatus {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.footButton {
-  padding: 1px 6px;
-  font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-muted);
-  border-radius: var(--ccw-radius-sm);
-}
-
-.footButton:disabled {
-  cursor: default;
-}
-
-.footButton:hover:not(:disabled) {
-  color: var(--ccw-text-primary);
-  background: var(--ccw-bg-hover);
-}
+/* --- update card and footer -------------------------------------------- */
 
 .update {
   display: flex;
-  gap: var(--ccw-space-2);
+  flex: none;
+  gap: 10px;
   align-items: center;
-  width: calc(100% - var(--ccw-space-4));
-  padding: 6px var(--ccw-space-3);
+  padding: 10px 12px;
   margin: 0 var(--ccw-space-2) var(--ccw-space-2);
-  font-size: var(--ccw-text-sm);
   text-align: left;
-  background: var(--ccw-bg-base);
-  border: 1px solid var(--ccw-border-l1);
-  border-radius: var(--ccw-radius-md);
+  background: var(--ccw-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--ccw-accent) 25%, transparent);
+  border-radius: var(--ccw-radius-lg);
+  transition: border-color var(--ccw-duration-fast) var(--ccw-ease);
 }
 
 .update:hover {
-  background: var(--ccw-bg-hover);
+  border-color: color-mix(in srgb, var(--ccw-accent) 50%, transparent);
 }
 
 .updateMark {
@@ -512,26 +638,67 @@
 }
 
 .updateText {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--ccw-text-sm);
+  line-height: 1.35;
+}
+
+.updateText strong {
+  font-weight: 600;
+  color: var(--ccw-accent-ink);
+}
+
+.updateText span {
+  color: var(--ccw-text-muted);
+}
+
+.foot {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  align-items: center;
+  height: 44px;
+  padding: 0 var(--ccw-space-2) 0 var(--ccw-space-4);
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+  white-space: nowrap;
+  border-top: 1px solid var(--ccw-border-l2);
+}
+
+@media (pointer: coarse) {
+  .foot {
+    height: 56px;
+  }
+}
+
+/* The one item that gives way when the version and buttons need the room. */
+.footStatus {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.footStatusText {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.updateAction {
+.footVersion {
   flex: none;
-  padding: 1px 8px;
-  font-size: var(--ccw-text-xs);
-  color: var(--ccw-accent);
-  background: var(--ccw-accent-soft);
-  border-radius: var(--ccw-radius-pill);
+  margin-left: var(--ccw-space-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .statusDot {
+  flex: none;
   width: 6px;
   height: 6px;
-  background: var(--ccw-gray-400);
+  background: var(--ccw-text-faint);
   border-radius: 50%;
 }
 
@@ -546,11 +713,10 @@
 .empty {
   padding: var(--ccw-space-4) var(--ccw-space-3);
   font-size: var(--ccw-text-sm);
-  color: var(--ccw-text-faint);
+  color: var(--ccw-text-muted);
 }
 
 .error {
-  padding: 0 var(--ccw-space-3) var(--ccw-space-2);
-  font-size: var(--ccw-text-sm);
-  color: var(--ccw-danger);
+  flex: none;
+  padding: 0 var(--ccw-space-2) var(--ccw-space-2);
 }

@@ -1,7 +1,7 @@
 .wrap {
   position: relative;
   flex: none;
-  padding: 0 var(--ccw-space-5) var(--ccw-space-4);
+  padding: 0 var(--ccw-space-5) var(--ccw-space-3);
 }
 
 .inner {
@@ -9,16 +9,32 @@
   margin: 0 auto;
 }
 
+/* The island: one rounded block to write in, the send button inside it at
+   the bottom right. Quotes and attachments take the full width above the
+   text; the popovers anchor to the block. */
 .box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  padding-right: var(--ccw-space-2);
   background: var(--ccw-bg-base);
   border: 1px solid var(--ccw-border-l1);
-  border-radius: var(--ccw-radius-lg);
+  border-radius: 26px;
   box-shadow: var(--ccw-shadow-composer);
-  transition: border-color var(--ccw-duration-fast) var(--ccw-ease);
+  transition:
+    border-color var(--ccw-duration-fast) var(--ccw-ease),
+    box-shadow var(--ccw-duration-fast) var(--ccw-ease);
+}
+
+.box > :not(.textarea, .send) {
+  grid-column: 1 / -1;
 }
 
 .box:focus-within {
-  border-color: var(--ccw-accent);
+  border-color: color-mix(in srgb, var(--ccw-accent) 55%, var(--ccw-border-l1));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--ccw-accent) 12%, transparent),
+    var(--ccw-shadow-composer);
 }
 
 /* `!` mode runs a real command on Enter — the terminal recolours its prompt for the same reason. */
@@ -30,11 +46,13 @@
 .textarea {
   display: block;
   width: 100%;
+  min-height: 50px;
   max-height: 320px;
-  padding: var(--ccw-space-3) var(--ccw-space-4) var(--ccw-space-2);
+  padding: 14px 8px 13px 20px;
   overflow-y: auto;
   font: inherit;
   font-size: var(--ccw-text-prose);
+  line-height: 1.5;
   color: inherit;
   resize: none;
   background: none;
@@ -43,14 +61,16 @@
 }
 
 .textarea::placeholder {
-  color: var(--ccw-text-faint);
+  color: var(--ccw-text-muted);
 }
 
+/* The row under the island: attach, commands, model on the left; the
+   permission mode and context ring on the right. */
 .toolbar {
   display: flex;
-  gap: var(--ccw-space-2);
+  gap: var(--ccw-space-1);
   align-items: center;
-  padding: var(--ccw-space-2) var(--ccw-space-2) var(--ccw-space-2) var(--ccw-space-3);
+  padding: 6px 6px 0;
 }
 
 .spacer {
@@ -59,12 +79,16 @@
 
 .iconButton {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: var(--ccw-h-sm);
+  height: var(--ccw-h-sm);
   color: var(--ccw-text-muted);
   border-radius: var(--ccw-radius-sm);
+  transition:
+    background var(--ccw-duration-fast) var(--ccw-ease),
+    color var(--ccw-duration-fast) var(--ccw-ease);
 }
 
 .iconButton:hover {
@@ -78,14 +102,20 @@
   flex: none;
   gap: 5px;
   align-items: center;
-  padding: 3px 9px;
+  height: var(--ccw-h-sm);
+  padding: 0 9px;
   font-size: var(--ccw-text-sm);
-  color: var(--ccw-text-secondary);
+  color: var(--ccw-text-muted);
   white-space: nowrap;
-  border-radius: var(--ccw-radius-sm);
+  border-radius: var(--ccw-radius-pill);
+  transition:
+    background var(--ccw-duration-fast) var(--ccw-ease),
+    color var(--ccw-duration-fast) var(--ccw-ease);
 }
 
-.modeButton:hover {
+.modeButton:hover,
+.modeButton[aria-expanded='true'] {
+  color: var(--ccw-text-primary);
   background: var(--ccw-bg-hover);
 }
 
@@ -98,16 +128,24 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
+  margin: 0 0 9px 4px;
   color: #fff;
   background: var(--ccw-accent);
-  border-radius: var(--ccw-radius-sm);
+  border-radius: 50%;
+  transition: background var(--ccw-duration-fast) var(--ccw-ease);
 }
 
+.send:hover:not(:disabled) {
+  background: var(--ccw-accent-hover);
+}
+
+/* Nothing to send: a neutral gray, not a faded accent that reads as broken. */
 .send:disabled {
+  color: var(--ccw-text-faint);
   cursor: default;
-  opacity: 0.35;
+  background: var(--ccw-bg-sunken);
 }
 
 .stop {
@@ -115,10 +153,14 @@
   background: var(--ccw-text-primary);
 }
 
+.stop:hover:not(:disabled) {
+  background: var(--ccw-text-secondary);
+}
+
 .hint {
   padding: var(--ccw-space-2) var(--ccw-space-1) 0;
   font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-faint);
+  color: var(--ccw-warning);
   text-align: center;
 }
 
@@ -127,17 +169,37 @@
   .hint {
     display: none;
   }
+
+  .iconButton {
+    width: 36px;
+    height: 36px;
+  }
+
+  .modeButton {
+    height: 36px;
+  }
+
+  .send {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 5px;
+  }
 }
 
 /* --- phone: the toolbar keeps one row beside the model pill ------------ */
 
 @media (max-width: 640px) {
   .wrap {
-    padding: 0 var(--ccw-space-3) var(--ccw-space-4);
+    padding: 0 var(--ccw-space-3) var(--ccw-space-2);
+  }
+
+  .textarea {
+    padding-left: 16px;
   }
 
   .toolbar {
-    gap: var(--ccw-space-1);
+    gap: 2px;
+    padding: 4px 0 0;
   }
 }
 
@@ -278,7 +340,7 @@
   overflow: hidden;
   background: var(--ccw-bg-base);
   border: 1px solid var(--ccw-border-l1);
-  border-radius: var(--ccw-radius-md);
+  border-radius: var(--ccw-radius-lg);
   box-shadow: var(--ccw-shadow-popover);
 }
 
@@ -673,19 +735,28 @@
   align-items: center;
   min-width: 0;
   max-width: 340px;
-  height: 22px;
-  padding: 0 9px;
+  height: var(--ccw-h-sm);
+  padding: 0 10px;
   overflow: hidden;
   font-size: var(--ccw-text-sm);
-  color: var(--ccw-text-secondary);
+  color: var(--ccw-text-muted);
   white-space: nowrap;
-  background: var(--ccw-bg-hover);
-  border-radius: 999px;
+  border-radius: var(--ccw-radius-pill);
+  transition:
+    background var(--ccw-duration-fast) var(--ccw-ease),
+    color var(--ccw-duration-fast) var(--ccw-ease);
 }
 
-.modelPill:hover {
+.modelPill:hover,
+.modelPill[aria-expanded='true'] {
   color: var(--ccw-text-primary);
-  background: var(--ccw-border-l1);
+  background: var(--ccw-bg-hover);
+}
+
+@media (pointer: coarse) {
+  .modelPill {
+    height: 36px;
+  }
 }
 
 .modelPill > span:first-child {
@@ -707,7 +778,7 @@
   display: flex;
   gap: var(--ccw-space-2);
   align-items: center;
-  padding: 0 var(--ccw-space-2) var(--ccw-space-2);
+  padding: 0 var(--ccw-space-4) var(--ccw-space-2);
   font-size: 12px;
   color: var(--ccw-text-muted);
   font-variant-numeric: tabular-nums;

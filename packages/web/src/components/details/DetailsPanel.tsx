@@ -5,8 +5,10 @@ import { useShallow } from 'zustand/shallow'
 import { call } from '../../api/client.ts'
 import { useActiveSessionValue, useProjectCwd, useStore } from '../../store/session.ts'
 import { SHOW_CONFIG_EVENT, SHOW_INFO_EVENT } from '../../utils/local-commands.ts'
+import { useNarrow } from '../../utils/narrow.ts'
 import { ConfirmDialog } from '../ConfirmDialog.tsx'
 import {
+  ChevronLeftIcon,
   CompassIcon,
   GitBranchIcon,
   InfoIcon,
@@ -151,6 +153,7 @@ export function DetailsPanel({
   // sessions whose directory is gone is no directory to work in.
   const project = useProjectCwd()
   const cwd = sessionCwd ?? (project !== null && project !== UNKNOWN_CWD ? project : undefined)
+  const narrow = useNarrow()
   // A session counts its own file changes; without one, the panel does.
   const [localFsVersion, setLocalFsVersion] = useState(0)
   const fsVersion = useActiveSessionValue((session) => session.fsVersion) ?? localFsVersion
@@ -291,6 +294,13 @@ export function DetailsPanel({
   return (
     <div className={styles.root}>
       <div className={styles.head}>
+        {/* A phone shows the panel over the whole conversation: the way back
+            leads the row, where a back button is looked for. */}
+        {narrow && (
+          <button className={styles.iconButton} onClick={onCollapse} type="button" title="回到对话" aria-label="回到对话">
+            <ChevronLeftIcon size={20} />
+          </button>
+        )}
         {cwd !== undefined && (
           <div className={styles.strip} ref={stripRef} onWheel={scrollStrip}>
             {tabs.map((tab) => {
@@ -343,9 +353,11 @@ export function DetailsPanel({
         >
           {maximized ? <MinimizeIcon size={14} /> : <MaximizeIcon size={14} />}
         </button>
-        <button className={styles.iconButton} onClick={onCollapse} type="button" title="收起面板">
-          <PanelRightIcon />
-        </button>
+        {!narrow && (
+          <button className={styles.iconButton} onClick={onCollapse} type="button" title="收起面板" aria-label="收起面板">
+            <PanelRightIcon />
+          </button>
+        )}
       </div>
 
       <div className={styles.body}>
@@ -362,6 +374,7 @@ export function DetailsPanel({
                 return (
                   <div key={id} className={styles.fill} hidden={hidden}>
                     <StartPage
+                      cwd={cwd}
                       hasSession={sessionId !== null}
                       onOpenFiles={() => update((set) => openTab(set, { kind: 'files' }))}
                       onNewTerminal={openTerminal}

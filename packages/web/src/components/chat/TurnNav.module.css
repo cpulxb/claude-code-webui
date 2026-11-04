@@ -9,29 +9,36 @@
   transform: translateY(-50%);
 }
 
-/* Ticks share the column's height once there are many, down to 3px apart. */
+/* Ticks share the column's height once there are many, down to 4px apart.
+   A pill behind them on hover says the column is one control. */
 .ticks {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   max-height: 40vh;
-  padding: var(--ccw-space-2) 2px;
+  padding: 10px 6px;
   overflow: hidden;
+  border-radius: var(--ccw-radius-pill);
+  transition: background var(--ccw-duration-fast) var(--ccw-ease);
+}
+
+.ticks:hover {
+  background: var(--ccw-bg-raised);
 }
 
 .tick {
   display: flex;
-  flex: 0 1 8px;
+  flex: 0 1 13px;
   align-items: center;
-  min-height: 3px;
+  min-height: 4px;
 }
 
 .tick::before {
-  width: 10px;
-  height: 1.5px;
+  width: 14px;
+  height: 3px;
   content: '';
-  background: var(--ccw-border-strong);
-  border-radius: 1px;
+  background: var(--ccw-text-faint);
+  border-radius: 2px;
   transition:
     width var(--ccw-duration-fast) var(--ccw-ease),
     background var(--ccw-duration-fast) var(--ccw-ease);
@@ -39,11 +46,7 @@
 
 .tickActive::before {
   width: 18px;
-  background: var(--ccw-text-primary);
-}
-
-.ticks:hover .tick:not(.tickActive)::before {
-  background: var(--ccw-text-faint);
+  background: var(--ccw-accent);
 }
 
 .panel {
@@ -58,7 +61,7 @@
   overflow-y: auto;
   background: var(--ccw-bg-base);
   border: 1px solid var(--ccw-border-l1);
-  border-radius: var(--ccw-radius-md);
+  border-radius: var(--ccw-radius-lg);
   box-shadow: var(--ccw-shadow-popover);
   transform: translateY(-50%);
 }
@@ -84,4 +87,24 @@
   font-weight: 500;
   color: var(--ccw-text-primary);
   background: var(--ccw-bg-raised);
+}
+
+/* A phone's stream has no margin to spare: the ticks keep to the edge,
+   shorter, so they do not sit on the text. */
+@media (max-width: 640px) {
+  .nav {
+    right: 0;
+  }
+
+  .ticks {
+    padding: 10px 3px;
+  }
+
+  .tick::before {
+    width: 8px;
+  }
+
+  .tickActive::before {
+    width: 12px;
+  }
 }

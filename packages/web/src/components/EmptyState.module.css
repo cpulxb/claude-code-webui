@@ -1,0 +1,193 @@
+.root {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: var(--ccw-space-5);
+  overflow-y: auto;
+}
+
+.inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 440px;
+  margin-top: -40px;
+}
+
+.mark {
+  display: flex;
+  color: var(--ccw-accent);
+}
+
+.title {
+  margin: var(--ccw-space-4) 0 0;
+  font-family: var(--ccw-font-serif);
+  font-size: var(--ccw-text-2xl);
+  font-weight: 400;
+  line-height: 1.3;
+  text-align: center;
+  text-wrap: balance;
+  letter-spacing: -0.01em;
+}
+
+.hint {
+  margin: var(--ccw-space-2) 0 0;
+  font-size: var(--ccw-text-base);
+  color: var(--ccw-text-muted);
+}
+
+.actions {
+  display: flex;
+  gap: var(--ccw-space-2);
+  margin-top: var(--ccw-space-5);
+}
+
+.actions:empty {
+  display: none;
+}
+
+.primary,
+.secondary {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  height: var(--ccw-h-lg);
+  padding: 0 16px;
+  font-size: var(--ccw-text-base);
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: var(--ccw-radius-md);
+  transition:
+    background var(--ccw-duration-fast) var(--ccw-ease),
+    border-color var(--ccw-duration-fast) var(--ccw-ease);
+}
+
+.primary {
+  color: #fff;
+  background: var(--ccw-accent);
+}
+
+.primary:hover {
+  background: var(--ccw-accent-hover);
+}
+
+.secondary {
+  color: var(--ccw-text-primary);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-strong);
+}
+
+.secondary:hover {
+  background: var(--ccw-bg-hover);
+}
+
+.error {
+  margin-top: var(--ccw-space-3);
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-danger);
+}
+
+.recent {
+  width: 100%;
+  margin-top: 36px;
+}
+
+.recentLabel {
+  padding: 0 10px 6px;
+  font-size: var(--ccw-text-xs);
+  font-weight: 600;
+  color: var(--ccw-text-muted);
+}
+
+.recentRow {
+  position: relative;
+  display: flex;
+  gap: var(--ccw-space-2);
+  align-items: center;
+  min-height: 36px;
+  padding: 0 10px 0 4px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--ccw-radius-md);
+}
+
+.recentRow:hover {
+  background: var(--ccw-bg-hover);
+}
+
+/* A straight rule inset from the rounded corners, which a border would bend. */
+.recentRow + .recentRow::before {
+  position: absolute;
+  top: 0;
+  right: 10px;
+  left: 26px;
+  height: 1px;
+  content: '';
+  background: var(--ccw-border-l2);
+}
+
+.recentRow:hover::before,
+.recentRow:hover + .recentRow::before {
+  display: none;
+}
+
+/* The dot's column, held open without one so the titles line up. */
+.lead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+}
+
+.recentTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ccw-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recentAge {
+  flex: none;
+  font-size: var(--ccw-text-xs);
+  color: var(--ccw-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .inner {
+    margin-top: 0;
+  }
+
+  .title {
+    font-size: var(--ccw-text-xl);
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+
+  .actions > :only-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (pointer: coarse) {
+  .primary,
+  .secondary {
+    height: 44px;
+    font-size: var(--ccw-text-md);
+  }
+
+  .recentRow {
+    min-height: 48px;
+  }
+}

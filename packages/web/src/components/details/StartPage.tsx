@@ -1,16 +1,18 @@
 import type { ReactNode } from 'react'
 
-import { CompassIcon, GitBranchIcon, InfoIcon, SlidersIcon, TerminalIcon } from '../Icons.tsx'
+import { ChevronRightIcon, GitBranchIcon, InfoIcon, SlidersIcon, TerminalIcon } from '../Icons.tsx'
 import { WorkspaceFolderIcon } from './FileTypeIcon.tsx'
 import styles from './StartPage.module.css'
 
 /**
- * The panel's new-tab page, after dsh's 开始: one card per thing a tab can
- * hold. The panel swaps this tab for whatever gets picked, the way a browser's
- * new-tab page navigates in place. Files, terminals and 源代码管理 work in the
- * project alone; 详情 and 配置 wait for a session.
+ * The panel's new-tab page, after dsh's 开始: one row per thing a tab can
+ * hold, under the workspace they all work in. The panel swaps this tab for
+ * whatever gets picked, the way a browser's new-tab page navigates in place.
+ * Files, terminals and 源代码管理 work in the project alone; 详情 and 配置
+ * wait for a session.
  */
 export function StartPage({
+  cwd,
   hasSession,
   onOpenFiles,
   onNewTerminal,
@@ -18,6 +20,7 @@ export function StartPage({
   onOpenScm,
   onOpenConfig,
 }: {
+  cwd: string
   hasSession: boolean
   onOpenFiles: () => void
   onNewTerminal: () => void
@@ -28,57 +31,42 @@ export function StartPage({
   return (
     <div className={styles.root}>
       {/* Auto margins rather than justify-content: a short panel then scrolls
-          from the top instead of clipping the first card. */}
+          from the top instead of clipping the first row. */}
       <div className={styles.inner}>
-        <span className={styles.mark}>
-          <CompassIcon size={52} strokeWidth={1.25} />
-        </span>
-        <div className={styles.cards}>
-          <Card
-            icon={<WorkspaceFolderIcon size={22} />}
+        <div className={styles.head}>
+          <div className={styles.title}>{cwd.split('/').filter(Boolean).at(-1) ?? cwd}</div>
+          <div className={styles.path}>{cwd.replace(/^\/root(?=\/|$)/, '~')}</div>
+        </div>
+        <div className={styles.list}>
+          <Row
+            icon={<WorkspaceFolderIcon size={18} />}
             title="工作区文件"
             subtitle="浏览项目工作区的文件"
-            shortcut="Ctrl + P"
+            shortcut="Ctrl P"
             onClick={onOpenFiles}
           />
-          <Card
-            icon={
-              <span className={styles.blueIcon}>
-                <TerminalIcon size={20} />
-              </span>
-            }
+          <Row
+            icon={<TerminalIcon size={16} />}
             title="新建终端"
             subtitle="在项目工作区运行命令"
-            shortcut="Ctrl + `"
+            shortcut="Ctrl `"
             onClick={onNewTerminal}
           />
-          <Card
-            icon={
-              <span className={styles.blueIcon}>
-                <InfoIcon size={20} />
-              </span>
-            }
+          <Row
+            icon={<GitBranchIcon size={16} />}
+            title="源代码管理"
+            subtitle="暂存与提交、历史、分支、推送拉取"
+            onClick={onOpenScm}
+          />
+          <Row
+            icon={<InfoIcon size={16} />}
             title="会话详情"
             subtitle={hasSession ? '运行时、源代码管理、MCP 与上下文' : '选择会话后可用'}
             disabled={!hasSession}
             onClick={onOpenInfo}
           />
-          <Card
-            icon={
-              <span className={styles.blueIcon}>
-                <GitBranchIcon size={20} />
-              </span>
-            }
-            title="源代码管理"
-            subtitle="暂存与提交、历史、分支、推送拉取"
-            onClick={onOpenScm}
-          />
-          <Card
-            icon={
-              <span className={styles.blueIcon}>
-                <SlidersIcon size={20} />
-              </span>
-            }
+          <Row
+            icon={<SlidersIcon size={16} />}
             title="配置"
             subtitle={hasSession ? 'Claude Code 的 /config 设置' : '选择会话后可用'}
             disabled={!hasSession}
@@ -90,7 +78,7 @@ export function StartPage({
   )
 }
 
-function Card(props: {
+function Row(props: {
   icon: ReactNode
   title: string
   subtitle: string
@@ -99,13 +87,16 @@ function Card(props: {
   onClick: () => void
 }): JSX.Element {
   return (
-    <button className={styles.card} onClick={props.onClick} disabled={props.disabled} type="button">
-      <span className={styles.cardIcon}>{props.icon}</span>
-      <span className={styles.cardText}>
-        <span className={styles.cardTitle}>{props.title}</span>
-        <span className={styles.cardSubtitle}>{props.subtitle}</span>
+    <button className={styles.row} onClick={props.onClick} disabled={props.disabled} type="button">
+      <span className={styles.icon}>{props.icon}</span>
+      <span className={styles.text}>
+        <span className={styles.rowTitle}>{props.title}</span>
+        <span className={styles.subtitle}>{props.subtitle}</span>
       </span>
       {props.shortcut && <span className={styles.shortcut}>{props.shortcut}</span>}
+      <span className={props.shortcut ? `${styles.chevron} ${styles.touchOnly}` : styles.chevron}>
+        <ChevronRightIcon size={14} />
+      </span>
     </button>
   )
 }

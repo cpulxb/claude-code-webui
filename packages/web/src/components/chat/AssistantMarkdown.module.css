@@ -80,12 +80,21 @@
   text-underline-offset: 2px;
 }
 
+/* A block of its own, so a wide table scrolls inside its frame on a phone
+   instead of widening the page. Separate borders let the frame round. */
 .markdown table {
   display: block;
+  width: fit-content;
+  max-width: 100%;
   margin-bottom: var(--ccw-space-3);
   overflow-x: auto;
+  font-family: var(--ccw-font-ui);
   font-size: var(--ccw-text-base);
-  border-collapse: collapse;
+  line-height: 1.5;
+  border: 1px solid var(--ccw-border-l1);
+  border-spacing: 0;
+  border-collapse: separate;
+  border-radius: var(--ccw-radius-md);
 }
 
 /* A wide display formula scrolls on its own instead of widening the column. */
@@ -95,12 +104,29 @@
 
 .markdown th,
 .markdown td {
-  padding: 5px 10px;
+  padding: 7px 14px;
   text-align: left;
-  border: 1px solid var(--ccw-border-l1);
+  vertical-align: top;
+}
+
+.markdown td {
+  border-top: 1px solid var(--ccw-border-l2);
+}
+
+/* A path or identifier in a cell stays whole: the table scrolls instead of
+   breaking it mid-name, which .markdown's overflow-wrap would. */
+.markdown table {
+  overflow-wrap: normal;
+}
+
+.markdown td > code,
+.markdown th > code {
+  white-space: nowrap;
 }
 
 .markdown th {
+  font-weight: 600;
+  color: var(--ccw-text-secondary);
   background: var(--ccw-bg-raised);
 }
 
@@ -114,9 +140,10 @@
 .markdown :not(pre) > code {
   padding: 1px 5px;
   font-family: var(--ccw-font-mono);
-  font-size: 0.88em;
-  background: var(--ccw-bg-sunken);
-  border-radius: 4px;
+  font-size: 0.84em;
+  background: var(--ccw-bg-raised);
+  border: 1px solid var(--ccw-border-l2);
+  border-radius: var(--ccw-radius-xs);
 }
 
 .codeBlock {
@@ -125,22 +152,25 @@
   overflow: hidden;
   background: var(--ccw-bg-raised);
   border: 1px solid var(--ccw-border-l2);
-  border-radius: var(--ccw-radius-md);
+  border-radius: var(--ccw-radius-lg);
 }
 
+/* No rule under it: the language and the copy button read as the block's
+   label, not as a toolbar of their own. */
 .codeHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--ccw-space-1) var(--ccw-space-2) var(--ccw-space-1) var(--ccw-space-3);
+  height: 32px;
+  padding: 0 6px 0 14px;
   font-family: var(--ccw-font-ui);
   font-size: var(--ccw-text-xs);
   color: var(--ccw-text-muted);
-  border-bottom: 1px solid var(--ccw-border-l2);
 }
 
 .copyButton {
-  padding: 2px 8px;
+  height: 24px;
+  padding: 0 8px;
   font-size: var(--ccw-text-xs);
   color: var(--ccw-text-muted);
   border-radius: var(--ccw-radius-sm);
@@ -157,15 +187,15 @@
 }
 
 .codeBlock pre {
-  padding: var(--ccw-space-3);
+  padding: 2px 16px 14px;
   margin: 0;
   overflow-x: auto;
 }
 
 .codeBlock code {
   font-family: var(--ccw-font-mono);
-  font-size: var(--ccw-text-sm);
-  line-height: 1.55;
+  font-size: 12.5px;
+  line-height: 1.7;
 }
 
 /* Minimal highlight.js theme — only the token classes rehype-highlight emits. */
@@ -175,17 +205,19 @@
   color: var(--ccw-text-faint);
 }
 
+/* Tuned to the warm grays: each token sits near 4.5:1 on the block's ground.
+   The dark theme gets its own set below, lighter at the same hues. */
 .markdown :global(.hljs-keyword),
 .markdown :global(.hljs-selector-tag),
 .markdown :global(.hljs-built_in),
 .markdown :global(.hljs-literal) {
-  color: #a626a4;
+  color: #a2477e;
 }
 
 .markdown :global(.hljs-string),
 .markdown :global(.hljs-regexp),
 .markdown :global(.hljs-addition) {
-  color: #2f7d4f;
+  color: #3c7a3f;
 }
 
 .markdown :global(.hljs-number),
@@ -193,19 +225,52 @@
 .markdown :global(.hljs-attr),
 .markdown :global(.hljs-variable),
 .markdown :global(.hljs-template-variable) {
-  color: #b76b01;
+  color: #b35a1f;
 }
 
 .markdown :global(.hljs-title),
 .markdown :global(.hljs-section),
 .markdown :global(.hljs-name) {
-  color: #3f6ec6;
+  color: #6c4ab0;
 }
 
 .markdown :global(.hljs-type),
 .markdown :global(.hljs-class .hljs-title),
 .markdown :global(.hljs-attribute) {
-  color: #c18401;
+  color: #2f6aa3;
+}
+
+:global(:root[data-theme='dark']) .markdown :global(.hljs-keyword),
+:global(:root[data-theme='dark']) .markdown :global(.hljs-selector-tag),
+:global(:root[data-theme='dark']) .markdown :global(.hljs-built_in),
+:global(:root[data-theme='dark']) .markdown :global(.hljs-literal) {
+  color: #e08bc0;
+}
+
+:global(:root[data-theme='dark']) .markdown :global(.hljs-string),
+:global(:root[data-theme='dark']) .markdown :global(.hljs-regexp),
+:global(:root[data-theme='dark']) .markdown :global(.hljs-addition) {
+  color: #8fcf8a;
+}
+
+:global(:root[data-theme='dark']) .markdown :global(.hljs-number),
+:global(:root[data-theme='dark']) .markdown :global(.hljs-symbol),
+:global(:root[data-theme='dark']) .markdown :global(.hljs-attr),
+:global(:root[data-theme='dark']) .markdown :global(.hljs-variable),
+:global(:root[data-theme='dark']) .markdown :global(.hljs-template-variable) {
+  color: #eba06a;
+}
+
+:global(:root[data-theme='dark']) .markdown :global(.hljs-title),
+:global(:root[data-theme='dark']) .markdown :global(.hljs-section),
+:global(:root[data-theme='dark']) .markdown :global(.hljs-name) {
+  color: #b9a0f0;
+}
+
+:global(:root[data-theme='dark']) .markdown :global(.hljs-type),
+:global(:root[data-theme='dark']) .markdown :global(.hljs-class .hljs-title),
+:global(:root[data-theme='dark']) .markdown :global(.hljs-attribute) {
+  color: #82b4e8;
 }
 
 .markdown :global(.hljs-deletion) {

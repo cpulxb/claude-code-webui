@@ -9,6 +9,7 @@ import { useActiveSessionValue, useSessionSettled, useStore } from '../../store/
 import { parseQuestions } from '../../utils/questions.ts'
 import { splitQuotes } from '../../utils/quotes.ts'
 import { turnReplyText } from '../../utils/transcript-markdown.ts'
+import { ErrorNotice } from '../ErrorNotice.tsx'
 import { ArrowDownIcon, BrandMark, CheckIcon, CopyIcon, HistoryIcon, LinkIcon } from '../Icons.tsx'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 import styles from './ChatView.module.css'
@@ -406,12 +407,62 @@ export function ChatView(): JSX.Element | null {
         )
       case 'fold':
         return (
-          <TurnFold key={item.key} label={foldLabel(item)} detail={`${item.stepCount} 个步骤`}>
+          <TurnFold key={item.key} label={foldLabel(item)} steps={foldSteps(item.items)}>
             {item.items.map(renderItem)}
           </TurnFold>
         )
     }
   }
+
+  /**
+   * The condensed layout draws each turn's output as one block under a single
+   * mark, rather than a dot per row: a reply reads as a whole. The block runs
+   * from one prompt to the next; the newest takes the reply still streaming.
+   */
+  const renderTurns = (items: CondensedItem[], tail: JSX.Element | null): JSX.Element[] => {
+    const out: JSX.Element[] = []
+    let turn: JSX.Element[] = []
+    let turnKey = 'start'
+    const close = (last: boolean): void => {
+      if (turn.length === 0 && !(last && tail)) return
+      out.push(
+        <div key={`turn:${turnKey}`} className={`${styles.turn} ${last && running ? styles.turnLive : ''}`}>
+          <span className={styles.turnMark} aria-hidden="true">
+            <BrandMark size={14} />
+          </span>
+          <div className={styles.turnBody}>
+            {turn}
+            {last && tail}
+          </div>
+        </div>,
+      )
+      turn = []
+    }
+    for (const item of items) {
+      if (item.type === 'node' && nodes[item.index]!.kind === 'user') {
+        close(false)
+        out.push(renderItem(item))
+        turnKey = item.key
+      } else {
+        turn.push(renderItem(item))
+      }
+    }
+    close(true)
+    return out
+  }
+
+  // At the end of the newest turn, unless an older stretch is shown and the
+  // newer messages are still to load between the two.
+  const streamingRow = streaming ? <StreamingRow block={streaming} /> : null
+  const streamingInTurn = condensed !== null && !newerCursor && !newerError
+  const cards = pendingPermissions?.map((request) => {
+    const questions = request.toolName === 'AskUserQuestion' ? parseQuestions(request.input) : null
+    return questions ? (
+      <QuestionCard key={request.requestId} request={request} questions={questions} />
+    ) : (
+      <PermissionCard key={request.requestId} request={request} />
+    )
+  })
 
   return (
     <div className={styles.pane}>
@@ -443,9 +494,9 @@ export function ChatView(): JSX.Element | null {
               </div>
             )}
             {condensed
-              ? condensed.map(renderItem)
+              ? renderTurns(condensed, streamingInTurn ? streamingRow : null)
               : nodes.map((node, index) => renderNode(node, index, keys[index]!))}
-            {streaming && <StreamingRow block={streaming} />}
+            {!streamingInTurn && streamingRow}
             {(newerCursor || newerError) && (
               <div ref={newerSentinelRef} className={styles.newerHistory}>
                 {newerError ? (
@@ -467,20 +518,23 @@ export function ChatView(): JSX.Element | null {
                 )}
               </div>
             )}
-            {pendingPermissions?.map((request) => {
-              const questions = request.toolName === 'AskUserQuestion' ? parseQuestions(request.input) : null
-              return questions ? (
-                <QuestionCard key={request.requestId} request={request} questions={questions} />
-              ) : (
-                <PermissionCard key={request.requestId} request={request} />
-              )
-            })}
-            {interrupted && (
-              <div className={`${styles.row} ${styles.rowMuted}`}>
-                <div className={styles.notice}>会话进程已退出，这一轮没有跑完。上面标记为「已中断」的工具不会再有结果。</div>
+            {/* Its own block, child of the stream, so on a phone it can stay
+                pinned over the composer however far back the thread is read. */}
+            {((cards?.length ?? 0) > 0 || interrupted || Boolean(error)) && (
+              <div className={styles.pending}>
+                {cards}
+                {interrupted && (
+                  <div className={`${styles.row} ${styles.rowMuted}`}>
+                    <div className={styles.notice}>会话进程已退出，这一轮没有跑完。上面标记为「已中断」的工具不会再有结果。</div>
+                  </div>
+                )}
+                {error && (
+                  <div className={styles.errorRow}>
+                    <ErrorNotice text={error} />
+                  </div>
+                )}
               </div>
             )}
-            {error && <div className={`${styles.row} ${styles.rowError}`}>{error}</div>}
             {newerCursor && (
               <button className={styles.jumpLatest} onClick={() => activeId && void jumpToLatest(activeId)} type="button">
                 跳到最新
@@ -704,11 +758,14 @@ function ResultRow({ node }: { node: Extract<ChatNode, { kind: 'result' }> }): J
         {copied === 'copied' ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
       </button>
       <span>{formatDuration(node.durationMs)}</span>
-      <span>{node.numTurns} 轮</span>
-      <span>
-        输入 {formatTokens(node.inputTokens)} · 输出 {formatTokens(node.outputTokens)}
+      {/* The condensed layout shows these on hovering the turn: the time is the figure read every turn. */}
+      <span className={styles.statsFull}>
+        <span>{node.numTurns} 轮</span>
+        <span>
+          输入 {formatTokens(node.inputTokens)} · 输出 {formatTokens(node.outputTokens)}
+        </span>
+        {node.cacheReadTokens > 0 && <span>缓存命中 {formatTokens(node.cacheReadTokens)}</span>}
       </span>
-      {node.cacheReadTokens > 0 && <span>缓存命中 {formatTokens(node.cacheReadTokens)}</span>}
     </div>
   )
 }
@@ -789,6 +846,11 @@ function runRowClass(steps: Step[]): string {
         ? styles.rowMuted
         : ''
   return state ? `${styles.row} ${state}` : styles.row!
+}
+
+/** Every step folded away, through the runs between its texts. */
+function foldSteps(items: CondensedItem[]): Step[] {
+  return items.flatMap((item) => (item.type === 'steps' ? item.steps : item.type === 'fold' ? foldSteps(item.items) : []))
 }
 
 function foldLabel(fold: Extract<CondensedItem, { type: 'fold' }>): string {
