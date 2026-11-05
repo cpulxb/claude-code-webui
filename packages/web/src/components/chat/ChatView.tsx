@@ -8,7 +8,7 @@ import { useActiveSessionValue, useSessionSettled, useStore } from '../../store/
 import { splitUploadRefs } from '../../utils/attachments.ts'
 import { SHOW_REWIND_EVENT } from '../../utils/local-commands.ts'
 import { parseQuestions } from '../../utils/questions.ts'
-import { splitQuotes } from '../../utils/quotes.ts'
+import { splitQuotes, withQuotes } from '../../utils/quotes.ts'
 import { turnReplyText } from '../../utils/transcript-markdown.ts'
 import { PromptAttachments } from '../attachments/PromptAttachments.tsx'
 import { ErrorNotice } from '../ErrorNotice.tsx'
@@ -551,8 +551,23 @@ const UserTurn = memo(function UserTurn({
     const { quotes, body } = splitQuotes(node.text)
     return { quotes, ...splitUploadRefs(body) }
   }, [node.text])
+  // What the bubble reads as text: its quotes stay Markdown, the upload paths are left out.
+  const text = withQuotes(quotes, body).trim()
   // Inline documents (PDFs from before uploads) have no tile to show.
   const documents = node.attachments - (node.images?.length ?? 0)
+  const [copiedText, setCopiedText] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const copyText = (): void => {
+    void navigator.clipboard
+      .writeText(text)
+      .then(
+        () => 'copied' as const,
+        () => 'failed' as const,
+      )
+      .then((result) => {
+        setCopiedText(result)
+        setTimeout(() => setCopiedText('idle'), 1400)
+      })
+  }
   const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle')
   const copyLink = (): void => {
     void messageLink(node.id)
@@ -578,6 +593,16 @@ const UserTurn = memo(function UserTurn({
       {body}
       {documents > 0 && <div className={styles.attachmentNote}>附件 × {documents}</div>}
       <div className={styles.turnActions}>
+        {text && (
+          <button
+            className={`${styles.turnAction} ${copiedText === 'failed' ? styles.turnActionFailed : ''}`}
+            onClick={copyText}
+            type="button"
+            title={copiedText === 'copied' ? '已复制' : copiedText === 'failed' ? '复制失败' : '复制这条消息'}
+          >
+            {copiedText === 'copied' ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+          </button>
+        )}
         <button
           className={`${styles.turnAction} ${copied === 'failed' ? styles.turnActionFailed : ''}`}
           onClick={copyLink}
