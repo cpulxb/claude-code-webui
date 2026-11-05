@@ -9,6 +9,7 @@ import {
   findAgentById,
   userText,
   type ChatNode,
+  type PromptImage,
   type Transcript,
 } from './nodes.ts'
 import { applyWorkflowEvent, parseTaskNotification, unframeWorkflowPrompt, type TaskNotice } from './workflows.ts'
@@ -52,7 +53,7 @@ export function applyHistoryMessage(transcript: Transcript, entry: SessionMessag
   }
   if (!Array.isArray(content)) return
 
-  const blocks = content as { type: string; text?: string }[]
+  const blocks = content as { type: string; text?: string; source?: { type: string; media_type?: string; data?: string } }[]
 
   // Tool results ride in on user messages; the live renderer already knows how
   // to attach them to their card. Runs before the text render so the delegated
@@ -66,8 +67,14 @@ export function applyHistoryMessage(transcript: Transcript, entry: SessionMessag
     .filter((block) => block.type === 'text')
     .map((block) => block.text ?? '')
     .join('\n')
-  const images = blocks.filter((block) => block.type === 'image' || block.type === 'document').length
-  if (text || images) applyUserText(transcript, entry.uuid, text, images)
+  const attachments = blocks.filter((block) => block.type === 'image' || block.type === 'document').length
+  // The server empties `data` (`dropInlineMedia`), so these draw as placeholders.
+  const images = blocks.flatMap(({ type, source }) =>
+    type === 'image' && source?.type === 'base64' && source.media_type
+      ? [{ mediaType: source.media_type, data: source.data ?? '' }]
+      : [],
+  )
+  if (text || attachments) applyUserText(transcript, entry.uuid, text, attachments, images)
 }
 
 /**
@@ -109,7 +116,7 @@ const LOCAL_OUTPUT = /^<local-command-stdout>([\s\S]*)<\/local-command-stdout>$/
 const COMMAND_NAME = /<command-name>([^<]*)<\/command-name>/
 const COMMAND_ARGS = /<command-args>([^<]*)<\/command-args>/
 
-function applyUserText(transcript: Transcript, uuid: string, raw: string, attachments: number): void {
+function applyUserText(transcript: Transcript, uuid: string, raw: string, attachments: number, images: PromptImage[] = []): void {
   transcript.seen[uuid] = true
   const trimmed = raw.trim()
 
@@ -152,7 +159,7 @@ function applyUserText(transcript: Transcript, uuid: string, raw: string, attach
   }
 
   // A workflow agent's task arrives wrapped in the harness's provenance frame.
-  transcript.nodes.push({ kind: 'user', id: uuid, text: unframeWorkflowPrompt(raw), attachments })
+  transcript.nodes.push({ kind: 'user', id: uuid, text: unframeWorkflowPrompt(raw), attachments, ...(images.length ? { images } : {}) })
 }
 
 /**

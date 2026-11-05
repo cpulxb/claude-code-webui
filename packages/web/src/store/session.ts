@@ -782,7 +782,7 @@ export const useStore = create<Store>()(
       if (!(await toTheEnd(get, sessionId))) return pushNotice(set, sessionId, 'error', `没能回到最新的消息，这条没有发出：${text}`)
       if (!(await attachToSend(set, get, sessionId))) return
       // Optimistic echo: the CLI does not replay user messages by default.
-      const uuid = echoPrompt(set, sessionId, text, attachments?.length ?? 0)
+      const uuid = echoPrompt(set, sessionId, text, attachments)
       await startTurn(set, sessionId, uuid, text, attachments)
     },
 
@@ -791,7 +791,7 @@ export const useStore = create<Store>()(
       if (!sessionId) return
       if (!(await toTheEnd(get, sessionId))) return pushNotice(set, sessionId, 'error', `没能回到最新的消息，这条命令没有执行：${command}`)
       if (!(await attachToSend(set, get, sessionId))) return
-      const echoId = echoPrompt(set, sessionId, bashEcho(command), 0)
+      const echoId = echoPrompt(set, sessionId, bashEcho(command))
       let output: { stdout: string; stderr: string }
       try {
         output = await call('session.shell', { sessionId, command })
@@ -1637,10 +1637,17 @@ async function attachToSend(set: Setter, get: () => Store, sessionId: string): P
  * that failed, prompts the CLI merged while queued, or one sent from another
  * tab all shifted the count onto an older message.
  */
-function echoPrompt(set: Setter, sessionId: string, text: string, attachments: number): string {
+function echoPrompt(set: Setter, sessionId: string, text: string, attachments: Attachment[] = []): string {
   const id = crypto.randomUUID()
+  const images = attachments.flatMap(({ kind, mediaType, data }) => (kind === 'image' ? [{ mediaType, data }] : []))
   set((state) => {
-    state.sessions[sessionId]?.transcript.nodes.push({ kind: 'user', id, text, attachments })
+    state.sessions[sessionId]?.transcript.nodes.push({
+      kind: 'user',
+      id,
+      text,
+      attachments: attachments.length,
+      ...(images.length ? { images } : {}),
+    })
   })
   return id
 }

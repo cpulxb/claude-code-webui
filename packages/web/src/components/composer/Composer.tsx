@@ -4,7 +4,7 @@ import { useShallow } from 'zustand/shallow'
 
 import { call } from '../../api/client.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
-import { withUploads } from '../../utils/attachments.ts'
+import { inlineAttachments, withUploads } from '../../utils/attachments.ts'
 import { LOCAL_COMMANDS, parseLocalCommand, runLocalCommand } from '../../utils/local-commands.ts'
 import { findModel, modelLabel } from '../../utils/models.ts'
 import { useNarrow } from '../../utils/narrow.ts'
@@ -77,7 +77,7 @@ export function Composer(): JSX.Element | null {
   const [text, setText] = useState('')
   // The terminal's bash mode: a leading `!` runs the rest in the session's cwd.
   const shellMode = text.trimStart().startsWith('!')
-  const { uploads, blockReason, addFiles, cancelUpload, retryUpload, removeUpload, clearUploads } = useUploads(activeId, cwd)
+  const { uploads, blockReason, addFiles, retryUpload, removeUpload, clearUploads } = useUploads(activeId, cwd)
   const [attachError, setAttachError] = useState<string | null>(null)
   useEffect(() => setAttachError(null), [activeId, cwd])
   const [trigger, setTrigger] = useState<Trigger | null>(null)
@@ -318,7 +318,7 @@ export function Composer(): JSX.Element | null {
     const local = plain ? parseLocalCommand(trimmed) : null
     if (command) void runShell(command)
     else if (local) void runLocalCommand(local)
-    else void send(withQuotes(quotes, withUploads(uploads, trimmed)))
+    else void send(withQuotes(quotes, withUploads(uploads, trimmed)), inlineAttachments(uploads))
     setText('')
     clearUploads()
     setAttachError(null)
@@ -508,8 +508,7 @@ export function Composer(): JSX.Element | null {
             </div>
           )}
 
-          <UploadChips uploads={uploads} onCancel={cancelUpload} onRetry={retryUpload} onRemove={removeUpload} />
-          {blockReason && <div className={styles.uploadHint}>{blockReason}</div>}
+          <UploadChips uploads={uploads} onRetry={retryUpload} onRemove={removeUpload} />
 
           <textarea
             ref={textareaRef}

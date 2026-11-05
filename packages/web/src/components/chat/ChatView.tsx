@@ -6,9 +6,11 @@ import type { AssistantBlock, ChatNode, StreamingBlock } from '../../render/node
 import { AGENT_TOOLS, findAgent, lastTurnStart, rowKeys } from '../../render/nodes.ts'
 import { WORKFLOW_TOOL } from '../../render/workflows.ts'
 import { useActiveSessionValue, useSessionSettled, useStore } from '../../store/session.ts'
+import { splitUploadRefs } from '../../utils/attachments.ts'
 import { parseQuestions } from '../../utils/questions.ts'
 import { splitQuotes } from '../../utils/quotes.ts'
 import { turnReplyText } from '../../utils/transcript-markdown.ts'
+import { PromptAttachments } from '../attachments/PromptAttachments.tsx'
 import { ErrorNotice } from '../ErrorNotice.tsx'
 import { ArrowDownIcon, BrandMark, CheckIcon, CopyIcon, HistoryIcon, LinkIcon } from '../Icons.tsx'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
@@ -588,7 +590,13 @@ const UserTurn = memo(function UserTurn({
   onCancel: () => void
 }): JSX.Element {
   const messageLink = useStore((state) => state.messageLink)
-  const { quotes, body } = useMemo(() => splitQuotes(node.text), [node.text])
+  const cwd = useActiveSessionValue((session) => session.cwd)
+  const { quotes, body, refs } = useMemo(() => {
+    const { quotes, body } = splitQuotes(node.text)
+    return { quotes, ...splitUploadRefs(body) }
+  }, [node.text])
+  // Inline documents (PDFs from before uploads) have no tile to show.
+  const documents = node.attachments - (node.images?.length ?? 0)
   const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle')
   const copyLink = (): void => {
     void messageLink(node.id)
@@ -611,8 +619,9 @@ const UserTurn = memo(function UserTurn({
             {quote}
           </blockquote>
         ))}
+        <PromptAttachments images={node.images} refs={refs} cwd={cwd} spaced={body !== ''} />
         {body}
-        {node.attachments > 0 && <div className={styles.attachmentNote}>附件 × {node.attachments}</div>}
+        {documents > 0 && <div className={styles.attachmentNote}>附件 × {documents}</div>}
         <div className={styles.turnActions}>
           <button
             className={`${styles.turnAction} ${copied === 'failed' ? styles.turnActionFailed : ''}`}

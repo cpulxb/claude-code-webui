@@ -15,8 +15,11 @@ export type AssistantBlock = { type: 'text' | 'thinking'; text: string }
 
 export type ToolStatus = 'running' | 'done' | 'error'
 
+/** An image the prompt carried inline as base64; `data` is empty in history, which the server strips. */
+export type PromptImage = { mediaType: string; data: string }
+
 export type ChatNode =
-  | { kind: 'user'; id: string; text: string; attachments: number }
+  | { kind: 'user'; id: string; text: string; attachments: number; images?: PromptImage[] }
   | { kind: 'assistant'; id: string; blocks: AssistantBlock[] }
   | {
       kind: 'tool'

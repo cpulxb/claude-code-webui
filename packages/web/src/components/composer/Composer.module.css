@@ -231,60 +231,23 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--ccw-space-2);
-  max-height: 240px;
-  padding: var(--ccw-space-2) var(--ccw-space-3) 0;
+  max-height: 212px;
+  /* Room above the first row for the corner remove buttons. */
+  padding: 12px 16px 2px;
   overflow-y: auto;
 }
 
 .chip {
-  display: flex;
-  flex: 1 1 220px;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  max-width: 100%;
-  padding: 7px 8px;
-  font-size: var(--ccw-text-sm);
-  background: var(--ccw-bg-sunken);
-  border: 1px solid transparent;
-  border-radius: var(--ccw-radius-sm);
-}
-
-.chipPending {
-  color: var(--ccw-text-muted);
-}
-
-.chipError {
-  border-color: color-mix(in srgb, var(--ccw-danger) 35%, transparent);
-}
-
-.chipHeader {
-  display: flex;
-  gap: var(--ccw-space-2);
-  align-items: center;
-}
-
-.chipName {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ccw-text-primary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chipAction {
+  position: relative;
   flex: none;
-  min-height: 24px;
-  padding: 0 2px;
-  font-size: var(--ccw-text-xs);
-  color: var(--ccw-accent);
+  max-width: 100%;
 }
 
-.chipAction:hover {
-  text-decoration: underline;
+.chipFailed > :first-child {
+  border-color: color-mix(in srgb, var(--ccw-danger) 55%, transparent);
 }
 
+/* Closes the error line; not the tiles' corner button. */
 .chipRemove {
   display: flex;
   flex: none;
@@ -300,55 +263,100 @@
   color: var(--ccw-danger);
 }
 
-.uploadStatus,
-.uploadPath {
-  overflow: hidden;
-  font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.tileRemove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: var(--ccw-text-secondary);
+  background: var(--ccw-bg-base);
+  border: 1px solid var(--ccw-border-strong);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity var(--ccw-duration-fast) var(--ccw-ease);
 }
 
-.uploadError {
+/* Faded rather than hidden, so Tab still reaches it. */
+.chip:hover .tileRemove,
+.tileRemove:focus-visible {
+  opacity: 1;
+}
+
+.tileRemove:hover {
+  color: var(--ccw-danger);
+}
+
+/* Over an image: how far along it is, or the retry button. */
+.tileOverlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
   font-size: var(--ccw-text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: rgb(0 0 0 / 45%);
+}
+
+button.tileOverlay {
+  background: color-mix(in srgb, var(--ccw-danger) 45%, rgb(0 0 0 / 40%));
+}
+
+button.tileOverlay:hover {
+  background: color-mix(in srgb, var(--ccw-danger) 60%, rgb(0 0 0 / 40%));
+}
+
+.uploadBar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: var(--ccw-accent);
+  transition: width var(--ccw-duration-fast) linear;
+}
+
+.chipRetry {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--ccw-accent);
+  border-radius: 50%;
+}
+
+.chipRetry:hover {
+  background: var(--ccw-bg-hover);
+}
+
+.uploadErrors {
+  padding: 6px var(--ccw-space-4) 0;
+  font-size: var(--ccw-text-xs);
+  line-height: 1.5;
   color: var(--ccw-danger);
   overflow-wrap: anywhere;
 }
 
-.uploadProgress {
-  display: block;
-  width: 100%;
-  height: 3px;
-  overflow: hidden;
-  appearance: none;
-  background: var(--ccw-border-l1);
-  border: none;
-  border-radius: var(--ccw-radius-sm);
-}
-
-.uploadProgress::-webkit-progress-bar {
-  background: var(--ccw-border-l1);
-}
-
-.uploadProgress::-webkit-progress-value {
-  background: var(--ccw-accent);
-}
-
-.uploadProgress::-moz-progress-bar {
-  background: var(--ccw-accent);
-}
-
-.uploadHint {
-  padding: 4px var(--ccw-space-3) 0;
-  font-size: var(--ccw-text-xs);
-  color: var(--ccw-text-muted);
+@media (hover: none) {
+  .tileRemove {
+    opacity: 1;
+  }
 }
 
 @media (pointer: coarse) {
-  .chipAction,
   .chipRemove {
     min-width: 32px;
     min-height: 32px;
+  }
+
+  .tileRemove {
+    width: 24px;
+    height: 24px;
   }
 }
 

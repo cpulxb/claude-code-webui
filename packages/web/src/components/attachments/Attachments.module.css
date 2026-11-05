@@ -1,0 +1,117 @@
+/* Attachment tiles, shared by the composer and the sent bubble. `--tile`
+   sets an image's square size; a file card keeps one height everywhere. */
+
+.file,
+.image {
+  position: relative;
+  display: flex;
+  flex: none;
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+  white-space: normal;
+  border: 1px solid var(--ccw-border-l1);
+  border-radius: var(--ccw-radius-lg);
+  transition: border-color var(--ccw-duration-fast) var(--ccw-ease);
+}
+
+a.file:hover,
+a.image:hover {
+  border-color: var(--ccw-border-strong);
+}
+
+.file {
+  gap: 10px;
+  align-items: center;
+  width: 220px;
+  max-width: 100%;
+  height: 56px;
+  padding: 0 10px 0 9px;
+  background: var(--ccw-bg-base);
+}
+
+.image {
+  width: var(--tile, 56px);
+  height: var(--tile, 56px);
+  background: var(--ccw-bg-sunken);
+}
+
+.image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.badge {
+  --tone: var(--ccw-text-muted);
+
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 14%, transparent);
+  border-radius: var(--ccw-radius-md);
+}
+
+.badge[data-tone='pdf'] { --tone: var(--ccw-danger); }
+.badge[data-tone='word'] { --tone: #3b78d8; }
+.badge[data-tone='sheet'] { --tone: var(--ccw-success); }
+.badge[data-tone='slides'] { --tone: var(--ccw-accent); }
+.badge[data-tone='video'] { --tone: var(--ccw-ultracode); }
+.badge[data-tone='zip'] { --tone: var(--ccw-warning); }
+.badge[data-tone='image'] { --tone: #2a8c97; }
+
+.meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.name,
+.detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.name {
+  font-size: var(--ccw-text-base);
+  font-weight: 500;
+  color: var(--ccw-text-primary);
+}
+
+.detail {
+  font-size: var(--ccw-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ccw-text-muted);
+}
+
+/* --- in a sent prompt --------------------------------------------------- */
+
+.prompt {
+  --tile: 112px;
+
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ccw-space-2);
+}
+
+/* The bubble's text, if any, follows the tiles. */
+.prompt.spaced {
+  margin-bottom: var(--ccw-space-2);
+}
+
+@media (max-width: 640px) {
+  .prompt {
+    --tile: 88px;
+  }
+}

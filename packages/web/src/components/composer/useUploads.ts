@@ -14,7 +14,6 @@ export function useUploads(sessionId: string | null, cwd: string | undefined) {
     uploads,
     blockReason: uploadBlockReason(uploads),
     addFiles: queue.add,
-    cancelUpload: queue.cancel,
     retryUpload: queue.retry,
     removeUpload: queue.remove,
     clearUploads: queue.clear,
