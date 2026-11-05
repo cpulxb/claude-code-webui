@@ -127,5 +127,7 @@ test('an MCP tool goes by its own name, without the server prefix', () => {
 test('edit stats count the lines the diff draws', () => {
   assert.deepEqual(editStats(tool('x', 'Edit', { old_string: 'a', new_string: 'a\nb\nc' })), { added: 3, removed: 1 })
   assert.deepEqual(editStats(tool('x', 'Write', { content: 'x\ny' })), { added: 2, removed: 0 })
+  // The newline ending the last line starts no line of its own.
+  assert.deepEqual(editStats(tool('x', 'Write', { content: 'one\n' })), { added: 1, removed: 0 })
   assert.equal(editStats(tool('x', 'Read', {})), null)
 })

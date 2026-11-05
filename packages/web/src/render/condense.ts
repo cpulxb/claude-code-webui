@@ -238,7 +238,8 @@ export function stepTarget(node: ToolNode, cwd?: string): string {
 
 /** Lines an Edit or Write adds and removes, as its diff draws them. */
 export function editStats(node: ToolNode): { added: number; removed: number } | null {
-  const lines = (text: string | null): number => (text ? text.split('\n').length : 0)
+  // A file's last line ends in a newline: `one\n` is one line, as git counts it.
+  const lines = (text: string | null): number => (text ? text.replace(/\n$/, '').split('\n').length : 0)
   if (node.name === 'Edit') {
     return { added: lines(stringField(node.input, 'new_string')), removed: lines(stringField(node.input, 'old_string')) }
   }
