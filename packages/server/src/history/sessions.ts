@@ -22,6 +22,7 @@ import type {
 } from '@ccw/shared'
 import { mergeProjectSessions } from '@ccw/shared'
 
+import { pendingRewind, setPendingRewind } from './rewinds.ts'
 import { listSavedSessions } from './session-list.ts'
 import { turnTotals } from './turns.ts'
 
@@ -240,7 +241,58 @@ export async function readMessages(sessionId: string, cwd?: string): Promise<Ses
     includeSystemMessages: true,
   })
   for (const entry of messages) dropInlineMedia(entry.message)
+  return withoutRewound(sessionId, messages)
+}
+
+/** The conversation short of a rewind its transcript does not show yet; see {@link PendingRewind}. */
+async function withoutRewound(sessionId: string, messages: SessionMessage[]): Promise<SessionMessage[]> {
+  const rewind = await pendingRewind(sessionId)
+  // Nothing read (no such file here) says nothing about the rewind.
+  if (!rewind || messages.length === 0) return messages
+  const index = messages.findIndex((entry) => entry.uuid === rewind.drop)
+  if (index >= 0) return messages.slice(0, index)
+  // The next prompt is saved, so the SDK read the shorter branch itself.
+  await setPendingRewind(sessionId, null)
   return messages
+}
+
+/**
+ * Where a conversation rewound to just before `prompt` resumes: the entry the
+ * prompt was written after — which can be a hook's attachment rather than a
+ * message — or null when the prompt opened the transcript. Throws when the
+ * prompt is not in the conversation as it stands: rewound away already, or
+ * before the last compaction, which the CLI no longer carries.
+ */
+export async function rewindPoint(sessionId: string, cwd: string, prompt: string): Promise<string | null> {
+  const messages = await readMessages(sessionId, cwd)
+  if (messages.find((entry) => entry.uuid === prompt)?.type !== 'user') {
+    throw new Error('这条消息不在当前的对话里：已经被回退掉了，或者在最近一次压缩之前')
+  }
+  const path = await findTranscript(sessionId)
+  if (!path) throw new Error(`找不到会话 ${sessionId.slice(0, 8)} 的记录文件`)
+  const quoted = `"uuid":"${prompt}"`
+  for (const line of (await readFile(path, 'utf8')).split('\n')) {
+    if (!line.includes(quoted)) continue
+    try {
+      const entry = JSON.parse(line) as { uuid?: unknown; parentUuid?: unknown }
+      if (entry.uuid === prompt) return typeof entry.parentUuid === 'string' ? entry.parentUuid : null
+    } catch {
+      continue // a trailing line the CLI is still writing
+    }
+  }
+  throw new Error('记录文件里找不到这条消息')
+}
+
+/**
+ * The `resumeSessionAt` a runner resuming the session needs: the cut of a
+ * rewind its transcript does not show yet. Read through `readMessages`, which
+ * forgets a rewind the transcript has caught up with — resuming at a stale cut
+ * would drop the turns sent since.
+ */
+export async function rewoundAt(sessionId: string, cwd: string): Promise<string | undefined> {
+  if (!(await pendingRewind(sessionId))) return undefined
+  await readMessages(sessionId, cwd)
+  return (await pendingRewind(sessionId))?.at
 }
 
 /**
@@ -305,6 +357,13 @@ function dropInlineMedia(message: unknown): void {
  */
 let lastRead: (TranscriptRead & { sessionId: string; cwd: string | undefined; expiry: NodeJS.Timeout }) | null = null
 const LAST_READ_TTL_MS = 5 * 60_000
+
+/** Drops the cached read of a session whose conversation just got shorter — the one case its file does not only grow. */
+export function forgetRead(sessionId: string): void {
+  if (lastRead?.sessionId !== sessionId) return
+  clearTimeout(lastRead.expiry)
+  lastRead = null
+}
 
 /** A session's messages, and whether they include what came before its last compaction. */
 type TranscriptRead = { messages: SessionMessage[]; complete: boolean }

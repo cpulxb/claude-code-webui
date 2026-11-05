@@ -47,6 +47,13 @@ type TitleQuery = Query & {
 
 export type EmitEvent = (event: ServerEvent) => void
 
+/**
+ * What a runner starts from. `resumeSessionAt`, with `resume`, loads the
+ * conversation only up to that transcript entry: a rewind's cut, which the
+ * server sets, never the browser.
+ */
+export type RunnerConfig = SessionConfig & { resumeSessionAt?: string }
+
 /** Backlog cap — a runaway turn with hundreds of tool calls must not grow memory unbounded. */
 const BACKLOG_LIMIT = 500
 
@@ -62,7 +69,7 @@ const TITLE_POLL_MS = 2000
 export class SessionRunner {
   /** Moves to the CLI's new conversation when it resets this one; see {@link #reset}. */
   #sessionId: string
-  readonly config: SessionConfig
+  readonly config: RunnerConfig
 
   readonly #input = new InputQueue<SDKUserMessage>()
   readonly #permissions = new PermissionBroker((requestId) => {
@@ -72,6 +79,8 @@ export class SessionRunner {
   readonly #emit: EmitEvent
   readonly #query: Query
   readonly #models: SessionModels
+  /** Settles once the CLI has exited and the last frame is out; see {@link shutdown}. */
+  readonly #exited: Promise<void>
   #done = false
   #status: SessionStatus = 'idle'
   /** `running` and `waiting` as the sidebars last heard them; see {@link #announceState}. */
@@ -91,7 +100,7 @@ export class SessionRunner {
   /** Set while a {@link #requestTitle} call is out, so a quick second prompt does not ask again. */
   #titling = false
 
-  constructor(config: SessionConfig, emit: EmitEvent) {
+  constructor(config: RunnerConfig, emit: EmitEvent) {
     this.config = config
     this.#emit = emit
     this.#permissionMode = config.permissionMode ?? 'default'
@@ -113,7 +122,9 @@ export class SessionRunner {
       prompt: this.#input,
       options: {
         cwd: config.cwd,
-        ...(config.resume ? { resume: config.resume } : { sessionId: this.sessionId }),
+        ...(config.resume
+          ? { resume: config.resume, ...(config.resumeSessionAt ? { resumeSessionAt: config.resumeSessionAt } : {}) }
+          : { sessionId: this.sessionId }),
         ...(config.model ? { model: config.model } : {}),
         permissionMode: config.permissionMode ?? 'default',
         // Required before `bypassPermissions` can be selected at all; the
@@ -160,7 +171,7 @@ export class SessionRunner {
       canRefresh: () => !this.#done && this.#status === 'idle' && this.pendingPermissions.length === 0,
       onChange: (snapshot) => this.#emit({ type: 'session_models', sessionId: this.sessionId, ...snapshot }),
     })
-    void this.#pump()
+    this.#exited = this.#pump()
     // Failure here means the CLI died before the flag landed; #pump already
     // reports that, and an escaped rejection would crash the whole server.
     const initial: { effortLevel?: EffortLevel; ultracode?: boolean } = {}
@@ -536,9 +547,17 @@ export class SessionRunner {
     return this.#query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: !behaviors })
   }
 
-  /** Checkpoint rewind of tracked files to their state at a user message. */
+  /**
+   * Checkpoint rewind of tracked files to their state at a user message. A
+   * real run reports no counts (CLI 2.1.316 answers `{ canRewind,
+   * skippedLinks }`), so they come from a dry run just before it.
+   */
   async rewindFiles(userMessageId: string, dryRun: boolean): Promise<RewindFilesResult> {
-    return this.#query.rewindFiles(userMessageId, { dryRun })
+    if (dryRun) return this.#query.rewindFiles(userMessageId, { dryRun })
+    const preview = await this.#query.rewindFiles(userMessageId, { dryRun: true })
+    if (!preview.canRewind) return preview
+    const result = await this.#query.rewindFiles(userMessageId)
+    return result.canRewind ? { ...preview, ...result } : result
   }
 
   /** Stops one subagent (or background shell); its task_notification says `stopped`. */
@@ -612,6 +631,30 @@ export class SessionRunner {
   close(): void {
     this.#input.close()
     this.#query.close()
+  }
+
+  /** {@link close}, resolved once the CLI is gone — before another may open the same transcript. */
+  async shutdown(): Promise<void> {
+    this.close()
+    await this.#exited
+  }
+
+  /**
+   * This runner's config with the settings the session runs on now: a mode,
+   * model or effort picked since it started would otherwise be lost to a
+   * restart. Effort and ultracode go only when set — an unset effort is the
+   * settings' default, which the next CLI reads for itself.
+   */
+  async carryOver(): Promise<RunnerConfig> {
+    const [{ model }, flags] = await Promise.all([this.#models.list(), this.flags()])
+    const { effort: _effort, ultracode: _ultracode, ...config } = this.config
+    return {
+      ...config,
+      permissionMode: this.#permissionMode,
+      model,
+      ...(flags.effort ? { effort: flags.effort } : {}),
+      ...(flags.ultracode ? { ultracode: true } : {}),
+    }
   }
 }
 

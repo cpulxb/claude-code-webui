@@ -1,6 +1,6 @@
-import type { ServerEvent, SessionConfig, SessionSummary } from '@ccw/shared'
+import type { ServerEvent, SessionSummary } from '@ccw/shared'
 
-import { SessionRunner } from './runner.ts'
+import { SessionRunner, type RunnerConfig } from './runner.ts'
 
 /**
  * Owns every live {@link SessionRunner} and fans their events out to the
@@ -20,7 +20,7 @@ export class SessionManager {
   readonly #owners = new Map<string, SessionRunner>()
   readonly #subscribers = new Set<(event: ServerEvent) => void>()
 
-  create(config: SessionConfig): SessionRunner {
+  create(config: RunnerConfig): SessionRunner {
     // Idempotent on the session id: the browser eagerly attaches on open and
     // again on first send, and a second runner for the same id would leak the
     // first process while both append to the same JSONL.
@@ -54,6 +54,25 @@ export class SessionManager {
 
   liveSummaries(): SessionSummary[] {
     return [...this.#runners.values()].map((runner) => runner.summary)
+  }
+
+  /**
+   * Swaps a session's runner for one started from `config` under the same id
+   * — a rewind restarts the CLI at an earlier point. The old runner's exit is
+   * not the session's: its `session_closed` is not sent on.
+   */
+  async restart(sessionId: string, config: RunnerConfig): Promise<SessionRunner> {
+    const previous = this.require(sessionId)
+    this.#runners.delete(sessionId)
+    this.#owners.delete(sessionId)
+    // Two CLIs must never write the one transcript at once.
+    await previous.shutdown()
+    return this.create(config)
+  }
+
+  /** Sends a frame no runner emits — one about the session as a whole — to every browser. */
+  announce(event: ServerEvent): void {
+    this.#broadcast(null, event)
   }
 
   close(sessionId: string): void {

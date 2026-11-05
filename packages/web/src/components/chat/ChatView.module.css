@@ -180,52 +180,6 @@
   }
 }
 
-/* Sits tight under the bubble it belongs to, ahead of the reply below. */
-.rewindCard {
-  display: flex;
-  gap: var(--ccw-space-3);
-  align-items: center;
-  padding: var(--ccw-space-2) var(--ccw-space-3);
-  margin: -10px 0 var(--ccw-space-4);
-  border-radius: var(--ccw-radius-md);
-  font-size: var(--ccw-text-sm);
-  color: var(--ccw-text-secondary);
-  background: var(--ccw-bg-raised);
-}
-
-/* Below the actions, which sit in the bubble's bottom margin. */
-.condensed .rewindCard {
-  margin-top: -16px;
-}
-
-.rewindError {
-  color: var(--ccw-danger);
-}
-
-.rewindConfirm {
-  padding: 1px 10px;
-  font-size: var(--ccw-text-sm);
-  color: #fff;
-  background: var(--ccw-danger);
-  border-radius: var(--ccw-radius-pill);
-}
-
-.rewindConfirm:hover {
-  opacity: 0.85;
-}
-
-.rewindCancel {
-  padding: 1px 10px;
-  font-size: var(--ccw-text-sm);
-  color: var(--ccw-text-muted);
-  border-radius: var(--ccw-radius-pill);
-}
-
-.rewindCancel:hover {
-  color: var(--ccw-text-primary);
-  background: var(--ccw-bg-hover);
-}
-
 .attachmentNote {
   margin-top: var(--ccw-space-2);
   font-size: var(--ccw-text-sm);

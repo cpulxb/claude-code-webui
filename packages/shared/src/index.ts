@@ -508,6 +508,17 @@ export type RpcMap = {
     params: { sessionId: string; userMessageId: string; dryRun?: boolean }
     result: { rewind: RewindFilesResult }
   }
+  /**
+   * The terminal's "Restore conversation": the message and everything after
+   * it leave the conversation, and the runner restarts from just before it.
+   * `restoreFiles` rewinds the checkpointed files first, as "Restore code and
+   * conversation". `fresh`: the message opened the transcript, so nothing is
+   * left to resume — the caller starts a new session in its place.
+   */
+  'session.rewindConversation': {
+    params: { sessionId: string; userMessageId: string; restoreFiles?: boolean }
+    result: { fresh: boolean; files?: RewindFilesResult }
+  }
   /** Stops one running subagent or background task (`task_notification` follows). */
   'session.stopTask': { params: { sessionId: string; taskId: string }; result: Record<string, never> }
   /**
@@ -781,6 +792,11 @@ export type ServerEvent =
    * Every later frame names that id; `sessionId` is the one left behind.
    */
   | { type: 'session_reset'; sessionId: string; newSessionId: string; summary: SessionSummary }
+  /**
+   * The conversation was rewound to just before `userMessageId`, under a new
+   * runner: every page showing it reads its history again.
+   */
+  | { type: 'session_rewound'; sessionId: string; userMessageId: string }
   | { type: 'update_status'; status: UpdateStatus }
 
 /**

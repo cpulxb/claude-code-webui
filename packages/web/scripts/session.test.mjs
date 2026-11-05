@@ -1049,3 +1049,111 @@ test('a settings entry from before sections still steps back once', async (t) =>
   assert.equal(useStore.getState().settingsSection, null)
   assert.equal(window.location.pathname, `/s/${A}`)
 })
+
+// --- rewinding the conversation ---------------------------------------------
+
+/** Two prompts sent and answered: `A` then `B`. Returns their bubbles' ids. */
+async function twoPrompts(f) {
+  await useStore.getState().send('A')
+  f.receive(result(f.sessionId))
+  await useStore.getState().send('B')
+  f.receive(result(f.sessionId))
+  return f.state().transcript.nodes.filter((node) => node.kind === 'user').map((node) => node.id)
+}
+
+/** `rpc` for a rewind: the disk after it, an idle runner, and every call counted. */
+function rewindRpc(f, answer) {
+  const calls = []
+  const working = rpc
+  rpc = async (method, params) => {
+    calls.push(method)
+    if (method === 'session.send') return {}
+    if (method === 'session.state') return snapshot({ status: 'idle' })
+    if (method === 'history.subagents') return { agents: [] }
+    if (method === 'session.rewindConversation') return answer(params)
+    return working(method, params)
+  }
+  return calls
+}
+
+test('a rewound conversation is read in again, and its prompt comes back to the composer', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  useStore.setState({ composerDraft: null })
+  const [a, b] = await twoPrompts(f)
+  const disk = [savedEntry(f.sessionId, 'user', a, { role: 'user', content: 'A' })]
+  let asked
+  const calls = rewindRpc(f, (params) => {
+    asked = params
+    // The server announces the rewind to every page before it answers.
+    f.receive({ type: 'session_rewound', userMessageId: params.userMessageId })
+    return { fresh: false, files: { canRewind: true, filesChanged: ['/fixture/a.txt'], insertions: 1, deletions: 2 } }
+  })
+  const working = rpc
+  rpc = async (method, params) => (method === 'history.messages' ? (calls.push(method), { messages: disk, hasMore: false, hasNewer: false }) : working(method, params))
+  const fsVersion = f.state().fsVersion
+
+  await useStore.getState().rewindConversation(b, true, 'B')
+  await settle()
+
+  assert.deepEqual(asked, { sessionId: f.sessionId, userMessageId: b, restoreFiles: true })
+  // This page reads it in itself: its own announcement is not read twice.
+  assert.equal(calls.filter((method) => method === 'history.messages').length, 1)
+  assert.deepEqual(f.state().transcript.nodes.filter((node) => node.kind === 'user').map((node) => node.id), [a])
+  assert.match(f.state().transcript.nodes.at(-1).text, /已回退对话，并回退了 1 个文件（\+1 −2）/)
+  assert.deepEqual(useStore.getState().composerDraft, { text: 'B' })
+  assert.equal(f.state().fsVersion, fsVersion + 1)
+  assert.equal(f.state().rewinds, 1)
+  assert.equal(f.state().attached, true)
+})
+
+test('a rewind made in another page is read in here', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  useStore.setState({ composerDraft: null })
+  const [a, b] = await twoPrompts(f)
+  const disk = [savedEntry(f.sessionId, 'user', a, { role: 'user', content: 'A' })]
+  rewindRpc(f, () => assert.fail('this page did not rewind'))
+  const working = rpc
+  rpc = async (method, params) => (method === 'history.messages' ? { messages: disk, hasMore: false, hasNewer: false } : working(method, params))
+
+  f.receive({ type: 'session_rewound', userMessageId: b })
+  await settle()
+  await settle()
+
+  assert.deepEqual(f.state().transcript.nodes.filter((node) => node.kind === 'user').map((node) => node.id), [a])
+  assert.equal(f.state().rewinds, 1)
+  // The prompt goes back to the composer of the page that rewound it only.
+  assert.equal(useStore.getState().composerDraft, null)
+})
+
+test('rewinding to the prompt that opened the session starts a new one with it in the composer', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  useStore.setState({ composerDraft: null })
+  const [a] = await twoPrompts(f)
+  const calls = rewindRpc(f, () => ({ fresh: true }))
+
+  await useStore.getState().rewindConversation(a, false, 'A')
+
+  const fresh = useStore.getState().activeId
+  assert.notEqual(fresh, f.sessionId)
+  assert.equal(useStore.getState().sessions[fresh].cwd, '/fixture')
+  assert.match(useStore.getState().sessions[fresh].transcript.nodes.at(-1).text, /回退到了会话的第一条消息之前/)
+  assert.deepEqual(useStore.getState().composerDraft, { text: 'A' })
+  // The old conversation stays as it was, to be reopened from the sidebar.
+  assert.equal(f.state().transcript.nodes.filter((node) => node.kind === 'user').length, 2)
+  assert.ok(!calls.includes('history.messages'))
+})
+
+test('a rewind the server refuses changes neither the transcript nor the composer', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  useStore.setState({ composerDraft: null })
+  const [, b] = await twoPrompts(f)
+  rewindRpc(f, () => {
+    throw new Error('这一轮还在进行，停止之后再回退')
+  })
+  const before = f.state().transcript
+
+  await assert.rejects(useStore.getState().rewindConversation(b, false, 'B'), /停止之后再回退/)
+  assert.equal(f.state().transcript, before)
+  assert.equal(useStore.getState().composerDraft, null)
+  assert.equal(f.state().rewinds, 0)
+})

@@ -5,7 +5,7 @@ import { useShallow } from 'zustand/shallow'
 import { call } from '../../api/client.ts'
 import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import { inlineAttachments, withUploads } from '../../utils/attachments.ts'
-import { LOCAL_COMMANDS, parseLocalCommand, runLocalCommand } from '../../utils/local-commands.ts'
+import { LOCAL_COMMANDS, parseLocalCommand, runLocalCommand, SHOW_REWIND_EVENT } from '../../utils/local-commands.ts'
 import { findModel, modelLabel } from '../../utils/models.ts'
 import { useNarrow } from '../../utils/narrow.ts'
 import { withQuotes } from '../../utils/quotes.ts'
@@ -26,6 +26,8 @@ import { useUploads } from './useUploads.ts'
 
 const FILE_SUGGEST_DEBOUNCE_MS = 90
 const MODEL_REFRESH_MS = 2000
+/** Two presses of Escape within this make the terminal's Esc Esc. */
+const DOUBLE_ESCAPE_MS = 600
 /** A touch keyboard has no Shift+Enter, so there Enter adds a line and the send button sends. */
 const TOUCH = window.matchMedia('(pointer: coarse)')
 
@@ -48,6 +50,7 @@ export function Composer(): JSX.Element | null {
   const activeId = useStore((state) => state.activeId)
   const quotes = useStore((state) => state.quotes)
   const setQuotes = useStore((state) => state.setQuotes)
+  const composerDraft = useStore((state) => state.composerDraft)
 
   // Slices rather than the session object: immer replaces that object on every
   // streamed token, which would re-render the palette, the model picker and the
@@ -96,6 +99,7 @@ export function Composer(): JSX.Element | null {
   const modelsRef = useRef<HTMLDivElement>(null)
   const fileSeqRef = useRef(0)
   const quoteCountRef = useRef(quotes.length)
+  const lastEscapeRef = useRef(0)
 
   // Commands bound to a terminal (statusline, vim mode…) are meaningless in a
   // browser; the CLI tags them precisely so remote UIs can hide them.
@@ -216,6 +220,23 @@ export function Composer(): JSX.Element | null {
     const element = textareaRef.current
     if (element) fitHeight(element)
   }, [text])
+
+  // A rewound prompt comes back to be edited and sent again, as in the terminal.
+  // Only one that arrives while mounted: remounting must not bring back a
+  // draft already taken over, and maybe sent, before.
+  const draftRef = useRef(composerDraft)
+  useEffect(() => {
+    if (!composerDraft || composerDraft === draftRef.current) return
+    draftRef.current = composerDraft
+    setText(composerDraft.text)
+    setTrigger(null)
+    requestAnimationFrame(() => {
+      const element = textareaRef.current
+      if (!element) return
+      element.focus()
+      element.setSelectionRange(composerDraft.text.length, composerDraft.text.length)
+    })
+  }, [composerDraft])
 
   // A passage just quoted from the conversation is there to be answered.
   useEffect(() => {
@@ -391,9 +412,20 @@ export function Composer(): JSX.Element | null {
       }
     }
     if (event.key === 'Escape') {
+      const dismissing = trigger !== null || modesOpen || modelsOpen
       setTrigger(null)
       setModesOpen(false)
       setModelsOpen(false)
+      // The terminal's Esc Esc: with nothing typed and nothing to dismiss,
+      // a second press lists the prompts to rewind to.
+      if (dismissing || text !== '' || uploads.length > 0 || running) {
+        lastEscapeRef.current = 0
+      } else if (event.timeStamp - lastEscapeRef.current < DOUBLE_ESCAPE_MS) {
+        lastEscapeRef.current = 0
+        window.dispatchEvent(new CustomEvent(SHOW_REWIND_EVENT))
+      } else {
+        lastEscapeRef.current = event.timeStamp
+      }
       return
     }
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !TOUCH.matches) {

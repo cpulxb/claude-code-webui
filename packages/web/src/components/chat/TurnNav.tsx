@@ -7,7 +7,8 @@ import { useActiveSessionValue, useStore } from '../../store/session.ts'
 import { splitQuotes } from '../../utils/quotes.ts'
 import styles from './TurnNav.module.css'
 
-type Prompt = { id: string; text: string }
+/** `text` is the line the list shows; `body` the whole message, for the composer a rewind refills. */
+export type Prompt = { id: string; text: string; body: string }
 
 /**
  * A tick per prompt of the main thread down the right edge of the chat, as
@@ -122,27 +123,33 @@ export function TurnNav({
   )
 }
 
-/** Prompt lists read from disk, by session: once per page load, as new prompts arrive as nodes. */
+/**
+ * Prompt lists read from disk, by session and rewind count: once per page
+ * load, as new prompts arrive as nodes — and again after a rewind, which
+ * takes prompts away.
+ */
 const onDisk = new Map<string, Prompt[]>()
 
 /**
  * The main thread's prompts: those on disk, then any newer ones read in or
  * sent since. Only a session not wholly read in asks the server.
  */
-function usePrompts(): Prompt[] {
+export function usePrompts(): Prompt[] {
   const sessionId = useStore((state) => state.activeId)
   const cwd = useActiveSessionValue((session) => session.cwd)
   const nodes = useActiveSessionValue((session) => session.transcript.nodes)
+  const rewinds = useActiveSessionValue((session) => session.rewinds) ?? 0
   const partial =
     useActiveSessionValue((session) => session.historyCursor !== null || session.newerCursor !== null) ?? false
   const [, setRead] = useState(0)
+  const key = sessionId ? `${sessionId}:${rewinds}` : null
 
   useEffect(() => {
-    if (!sessionId || !cwd || !partial || onDisk.has(sessionId)) return
+    if (!sessionId || !key || !cwd || !partial || onDisk.has(key)) return
     let current = true
     call('history.prompts', { sessionId, cwd }).then(
       ({ messages }) => {
-        onDisk.set(sessionId, historyPrompts(messages).map(toPrompt))
+        onDisk.set(key, historyPrompts(messages).map(toPrompt))
         if (current) setRead((count) => count + 1)
       },
       // Without it the navigator still lists the prompts read in.
@@ -151,9 +158,9 @@ function usePrompts(): Prompt[] {
     return () => {
       current = false
     }
-  }, [sessionId, cwd, partial])
+  }, [sessionId, key, cwd, partial])
 
-  const disk = sessionId ? onDisk.get(sessionId) : undefined
+  const disk = key ? onDisk.get(key) : undefined
   return useMemo(() => {
     const loaded = (nodes ?? []).flatMap((node) => (node.kind === 'user' ? [toPrompt(node)] : []))
     if (!disk) return loaded
@@ -165,5 +172,5 @@ function usePrompts(): Prompt[] {
 /** A prompt's first line, past any quoted passages; an attachment alone stands in for an empty one. */
 function toPrompt(node: Extract<ChatNode, { kind: 'user' }>): Prompt {
   const line = splitQuotes(node.text).body.trim().split('\n', 1)[0]!
-  return { id: node.id, text: line || (node.attachments > 0 ? `附件 × ${node.attachments}` : '（空消息）') }
+  return { id: node.id, text: line || (node.attachments > 0 ? `附件 × ${node.attachments}` : '（空消息）'), body: node.text }
 }

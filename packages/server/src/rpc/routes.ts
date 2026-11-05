@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises'
 
-import { SHARE_TTLS, type RpcMethod, type RpcParams, type RpcResult, type SessionConfig } from '@ccw/shared'
+import { SHARE_TTLS, type RpcMethod, type RpcParams, type RpcResult } from '@ccw/shared'
 
 import { browseDirectory } from '../files/browse.ts'
 import { listEntries, readFilePreview, writeTextFile } from '../files/explorer.ts'
@@ -9,6 +9,7 @@ import { createShare, listShares, revokeShare } from '../files/shares.ts'
 import { suggestFiles } from '../files/suggest.ts'
 import { saveUpload } from '../files/upload.ts'
 import {
+  forgetRead,
   forkSavedSession,
   hasTranscript,
   listProjects,
@@ -21,7 +22,10 @@ import {
   readSubagentMessages,
   readWorkflowRun,
   renameSavedSession,
+  rewindPoint,
+  rewoundAt,
 } from '../history/sessions.ts'
+import { setPendingRewind } from '../history/rewinds.ts'
 import { scmDiff, scmDiscard, scmStatus, shadowBaseline } from '../scm/git.ts'
 import {
   scmBranches,
@@ -38,6 +42,7 @@ import {
   scmUnstage,
 } from '../scm/repo.ts'
 import type { SessionManager } from '../session/manager.ts'
+import type { RunnerConfig } from '../session/runner.ts'
 import { readChannels, writeChannels } from '../settings/channels.ts'
 import { readCliConfig, writeCliConfig } from '../settings/cli-config.ts'
 import { fetchUpstreamModels } from '../settings/upstream-models.ts'
@@ -65,13 +70,20 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
       // settings the terminal starts from decide. Passed on explicitly even
       // then: left out, the SDK may start the session in `auto`.
       const permissionMode = config.permissionMode ?? (await readDefaultPermissionMode(config.cwd)) ?? 'default'
+      // A cut never comes from the browser, only from a rewind made here.
+      const { resumeSessionAt: _cut, ...requested } = config as RunnerConfig
       // A session opened and never sent to has no JSONL, so `--resume` exits
       // with "No conversation found" — e.g. reopened after a server restart.
       // Starting it fresh under the same id is what it still is.
-      let effective: SessionConfig = { ...config, permissionMode }
+      let effective: RunnerConfig = { ...requested, permissionMode }
       if (effective.resume && !(await hasTranscript(effective.resume))) {
         const { resume, ...fresh } = effective
         effective = { ...fresh, sessionId: resume }
+      } else if (effective.resume) {
+        // Rewound, and nothing sent since: the transcript still ends on the
+        // turns rewound away, so the CLI must be told where to stop.
+        const at = await rewoundAt(effective.resume, effective.cwd)
+        if (at) effective = { ...effective, resumeSessionAt: at }
       }
       const runner = manager.create(effective)
       return { sessionId: runner.sessionId, permissionMode }
@@ -142,6 +154,29 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
     'session.rewindFiles': async ({ sessionId, userMessageId, dryRun }) => ({
       rewind: await manager.require(sessionId).rewindFiles(userMessageId, dryRun ?? false),
     }),
+
+    // Files first: a failed file rewind leaves the conversation as it was.
+    'session.rewindConversation': async ({ sessionId, userMessageId, restoreFiles }) => {
+      const runner = manager.require(sessionId)
+      if (runner.status === 'running' || runner.pendingPermissions.length > 0) {
+        throw new Error('这一轮还在进行，停止之后再回退')
+      }
+      const at = await rewindPoint(sessionId, runner.config.cwd, userMessageId)
+      let files
+      if (restoreFiles) {
+        files = await runner.rewindFiles(userMessageId, false)
+        if (!files.canRewind) throw new Error(`代码没能回退，对话也没有动：${files.error ?? '没有这条消息的检查点'}`)
+      }
+      // Nothing came before it to resume at. The CLI keeps its id in use, so
+      // the browser starts the empty conversation as a new session.
+      if (at === null) return { fresh: true, ...(files ? { files } : {}) }
+      const config = await runner.carryOver()
+      await setPendingRewind(sessionId, { at, drop: userMessageId })
+      forgetRead(sessionId)
+      await manager.restart(sessionId, { ...config, resume: sessionId, resumeSessionAt: at })
+      manager.announce({ type: 'session_rewound', sessionId, userMessageId })
+      return { fresh: false, ...(files ? { files } : {}) }
+    },
 
     'session.stopTask': async ({ sessionId, taskId }) => {
       await manager.require(sessionId).stopTask(taskId)

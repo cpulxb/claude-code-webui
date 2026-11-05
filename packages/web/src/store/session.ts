@@ -126,6 +126,11 @@ export type SessionState = {
    */
   fsVersion: number
   /**
+   * Bumped when the conversation is rewound: whatever was read of its prompts
+   * from disk includes the ones rewound away.
+   */
+  rewinds: number
+  /**
    * The subagent whose conversation the chat pane shows instead of the main
    * thread, by the Agent tool_use id that spawned it. Null for the main thread.
    */
@@ -167,6 +172,11 @@ type Store = {
   unread: Record<string, Unread>
   /** Desktop notifications for news while the page is out of sight; kept per browser. */
   notify: boolean
+  /**
+   * Text for the composer to take over — a rewound prompt, as the terminal
+   * puts it back in its input. A fresh object per request; null until one.
+   */
+  composerDraft: { text: string } | null
 
   connect: () => () => void
   createSession: (cwd: string) => Promise<string>
@@ -209,6 +219,13 @@ type Store = {
   messageLink: (nodeId: string) => Promise<string>
   /** dryRun previews; a real run bumps `fsVersion` and posts a notice node. */
   rewindFiles: (nodeId: string, dryRun: boolean) => Promise<RewindFilesResult>
+  /**
+   * Drops this prompt and everything after it from the conversation — with
+   * the files too when `restoreFiles` — and puts `text` back in the composer.
+   * A prompt that opened the transcript leaves nothing to resume, so the
+   * empty conversation is a new session. Throws when the server refuses.
+   */
+  rewindConversation: (nodeId: string, restoreFiles: boolean, text: string) => Promise<void>
   /** Bumps `fsVersion` after an out-of-band write (editor-tab save). */
   touchFs: (sessionId: string) => void
   /**
@@ -265,6 +282,7 @@ function newSession(sessionId: string, cwd: string, attached: boolean): SessionS
     liveTokens: null,
     turnStats: null,
     fsVersion: 0,
+    rewinds: 0,
     viewAgent: null,
   }
 }
@@ -407,6 +425,19 @@ function removeProjectSession(set: Setter, sessionId: string): void {
  */
 const closedEpoch = new Map<string, number>()
 
+/**
+ * Sessions this page is rewinding: it reads the history in again itself,
+ * so the `session_rewound` frame its own request caused is not news here.
+ */
+const rewinding = new Set<string>()
+
+function markRewound(set: Setter, sessionId: string): void {
+  set((state) => {
+    const session = state.sessions[sessionId]
+    if (session) session.rewinds += 1
+  })
+}
+
 type PermissionChanges = Map<string, PermissionRequest | null>
 type SnapshotVersions = { status: number; permissions: number; mode: number; pending: Set<PermissionChanges> }
 
@@ -477,6 +508,7 @@ export const useStore = create<Store>()(
     chatLayout: localStorage.getItem(CHAT_LAYOUT_KEY) === 'detailed' ? 'detailed' : 'compact',
     unread: {},
     notify: localStorage.getItem(NOTIFY_KEY) === '1',
+    composerDraft: null,
 
     connect: () =>
       connectEvents({
@@ -996,6 +1028,40 @@ export const useStore = create<Store>()(
       return rewind
     },
 
+    rewindConversation: async (nodeId, restoreFiles, text) => {
+      const sessionId = get().activeId
+      const session = sessionId ? get().sessions[sessionId] : undefined
+      if (!sessionId || !session) throw new Error('没有活跃会话')
+      await attach(set, get, sessionId)
+      rewinding.add(sessionId)
+      let result: RpcResult<'session.rewindConversation'>
+      try {
+        result = await call('session.rewindConversation', { sessionId, userMessageId: nodeId, restoreFiles })
+        if (result.files) {
+          set((state) => {
+            const current = state.sessions[sessionId]
+            if (current) current.fsVersion += 1
+          })
+        }
+        const files = result.files
+          ? `，并回退了 ${result.files.filesChanged?.length ?? 0} 个文件（+${result.files.insertions ?? 0} −${result.files.deletions ?? 0}）`
+          : ''
+        if (result.fresh) {
+          const fresh = await get().createSession(session.cwd)
+          pushNotice(set, fresh, 'info', `回退到了会话的第一条消息之前${files}。之前的对话仍可从侧栏打开`)
+        } else {
+          markRewound(set, sessionId)
+          await moveWindow(set, get, sessionId)
+          pushNotice(set, sessionId, 'info', `已回退对话${files}`)
+        }
+      } finally {
+        rewinding.delete(sessionId)
+      }
+      set((state) => {
+        state.composerDraft = { text }
+      })
+    },
+
     touchFs: (sessionId) =>
       set((state) => {
         const session = state.sessions[sessionId]
@@ -1365,6 +1431,16 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
   }
   if (event.type === 'session_reset') {
     resetSession(set, get, event)
+    return
+  }
+  // Rewound from another page: what this one shows has turns that are gone.
+  if (event.type === 'session_rewound') {
+    if (get().sessions[event.sessionId] && !rewinding.has(event.sessionId)) {
+      markRewound(set, event.sessionId)
+      void moveWindow(set, get, event.sessionId).catch((error: unknown) => {
+        pushNotice(set, event.sessionId, 'error', `会话已在别处回退，重新读取历史记录失败：${errorMessage(error)}`)
+      })
+    }
     return
   }
   let sawInit = false

@@ -1,4 +1,3 @@
-import type { RewindFilesResult } from '@ccw/shared'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { condense, type CondensedItem, type Step } from '../../render/condense.ts'
@@ -7,6 +6,7 @@ import { AGENT_TOOLS, findAgent, lastTurnStart, rowKeys } from '../../render/nod
 import { WORKFLOW_TOOL } from '../../render/workflows.ts'
 import { useActiveSessionValue, useSessionSettled, useStore } from '../../store/session.ts'
 import { splitUploadRefs } from '../../utils/attachments.ts'
+import { SHOW_REWIND_EVENT } from '../../utils/local-commands.ts'
 import { parseQuestions } from '../../utils/questions.ts'
 import { splitQuotes } from '../../utils/quotes.ts'
 import { turnReplyText } from '../../utils/transcript-markdown.ts'
@@ -18,6 +18,7 @@ import styles from './ChatView.module.css'
 import { PermissionCard } from './PermissionCard.tsx'
 import { QuestionCard } from './QuestionCard.tsx'
 import { QuoteButton } from './QuoteButton.tsx'
+import { RewindDialog } from './RewindDialog.tsx'
 import { AgentCard } from './AgentCard.tsx'
 import { WorkflowCard } from './WorkflowCard.tsx'
 import { AgentNav } from './AgentNav.tsx'
@@ -31,9 +32,6 @@ const FOLLOW_THRESHOLD = 120
 /** Room left above a prompt jumped to, clear of the sticky agent bar. */
 const JUMP_MARGIN = 56
 
-/** One in-flight rewind interaction, anchored to a single user bubble. */
-type RewindState = { nodeId: string; busy: boolean; preview: RewindFilesResult | null; error: string | null }
-
 export function ChatView(): JSX.Element | null {
   const scrollRef = useRef<HTMLDivElement>(null)
   const streamRef = useRef<HTMLDivElement>(null)
@@ -45,11 +43,8 @@ export function ChatView(): JSX.Element | null {
   // node list apart from a node appended by the running turn.
   const seenRef = useRef<{ id: string | null; count: number }>({ id: null, count: 0 })
   const activeId = useStore((state) => state.activeId)
-  const rewindFiles = useStore((state) => state.rewindFiles)
-  const [rewind, setRewind] = useState<RewindState | null>(null)
-  // Rewind previews race each other when the user clicks several bubbles in a
-  // row; only the newest request may write state.
-  const rewindSeq = useRef(0)
+  // The rewind dialog: at the prompt list for a null id, else at that prompt.
+  const [rewind, setRewind] = useState<{ target: string | null } | null>(null)
 
   // Inside a subagent the pane shows that agent's own transcript; every other
   // part of the view (scroll following, permission cards) works the same.
@@ -105,48 +100,21 @@ export function ChatView(): JSX.Element | null {
     if (scrollRef.current) scrollRef.current.style.overflowAnchor = ''
   }, [])
 
-  const startRewind = useCallback(
-    async (nodeId: string): Promise<void> => {
-      const seq = ++rewindSeq.current
-      setRewind({ nodeId, busy: true, preview: null, error: null })
-      try {
-        const preview = await rewindFiles(nodeId, true)
-        if (seq !== rewindSeq.current) return
-        setRewind({
-          nodeId,
-          busy: false,
-          preview,
-          error: preview.canRewind ? null : (preview.error ?? '无法回退到这条消息'),
-        })
-      } catch (cause) {
-        if (seq !== rewindSeq.current) return
-        setRewind({ nodeId, busy: false, preview: null, error: cause instanceof Error ? cause.message : String(cause) })
-      }
-    },
-    [rewindFiles],
-  )
+  const openRewind = useCallback((target: string | null) => setRewind({ target }), [])
+  const closeRewind = useCallback(() => setRewind(null), [])
 
-  const confirmRewind = useCallback(
-    async (nodeId: string): Promise<void> => {
-      const seq = ++rewindSeq.current
-      setRewind((current) => (current ? { ...current, busy: true } : current))
-      try {
-        const result = await rewindFiles(nodeId, false)
-        if (seq !== rewindSeq.current) return
-        if (result.canRewind) setRewind(null)
-        else setRewind({ nodeId, busy: false, preview: null, error: result.error ?? '回退失败' })
-      } catch (cause) {
-        if (seq !== rewindSeq.current) return
-        setRewind({ nodeId, busy: false, preview: null, error: cause instanceof Error ? cause.message : String(cause) })
-      }
-    },
-    [rewindFiles],
-  )
-
-  const cancelRewind = useCallback(() => {
-    rewindSeq.current += 1
-    setRewind(null)
+  // Esc Esc in the composer and `/rewind` open it at the list.
+  useEffect(() => {
+    const onShow = (event: Event): void => {
+      const detail = (event as CustomEvent<unknown>).detail
+      setRewind({ target: typeof detail === 'string' ? detail : null })
+    }
+    window.addEventListener(SHOW_REWIND_EVENT, onShow)
+    return () => window.removeEventListener(SHOW_REWIND_EVENT, onShow)
   }, [])
+
+  // It is about the session it was opened in.
+  useEffect(() => setRewind(null), [activeId])
 
   // Only auto-scroll while the reader is already at the bottom; yanking the
   // viewport away from someone reading scrollback is the classic chat bug.
@@ -379,14 +347,7 @@ export function ChatView(): JSX.Element | null {
         {node.text}
       </div>
     ) : node.kind === 'user' ? (
-      <UserTurn
-        key={key}
-        node={node}
-        rewind={rewind?.nodeId === node.id ? rewind : null}
-        onRewind={startRewind}
-        onConfirm={confirmRewind}
-        onCancel={cancelRewind}
-      />
+      <UserTurn key={key} node={node} onRewind={openRewind} />
     ) : (
       <NodeView key={key} node={node} settled={settled || index < newestTurn} />
     )
@@ -572,22 +533,17 @@ export function ChatView(): JSX.Element | null {
       </div>
       {/* A subagent's conversation has the one prompt. */}
       {!viewAgent && <TurnNav scrollRef={scrollRef} onJump={jumpTo} />}
+      {rewind && <RewindDialog target={rewind.target} onClose={closeRewind} />}
     </div>
   )
 }
 
 const UserTurn = memo(function UserTurn({
   node,
-  rewind,
   onRewind,
-  onConfirm,
-  onCancel,
 }: {
   node: Extract<ChatNode, { kind: 'user' }>
-  rewind: RewindState | null
   onRewind: (nodeId: string) => void
-  onConfirm: (nodeId: string) => void
-  onCancel: () => void
 }): JSX.Element {
   const messageLink = useStore((state) => state.messageLink)
   const cwd = useActiveSessionValue((session) => session.cwd)
@@ -612,61 +568,34 @@ const UserTurn = memo(function UserTurn({
   }
 
   return (
-    <>
-      <div className={styles.userTurn} data-uuid={node.id}>
-        {quotes.map((quote, index) => (
-          <blockquote key={index} className={styles.userQuote}>
-            {quote}
-          </blockquote>
-        ))}
-        <PromptAttachments images={node.images} refs={refs} cwd={cwd} spaced={body !== ''} />
-        {body}
-        {documents > 0 && <div className={styles.attachmentNote}>附件 × {documents}</div>}
-        <div className={styles.turnActions}>
-          <button
-            className={`${styles.turnAction} ${copied === 'failed' ? styles.turnActionFailed : ''}`}
-            onClick={copyLink}
-            type="button"
-            title={copied === 'copied' ? '已复制链接' : copied === 'failed' ? '复制失败' : '复制这条消息的链接'}
-          >
-            {copied === 'copied' ? <CheckIcon size={13} /> : <LinkIcon size={13} />}
-          </button>
-          <button
-            className={styles.turnAction}
-            onClick={() => onRewind(node.id)}
-            type="button"
-            title="把文件回退到这条消息之前的状态"
-          >
-            <HistoryIcon size={13} />
-          </button>
-        </div>
+    <div className={styles.userTurn} data-uuid={node.id}>
+      {quotes.map((quote, index) => (
+        <blockquote key={index} className={styles.userQuote}>
+          {quote}
+        </blockquote>
+      ))}
+      <PromptAttachments images={node.images} refs={refs} cwd={cwd} spaced={body !== ''} />
+      {body}
+      {documents > 0 && <div className={styles.attachmentNote}>附件 × {documents}</div>}
+      <div className={styles.turnActions}>
+        <button
+          className={`${styles.turnAction} ${copied === 'failed' ? styles.turnActionFailed : ''}`}
+          onClick={copyLink}
+          type="button"
+          title={copied === 'copied' ? '已复制链接' : copied === 'failed' ? '复制失败' : '复制这条消息的链接'}
+        >
+          {copied === 'copied' ? <CheckIcon size={13} /> : <LinkIcon size={13} />}
+        </button>
+        <button
+          className={styles.turnAction}
+          onClick={() => onRewind(node.id)}
+          type="button"
+          title="回退到这条消息之前（代码和/或对话）"
+        >
+          <HistoryIcon size={13} />
+        </button>
       </div>
-
-      {rewind && (
-        <div className={styles.rewindCard}>
-          {rewind.busy ? (
-            <span>{rewind.preview ? '回退中…' : '检查回退范围…'}</span>
-          ) : rewind.error ? (
-            <span className={styles.rewindError}>{rewind.error}</span>
-          ) : rewind.preview ? (
-            <span>
-              将回退 {rewind.preview.filesChanged?.length ?? 0} 个文件（+{rewind.preview.insertions ?? 0} −
-              {rewind.preview.deletions ?? 0}）
-            </span>
-          ) : null}
-          {!rewind.busy && !rewind.error && rewind.preview && (
-            <button className={styles.rewindConfirm} onClick={() => onConfirm(node.id)} type="button">
-              确认回退
-            </button>
-          )}
-          {!rewind.busy && (
-            <button className={styles.rewindCancel} onClick={onCancel} type="button">
-              取消
-            </button>
-          )}
-        </div>
-      )}
-    </>
+    </div>
   )
 })
 

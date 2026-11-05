@@ -13,6 +13,7 @@ import { lastReplyText, transcriptMarkdown } from './transcript-markdown.ts'
 export const LOCAL_COMMANDS: SlashCommand[] = [
   { name: 'rename', description: '重命名当前会话', argumentHint: '<名称>' },
   { name: 'branch', aliases: ['fork'], description: '从当前位置分叉出一个新会话', argumentHint: '[名称]' },
+  { name: 'rewind', aliases: ['checkpoint', 'undo'], description: '把代码和/或对话回退到之前的某条消息', argumentHint: '' },
   { name: 'export', description: '把对话导出为 Markdown 文件', argumentHint: '[文件名]' },
   { name: 'copy', description: '复制 Claude 的最后一条回复', argumentHint: '' },
   { name: 'mcp', description: '查看并管理 MCP 服务器', argumentHint: '' },
@@ -28,6 +29,12 @@ export const SHOW_INFO_EVENT = 'ccw:show-info'
 
 /** Asks the details panel to bring up its 配置 tab. */
 export const SHOW_CONFIG_EVENT = 'ccw:show-config'
+
+/**
+ * Asks the chat to open its rewind dialog: at the prompt list (the terminal's
+ * Esc Esc), or — with a prompt's id as `detail` — straight at its confirmation.
+ */
+export const SHOW_REWIND_EVENT = 'ccw:show-rewind'
 
 export type LocalCommand = { name: string; args: string }
 
@@ -64,6 +71,10 @@ export async function runLocalCommand(command: LocalCommand): Promise<void> {
 
     case 'branch':
       await store.forkSession(command.args || undefined)
+      return
+
+    case 'rewind':
+      window.dispatchEvent(new CustomEvent(SHOW_REWIND_EVENT))
       return
 
     case 'export': {

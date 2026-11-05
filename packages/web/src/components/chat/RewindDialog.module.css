@@ -1,0 +1,95 @@
+/* On top of the shared dialog in Auth.module.css. */
+.dialog {
+  width: min(560px, 92vw);
+  gap: var(--ccw-space-3);
+  outline: none;
+}
+
+.list,
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.list {
+  max-height: min(420px, 52vh);
+  margin: 0 calc(-1 * var(--ccw-space-2));
+  overflow-y: auto;
+}
+
+.item,
+.option {
+  display: flex;
+  text-align: left;
+  border-radius: var(--ccw-radius-md);
+}
+
+.item {
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--ccw-space-2);
+}
+
+.option {
+  gap: var(--ccw-space-2);
+  align-items: baseline;
+  padding: 6px var(--ccw-space-2);
+  margin: 0 calc(-1 * var(--ccw-space-2));
+}
+
+.active {
+  background: var(--ccw-bg-hover);
+}
+
+.option:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.itemText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemNote,
+.optionNumber,
+.hint {
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-muted);
+}
+
+.current {
+  font-style: italic;
+  color: var(--ccw-text-secondary);
+}
+
+.quote {
+  max-height: 7.5em;
+  padding-left: var(--ccw-space-3);
+  margin: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  border-left: 3px solid var(--ccw-border-strong);
+}
+
+.effects {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-text-secondary);
+}
+
+.warning {
+  font-size: var(--ccw-text-sm);
+  color: var(--ccw-warning);
+}
+
+.footer {
+  display: flex;
+  gap: var(--ccw-space-3);
+  align-items: center;
+  justify-content: space-between;
+}
