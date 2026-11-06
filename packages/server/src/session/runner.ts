@@ -30,7 +30,7 @@ import type {
   UsageReport,
 } from '@ccw/shared'
 
-import { resolveClaudeExecutable } from '../config.ts'
+import { cliEnv, resolveClaudeExecutable } from '../config.ts'
 import { editSkillState, listPlugins, runPluginAction } from './extensions.ts'
 import { InputQueue } from './input-queue.ts'
 import { SessionModels } from './models.ts'
@@ -142,6 +142,7 @@ export class SessionRunner {
         // Sonnet 5 — the blocks stream with empty text unless asked for.
         thinking: { type: 'adaptive', display: 'summarized' },
         ...(resolveClaudeExecutable() ? { pathToClaudeCodeExecutable: resolveClaudeExecutable()! } : {}),
+        env: cliEnv(),
         canUseTool: async (toolName, input, options) => {
           const request: PermissionRequest = {
             requestId: options.requestId,

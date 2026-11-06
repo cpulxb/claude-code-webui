@@ -1,14 +1,13 @@
 import http from 'node:http'
 import https from 'node:https'
 
-import type { RpcParams, UpstreamModel } from '@ccw/shared'
+import type { RoutedFormat, RpcParams, UpstreamModel } from '@ccw/shared'
+
+import { geminiUrl, openAiUrl, proxyOptions } from '../route/upstream.ts'
 
 type Channel = RpcParams<'settings.fetchModels'>
 
 const TIMEOUT_MS = 15_000
-
-/** `proxyEnv` is Node 22.21 / 24.5+; @types/node 22.20 does not declare it. Older Nodes connect directly. */
-type ProxiedAgentOptions = http.AgentOptions & { proxyEnv?: NodeJS.ProcessEnv }
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -21,7 +20,8 @@ const ok = (status: number): boolean => status >= 200 && status < 300
  * NO_PROXY honoured. Node's `fetch` ignores those, and a gateway that is only
  * reachable through the proxy would time out here while the CLI works.
  */
-export async function fetchUpstreamModels({ baseUrl, authField, key }: Channel, timeoutMs = TIMEOUT_MS): Promise<UpstreamModel[]> {
+export async function fetchUpstreamModels({ baseUrl, authField, key, format }: Channel, timeoutMs = TIMEOUT_MS): Promise<UpstreamModel[]> {
+  if (format && format !== 'anthropic') return fetchRoutedModels(format, baseUrl, key, timeoutMs)
   const url = modelsUrl(baseUrl)
   const token = key.trim()
   const ask = async (field: Channel['authField']): Promise<{ status: number; body: string }> => {
@@ -45,6 +45,44 @@ export async function fetchUpstreamModels({ baseUrl, authField, key }: Channel, 
     const retry = await ask(authField === 'ANTHROPIC_API_KEY' ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY')
     if (ok(retry.status)) reply = retry
   }
+  return listOf(url, reply, 'data', (item) => ({ id: item['id'], owner: item['owned_by'] }))
+}
+
+/**
+ * The list a routed channel's upstream gives, in its own format's way: an
+ * OpenAI-style `/models` for a Bearer key, or Gemini's `models` for an
+ * `x-goog-api-key`, keeping the models that can generate content.
+ */
+async function fetchRoutedModels(format: RoutedFormat, baseUrl: string, key: string, timeoutMs: number): Promise<UpstreamModel[]> {
+  const gemini = format === 'gemini'
+  const url = gemini ? geminiUrl(baseUrl, '/models') : openAiUrl(baseUrl, '/models')
+  if (gemini) url.search = '?pageSize=1000'
+  const token = key.trim()
+  const headers: Record<string, string> = {
+    accept: 'application/json',
+    ...(token ? (gemini ? { 'x-goog-api-key': token } : { authorization: `Bearer ${token}` }) : {}),
+  }
+  let reply: { status: number; body: string }
+  try {
+    reply = await get(url, headers, timeoutMs)
+  } catch (error) {
+    throw new Error(`连不上 ${url.host}：${reason(error, timeoutMs)}`)
+  }
+  if (!gemini) return listOf(url, reply, 'data', (item) => ({ id: item['id'], owner: item['owned_by'] }))
+  return listOf(url, reply, 'models', (item) => {
+    const methods = item['supportedGenerationMethods']
+    if (Array.isArray(methods) && !methods.includes('generateContent')) return { id: '' }
+    return { id: typeof item['name'] === 'string' ? item['name'].replace(/^models\//, '') : '' }
+  })
+}
+
+/** The models in the reply's `field` array, each as `pick` reads it; entries without an id, or repeated, are dropped. */
+function listOf(
+  url: URL,
+  reply: { status: number; body: string },
+  field: string,
+  pick: (item: Record<string, unknown>) => { id: unknown; owner?: unknown },
+): UpstreamModel[] {
   const endpoint = `${url.origin}${url.pathname}`
   if (!ok(reply.status)) throw new Error(`${endpoint} 返回 ${reply.status}${detail(reply.body)}`)
 
@@ -54,16 +92,17 @@ export async function fetchUpstreamModels({ baseUrl, authField, key }: Channel, 
   } catch {
     throw new Error(`${endpoint} 返回的不是 JSON，这个渠道可能没有模型列表端点`)
   }
-  const data = isObject(json) ? json['data'] : undefined
-  if (!Array.isArray(data)) throw new Error(`${endpoint} 的响应里没有 data 数组，这个渠道可能不支持模型列表`)
+  const data = isObject(json) ? json[field] : undefined
+  if (!Array.isArray(data)) throw new Error(`${endpoint} 的响应里没有 ${field} 数组，这个渠道可能不支持模型列表`)
 
   const seen = new Set<string>()
   const models: UpstreamModel[] = []
   for (const item of data) {
-    const id = isObject(item) && typeof item['id'] === 'string' ? item['id'].trim() : ''
+    const picked = isObject(item) ? pick(item) : { id: '' }
+    const id = typeof picked.id === 'string' ? picked.id.trim() : ''
     if (!id || seen.has(id)) continue
     seen.add(id)
-    const owner = isObject(item) && typeof item['owned_by'] === 'string' ? item['owned_by'].trim() : ''
+    const owner = typeof picked.owner === 'string' ? picked.owner.trim() : ''
     models.push(owner ? { id, owner } : { id })
   }
   return models
@@ -85,12 +124,8 @@ function modelsUrl(baseUrl: string): URL {
   return url
 }
 
-// Node reads NO_PROXY as plain host names, not the `127.*` / `<local>` globs other tools accept, and a
-// gateway on this machine is out of a remote proxy's reach: loopback never goes through one.
-const LOOPBACK = /^(?:localhost|127(?:\.\d+){3}|\[::1\])$/i
-
 function get(url: URL, headers: Record<string, string>, timeoutMs: number): Promise<{ status: number; body: string }> {
-  const options: ProxiedAgentOptions = LOOPBACK.test(url.hostname) ? {} : { proxyEnv: process.env }
+  const options = proxyOptions(url)
   const secure = url.protocol === 'https:'
   const agent = secure ? new https.Agent(options) : new http.Agent(options)
   return new Promise<{ status: number; body: string }>((resolve, reject) => {

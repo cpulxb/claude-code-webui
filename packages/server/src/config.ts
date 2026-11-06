@@ -43,6 +43,23 @@ function isLoopbackAddress(host: string): boolean {
   return host === 'localhost' || host === '::1' || /^127\.\d+\.\d+\.\d+$/.test(host)
 }
 
+const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '::1']
+
+/**
+ * The environment a session's CLI runs in: this one, with loopback added to
+ * NO_PROXY whenever a proxy is set. A routed channel points the CLI at this
+ * server on 127.0.0.1, and the CLI sends even that through HTTP(S)_PROXY
+ * unless NO_PROXY names it — where the request hangs. Both spellings get the
+ * same list, which keeps every host already in either.
+ */
+export function cliEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  if (!['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy'].some((name) => env[name])) return { ...env }
+  const hosts = new Set([env['NO_PROXY'], env['no_proxy']].flatMap((value) => (value ?? '').split(',')).map((host) => host.trim()).filter(Boolean))
+  for (const host of LOOPBACK_HOSTS) hosts.add(host)
+  const list = [...hosts].join(',')
+  return { ...env, NO_PROXY: list, no_proxy: list }
+}
+
 let cached: string | null | undefined
 
 /**

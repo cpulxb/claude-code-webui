@@ -1,7 +1,7 @@
 import { mkdir, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import type { Channel, ChannelLibrary, UserSettings } from '@ccw/shared'
+import { API_FORMATS, type Channel, type ChannelLibrary, type UserSettings } from '@ccw/shared'
 
 import { configDir } from '../auth/pairing.ts'
 import { hash, readIfExists, validate as validateSettings, writePrivate, writeQueue, writeUserSettings } from './user-settings.ts'
@@ -9,11 +9,16 @@ import { hash, readIfExists, validate as validateSettings, writePrivate, writeQu
 const FILE = 'channels.json'
 const MAX_CHANNELS = 100
 const ID = /^[\w-]{1,64}$/
+/** A route token the CLI sends as its key: random, from the page. */
+const TOKEN = /^[\w-]{24,128}$/
+
+/** The list as saved; `routeBase` is the server's to add. */
+type SavedLibrary = Omit<ChannelLibrary, 'routeBase'>
 
 const saving = writeQueue()
 
 /** The saved channels; an empty list while the file does not exist. */
-export async function readChannels(): Promise<ChannelLibrary> {
+export async function readChannels(): Promise<SavedLibrary> {
   const path = join(configDir(), FILE)
   const raw = (await readIfExists(path)) ?? ''
   return { ...parse(raw, path), revision: hash(raw) }
@@ -34,7 +39,7 @@ export function writeChannels(
   activeId: unknown,
   revision: string,
   settings?: { settings: unknown; revision: string; cwd?: string },
-): Promise<{ library: ChannelLibrary; settings: UserSettings | null }> {
+): Promise<{ library: SavedLibrary; settings: UserSettings | null }> {
   return saving(async () => {
     validate(channels, activeId)
     const dir = configDir()
@@ -52,7 +57,7 @@ export function writeChannels(
   })
 }
 
-function parse(raw: string, path: string): Omit<ChannelLibrary, 'revision'> {
+function parse(raw: string, path: string): Omit<SavedLibrary, 'revision'> {
   if (!raw.trim()) return { channels: [], activeId: null }
   let value: unknown
   try {
@@ -76,16 +81,26 @@ function validate(channels: unknown, activeId: unknown): asserts channels is Cha
   channels.forEach((channel: unknown, index) => {
     const at = `第 ${index + 1} 个渠道`
     if (typeof channel !== 'object' || channel === null) throw new Error(`${at}不是对象`)
-    const { id, name, settings } = channel as Record<string, unknown>
+    const { id, name, settings, route } = channel as Record<string, unknown>
     if (typeof id !== 'string' || !ID.test(id)) throw new Error(`${at}的 id 无效`)
     if (ids.has(id)) throw new Error(`${at}的 id 重复`)
     ids.add(id)
     if (typeof name !== 'string' || !name.trim() || name.length > 100) throw new Error(`${at}的名称不能为空，也不能超过 100 个字符`)
     try {
       validateSettings(settings)
+      if (route !== undefined) validateRoute(route)
     } catch (error) {
       throw new Error(`渠道「${name}」：${(error as Error).message}`)
     }
   })
   if (activeId !== null && (typeof activeId !== 'string' || !ids.has(activeId))) throw new Error('当前渠道不在列表里')
+}
+
+function validateRoute(route: unknown): void {
+  if (typeof route !== 'object' || route === null) throw new Error('route 不是对象')
+  const { format, baseUrl, key, token } = route as Record<string, unknown>
+  if (typeof format !== 'string' || format === 'anthropic' || !(API_FORMATS as readonly string[]).includes(format)) throw new Error('API 格式无效')
+  if (typeof baseUrl !== 'string' || !/^https?:\/\/\S+$/i.test(baseUrl) || baseUrl.length > 2000) throw new Error('上游请求地址要以 http:// 或 https:// 开头')
+  if (typeof key !== 'string' || key.length > 10_000) throw new Error('上游 Key 无效')
+  if (typeof token !== 'string' || !TOKEN.test(token)) throw new Error('路由令牌无效')
 }

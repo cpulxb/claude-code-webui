@@ -10,6 +10,7 @@ import {
   API_FILES_UPLOAD_PATH,
   API_RPC_PATH,
   API_TERM_PATH,
+  ROUTE_PATH,
   SHARE_PATH,
   type RpcMethod,
   type RpcResponse,
@@ -23,6 +24,7 @@ import { resolveInWorkspace } from '../files/roots.ts'
 import { serveShare } from '../files/shares.ts'
 import { serveUpload } from '../files/upload-http.ts'
 import { serveStatic } from '../http/static.ts'
+import { serveRoute } from '../route/serve.ts'
 import type { SessionManager } from '../session/manager.ts'
 import { attachTerminal, resolveShell, terminalSize } from '../terminal/pty.ts'
 import { Updater } from '../update/updater.ts'
@@ -51,7 +53,14 @@ export function startServer(options: {
 }): Promise<ServerHandle> {
   const { host, port, manager, auth, tls, webRoot } = options
   const updater = options.updater ?? Updater.none()
-  const handlers = createRpcHandlers(manager, updater)
+  // The CLI reaches the route on loopback over plain HTTP. Served as HTTPS
+  // directly, the certificate names another host, and the CLI would refuse it.
+  const routeBase = (): string | null => {
+    const address = http.address()
+    if (tls || address === null || typeof address === 'string') return null
+    return `http://${host.includes(':') ? `[${host}]` : host}:${address.port}${ROUTE_PATH}`
+  }
+  const handlers = createRpcHandlers(manager, updater, routeBase)
 
   const wss = new WebSocketServer({ noServer: true })
   // Event sockets get every broadcast; terminal sockets each carry one PTY and
@@ -89,6 +98,15 @@ export function startServer(options: {
     if (path.startsWith(`${SHARE_PATH}/`)) {
       void serveShare(req, res).catch((error) => {
         console.error('[ccw] share failed', error)
+        if (!res.headersSent) res.writeHead(500)
+        res.end()
+      })
+      return
+    }
+    // The CLI's requests for a routed channel: the channel's route token is the grant.
+    if (path.startsWith(`${ROUTE_PATH}/`)) {
+      void serveRoute(req, res, path).catch((error) => {
+        console.error('[ccw] route failed', error)
         if (!res.headersSent) res.writeHead(500)
         res.end()
       })

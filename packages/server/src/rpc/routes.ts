@@ -57,7 +57,11 @@ async function isDirectory(path: string): Promise<boolean> {
   return stat(path).then((info) => info.isDirectory(), () => false)
 }
 
-export function createRpcHandlers(manager: SessionManager, updater: Updater): RpcHandlers {
+/**
+ * `routeBase` says where the CLI reaches this server's route right now, for
+ * routed channels to point settings.json at; null when it cannot.
+ */
+export function createRpcHandlers(manager: SessionManager, updater: Updater, routeBase: () => string | null = () => null): RpcHandlers {
   return {
     'session.create': async (config) => {
       // Checked before the CLI starts: a missing directory makes its spawn fail
@@ -369,15 +373,17 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater): Rp
 
     'settings.fetchModels': async (channel) => ({ models: await fetchUpstreamModels(channel) }),
 
-    'channels.read': async () => readChannels(),
+    'channels.read': async () => ({ ...(await readChannels()), routeBase: routeBase() }),
 
-    'channels.write': async ({ channels, activeId, revision, settings }) =>
-      writeChannels(
+    'channels.write': async ({ channels, activeId, revision, settings }) => {
+      const written = await writeChannels(
         channels,
         activeId,
         revision,
         settings && { settings: settings.settings, revision: settings.revision, cwd: await workspaceOrNothing(settings.cwd) },
-      ),
+      )
+      return { ...written, library: { ...written.library, routeBase: routeBase() } }
+    },
 
     'config.read': async ({ cwd }) => ({ rows: await readCliConfig(await resolveInWorkspace(cwd)) }),
 

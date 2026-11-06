@@ -410,18 +410,33 @@ export type CliConfigRow = {
   overriddenBy?: CliConfigOverride
 }
 
+/** The API a channel's upstream speaks. The CLI only speaks `anthropic`; the others go through the server's route. */
+export const API_FORMATS = ['anthropic', 'openai-chat', 'openai-responses', 'gemini'] as const
+export type ApiFormat = (typeof API_FORMATS)[number]
+export type RoutedFormat = Exclude<ApiFormat, 'anthropic'>
+
+/**
+ * Where a routed channel's requests really go. settings.json points the CLI
+ * at `<routeBase>/<channel id>` with `token` as its key instead, and the
+ * server translates each Messages request to `format` for `baseUrl`, sent
+ * with `key`.
+ */
+export type ChannelRoute = { format: RoutedFormat; baseUrl: string; key: string; token: string }
+
 /**
  * A saved channel: the part of settings.json the channel and model forms
  * write (address, key, role mappings, default model, `modelPicker`), in
  * settings.json's own shape. Switching to it writes that part over the file.
  */
-export type Channel = { id: string; name: string; settings: Record<string, unknown> }
+export type Channel = { id: string; name: string; settings: Record<string, unknown>; route?: ChannelRoute }
 
 /**
  * `~/.config/claude-code-webui/channels.json`. The active channel is the one
  * settings.json holds; its entry here is refreshed whenever the page saves.
+ * `routeBase` is not saved: it is where this server answers routed channels,
+ * null when the CLI could not reach it there (HTTPS served directly).
  */
-export type ChannelLibrary = { channels: Channel[]; activeId: string | null; revision: string }
+export type ChannelLibrary = { channels: Channel[]; activeId: string | null; revision: string; routeBase: string | null }
 
 /** How long a share link lives; `never` lasts until it is revoked. */
 export const SHARE_TTLS = { '1h': 60 * 60 * 1000, '1d': 24 * 60 * 60 * 1000, '7d': 7 * 24 * 60 * 60 * 1000, never: null } as const
@@ -736,7 +751,7 @@ export type RpcMap = {
    * header. Fails with the reason, the key never included.
    */
   'settings.fetchModels': {
-    params: { baseUrl: string; authField: 'ANTHROPIC_AUTH_TOKEN' | 'ANTHROPIC_API_KEY'; key: string }
+    params: { baseUrl: string; authField: 'ANTHROPIC_AUTH_TOKEN' | 'ANTHROPIC_API_KEY'; key: string; format?: ApiFormat }
     result: { models: UpstreamModel[] }
   }
   /** The saved channels, from the WebUI's own config directory; empty until the first save. */
@@ -830,6 +845,8 @@ export const API_FILES_RAW_PATH = '/api/files/raw'
 export const API_FILES_UPLOAD_PATH = '/api/files/upload'
 /** Outside `/api`: a share link is opened from other sites and by people with no device cookie. */
 export const SHARE_PATH = '/share'
+/** Outside `/api`: the CLI posts here, `<ROUTE_PATH>/<channel id>/v1/messages`, with the channel's route token as its key. */
+export const ROUTE_PATH = '/route'
 
 /**
  * Pairing and device management. Plain HTTP routes rather than RPC methods:

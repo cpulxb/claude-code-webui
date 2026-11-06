@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { channelFragment, channelProblems, defaultChannelName, fromLibrary, switchTo, toLibrary } from '../src/utils/channels.ts'
+import {
+  channelFragment,
+  channelProblems,
+  connection,
+  defaultChannelName,
+  fromLibrary,
+  settingsForm,
+  switchTo,
+  toLibrary,
+  withFormat,
+} from '../src/utils/channels.ts'
 import { toForm } from '../src/utils/settings.ts'
 
 // The file from the request: a local gateway, every role on one model, and
@@ -98,4 +108,55 @@ test('an inactive channel with problems, or with no name, stops the save', () =>
 test('an unnamed channel is called after its host', () => {
   assert.equal(defaultChannelName(toForm(relay)), 'relayfor.xyz')
   assert.equal(defaultChannelName(toForm({})), 'Anthropic 官方')
+})
+
+const ROUTE_BASE = 'http://127.0.0.1:3090/route'
+
+test('turning a channel to another format moves its address and key to the route, with a token of its own', () => {
+  const moved = withFormat(toForm(relay), null, 'openai-chat')
+  assert.deepEqual({ ...moved.route, token: undefined }, { format: 'openai-chat', baseUrl: 'https://relayfor.xyz/v1', key: 'sk-relay', token: undefined })
+  assert.match(moved.route.token, /^ccw-route-[0-9a-f]{48}$/)
+  assert.equal(moved.form.baseUrl, '')
+  assert.equal(moved.form.key, '')
+  const other = withFormat(moved.form, moved.route, 'gemini')
+  assert.equal(other.route.format, 'gemini')
+  assert.equal(other.route.token, moved.route.token)
+  const back = withFormat(moved.form, { ...moved.route, baseUrl: 'https://edited.example' }, 'anthropic')
+  assert.equal(back.route, null)
+  assert.equal(back.form.baseUrl, 'https://edited.example')
+  assert.equal(back.form.key, 'sk-relay')
+})
+
+test('a routed channel is saved pointing the CLI at its route, its upstream kept apart', () => {
+  const route = { format: 'openai-responses', baseUrl: ' https://api.openai.com/v1/ ', key: ' sk-oa ', token: 'ccw-route-abc' }
+  const drafts = [{ id: 'r1', name: 'OpenAI', form: { ...toForm(relay), baseUrl: '', key: '' }, route }]
+  const [saved] = toLibrary(drafts, 'other', toForm({}), ROUTE_BASE).channels
+  assert.deepEqual(saved.settings.env, { ANTHROPIC_BASE_URL: `${ROUTE_BASE}/r1`, ANTHROPIC_AUTH_TOKEN: 'ccw-route-abc' })
+  assert.deepEqual(saved.route, { format: 'openai-responses', baseUrl: 'https://api.openai.com/v1', key: 'sk-oa', token: 'ccw-route-abc' })
+  const switched = switchTo(cpa, settingsForm(drafts[0].form, 'r1', route, ROUTE_BASE))
+  assert.equal(switched.env.ANTHROPIC_BASE_URL, `${ROUTE_BASE}/r1`)
+  assert.equal(switched.env.ANTHROPIC_API_KEY, undefined, 'the old channel key goes')
+  assert.deepEqual(connection(drafts[0].form, route), { baseUrl: route.baseUrl, authField: 'ANTHROPIC_AUTH_TOKEN', key: route.key, format: 'openai-responses' })
+})
+
+test('read back, a routed active channel stays routed while settings.json points at its route, on any port', () => {
+  const route = { format: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', key: 'g', token: 'ccw-route-abc' }
+  const library = { channels: [{ id: 'g1', name: 'Gemini', settings: {}, route }], activeId: 'g1', routeBase: ROUTE_BASE }
+  const pointed = { env: { ANTHROPIC_BASE_URL: 'http://127.0.0.1:4000/route/g1', ANTHROPIC_AUTH_TOKEN: 'ccw-route-abc' } }
+  assert.deepEqual(fromLibrary(library, pointed).drafts[0].route, route)
+  // The next save moves it to this server's port.
+  const { drafts, activeId } = fromLibrary(library, pointed)
+  assert.equal(toLibrary(drafts, activeId, drafts[0].form, ROUTE_BASE).channels[0].settings.env.ANTHROPIC_BASE_URL, `${ROUTE_BASE}/g1`)
+  // Pointed elsewhere by hand: settings.json wins.
+  assert.equal(fromLibrary(library, relay).drafts[0].route, null)
+})
+
+test('a routed channel needs an upstream address, and a server that can route', () => {
+  const drafts = [{ id: 'r', name: 'OA', form: toForm({}), route: { format: 'openai-chat', baseUrl: ' ', key: '', token: 'ccw-route-x' } }]
+  assert.deepEqual(channelProblems(drafts, 'r', ROUTE_BASE), ['渠道「OA」：OpenAI Chat Completions 格式要填请求地址'])
+  drafts[0].route.baseUrl = 'ftp://x'
+  assert.deepEqual(channelProblems(drafts, 'r', ROUTE_BASE), ['渠道「OA」：请求地址要以 http:// 或 https:// 开头'])
+  drafts[0].route.baseUrl = 'https://api.openai.com'
+  assert.deepEqual(channelProblems(drafts, 'r', ROUTE_BASE), [])
+  assert.match(channelProblems(drafts, 'r', null)[0], /HTTPS/)
 })

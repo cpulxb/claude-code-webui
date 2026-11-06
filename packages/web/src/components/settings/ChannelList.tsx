@@ -1,4 +1,4 @@
-import type { ChannelDraft } from '../../utils/channels.ts'
+import { FORMAT_LABELS, type ChannelDraft } from '../../utils/channels.ts'
 import type { SettingsForm } from '../../utils/settings.ts'
 import dialog from '../auth/Auth.module.css'
 import { CopyIcon, PencilIcon, PlusIcon, TrashIcon } from '../Icons.tsx'
@@ -44,7 +44,7 @@ export function ChannelList({
         打开哪个渠道的开关，就切换到哪个：它的请求地址、Key、模型列表和角色映射会写进 settings.json，会话空闲时自动切过去。
       </div>
       <div className={styles.channels}>
-        {drafts.map(({ id, name, form: saved }) => {
+        {drafts.map(({ id, name, form: saved, route }) => {
           const active = id === activeId
           const form = active ? activeForm : saved
           const label = name.trim() || '未命名渠道'
@@ -60,7 +60,8 @@ export function ChannelList({
                   {active && <span className={styles.channelBadge}>使用中</span>}
                 </div>
                 <div className={styles.channelMeta}>
-                  <span className={styles.channelUrl}>{form.baseUrl.trim() || '官方地址'}</span>
+                  <span className={styles.channelUrl}>{route ? route.baseUrl.trim() || '未填请求地址' : form.baseUrl.trim() || '官方地址'}</span>
+                  {route && <span>{FORMAT_LABELS[route.format]}</span>}
                   <span>{models > 0 ? `${models} 个模型` : '没有自定义模型'}</span>
                   {form.defaultModel && <span className={styles.channelUrl}>默认 {form.defaultModel}</span>}
                 </div>

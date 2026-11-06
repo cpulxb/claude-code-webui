@@ -1,9 +1,20 @@
-import type { ChannelLibrary, SettingsOverride, UserSettings } from '@ccw/shared'
+import type { ChannelLibrary, RpcParams, SettingsOverride, UserSettings } from '@ccw/shared'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 
 import { call } from '../../api/client.ts'
 import { settingsHref, useActiveSessionValue, useStore, type ChatLayout, type SettingsSection } from '../../store/session.ts'
-import { channelProblems, fromLibrary, newChannelId, switchTo, toLibrary, type ChannelDraft } from '../../utils/channels.ts'
+import {
+  channelProblems,
+  connection,
+  fromLibrary,
+  newChannelId,
+  newRouteToken,
+  settingsForm,
+  switchTo,
+  toLibrary,
+  withFormat,
+  type ChannelDraft,
+} from '../../utils/channels.ts'
 import { applyForm, formProblems, maskSecrets, SECRET_MASK, toForm, unmaskSecrets, type SettingsForm } from '../../utils/settings.ts'
 import { NARROW, useNarrow } from '../../utils/narrow.ts'
 import { notificationsSupported } from '../Attention.tsx'
@@ -138,8 +149,9 @@ function parseJson(text: string): Json {
 
 const showAsJson = (settings: Json): string => JSON.stringify(maskSecrets(settings), null, 2)
 
-/** Which upstream answer belongs to a form: one asked with another address or key is another channel's. */
-const connectionOf = (form: SettingsForm): string => JSON.stringify([form.baseUrl.trim(), form.authField, form.key])
+/** Which upstream answer belongs to a channel: one asked with another address, key or format is another channel's. */
+const connectionOf = (asked: RpcParams<'settings.fetchModels'>): string =>
+  JSON.stringify([asked.baseUrl.trim(), asked.authField, asked.key, asked.format])
 
 /**
  * The settings page at `/settings/<section>`, a section per sidebar entry:
@@ -207,7 +219,7 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
     setLibrary(next)
     setDrafts(derived.drafts)
     setActiveId(derived.activeId)
-    setBaseline(JSON.stringify(toLibrary(derived.drafts, derived.activeId, toForm(settings))))
+    setBaseline(JSON.stringify(toLibrary(derived.drafts, derived.activeId, toForm(settings), next.routeBase)))
   }
 
   const load = async (): Promise<void> => {
@@ -223,11 +235,16 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
     }
   }
 
-  const draft: Json | null = jsonError !== null ? null : typed === null ? applyForm(base, form) : base
+  /** Where routed channels point the CLI; null when this server cannot route. */
+  const routeBase = library?.routeBase ?? null
+  const activeRoute = drafts.find((entry) => entry.id === activeId)?.route ?? null
+  const draft: Json | null =
+    jsonError !== null ? null : typed === null ? applyForm(base, settingsForm(form, activeId, activeRoute, routeBase)) : base
   const settingsDirty = loaded !== null && (draft === null || JSON.stringify(draft) !== JSON.stringify(loaded.settings))
-  const channelsDirty = library !== null && JSON.stringify(toLibrary(drafts, activeId, form)) !== baseline
+  const channelsDirty = library !== null && JSON.stringify(toLibrary(drafts, activeId, form, routeBase)) !== baseline
   const dirty = settingsDirty || channelsDirty
-  const problems = jsonError !== null ? [`JSON 有误：${jsonError}`] : [...formProblems(form), ...channelProblems(drafts, activeId)]
+  const problems =
+    jsonError !== null ? [`JSON 有误：${jsonError}`] : [...formProblems(form), ...channelProblems(drafts, activeId, routeBase)]
   const canSave = loaded !== null && library !== null && dirty && problems.length === 0 && !saving
 
   // Read again as the session beneath changes, for the overrides its project
@@ -253,7 +270,7 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
     try {
       const changed = JSON.stringify(settings) !== JSON.stringify(loaded.settings)
       const result = await call('channels.write', {
-        ...toLibrary(channels, active, toForm(settings)),
+        ...toLibrary(channels, active, toForm(settings), routeBase),
         revision: library.revision,
         ...(changed ? { settings: { settings, revision: loaded.revision, ...(cwd ? { cwd } : {}) } } : {}),
       })
@@ -279,7 +296,7 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
     const target = drafts.find((entry) => entry.id === id)
     if (!loaded || !target || dirty || saving || id === activeId) return
     const kept = drafts.map((entry) => (entry.id === activeId ? { ...entry, form } : entry))
-    void persist(switchTo(loaded.settings, target.form), kept, id)
+    void persist(switchTo(loaded.settings, settingsForm(target.form, target.id, target.route, routeBase)), kept, id)
   }
 
   const patchChannel = (id: string, next: Partial<ChannelDraft>): void =>
@@ -287,14 +304,20 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
 
   const addChannel = (): void => {
     const id = newChannelId()
-    setDrafts((current) => [...current, { id, name: '', form: toForm({}) }])
+    setDrafts((current) => [...current, { id, name: '', form: toForm({}), route: null }])
     setEditing(id)
   }
 
   const duplicateChannel = (id: string): void => {
     const source = drafts.find((entry) => entry.id === id)
     if (!source) return
-    const copy = { id: newChannelId(), name: `${source.name.trim()} 副本`, form: structuredClone(id === activeId ? form : source.form) }
+    const copy = {
+      id: newChannelId(),
+      name: `${source.name.trim()} 副本`,
+      form: structuredClone(id === activeId ? form : source.form),
+      // A token of its own: the copy has its own route.
+      route: source.route && { ...source.route, token: newRouteToken() },
+    }
     setDrafts((current) => current.flatMap((entry) => (entry.id === id ? [entry, copy] : [entry])))
   }
 
@@ -328,13 +351,13 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
   }
 
   // A list fetched with another address or key belongs to another channel: it is dropped once those change.
-  const upstreamOf = (of: SettingsForm): UpstreamAnswer | null => (asked?.channel === connectionOf(of) ? asked : null)
+  const upstreamOf = (of: RpcParams<'settings.fetchModels'>): UpstreamAnswer | null => (asked?.channel === connectionOf(of) ? asked : null)
 
-  const fetchModels = async (of: SettingsForm): Promise<void> => {
+  const fetchModels = async (of: RpcParams<'settings.fetchModels'>): Promise<void> => {
     const channel = connectionOf(of)
     setFetching(true)
     try {
-      const { models } = await call('settings.fetchModels', { baseUrl: of.baseUrl, authField: of.authField, key: of.key })
+      const { models } = await call('settings.fetchModels', of)
       setAsked({ channel, models, error: null })
     } catch (cause) {
       setAsked({ channel, models: [], error: describe(cause) })
@@ -436,10 +459,19 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
             onName={(name) => patchChannel(edited.id, { name })}
             form={edited.id === activeId ? form : edited.form}
             onChange={edited.id === activeId ? patch : (next) => patchChannel(edited.id, { form: { ...edited.form, ...next } })}
+            route={edited.route}
+            routeUrl={routeBase && edited.route ? settingsForm(edited.form, edited.id, edited.route, routeBase).baseUrl : null}
+            routable={routeBase !== null}
+            onRoute={(next) => edited.route && patchChannel(edited.id, { route: { ...edited.route, ...next } })}
+            onFormat={(format) => {
+              const moved = withFormat(edited.id === activeId ? form : edited.form, edited.route, format)
+              if (edited.id === activeId) patch(moved.form)
+              patchChannel(edited.id, edited.id === activeId ? { route: moved.route } : moved)
+            }}
             active={edited.id === activeId}
-            upstream={upstreamOf(edited.id === activeId ? form : edited.form)}
+            upstream={upstreamOf(connection(edited.id === activeId ? form : edited.form, edited.route))}
             fetching={fetching}
-            onFetch={() => void fetchModels(edited.id === activeId ? form : edited.form)}
+            onFetch={() => void fetchModels(connection(edited.id === activeId ? form : edited.form, edited.route))}
             onBack={() => setEditing(null)}
           />,
         )
@@ -482,8 +514,15 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
           </div>
           {fileForm(
             <>
-              <ModelList form={form} onChange={patch} upstream={upstreamOf(form)} fetching={fetching} onFetch={() => void fetchModels(form)} />
-              <RoleMap form={form} onChange={patch} upstream={upstreamOf(form)?.models ?? []} />
+              <ModelList
+                form={form}
+                onChange={patch}
+                upstream={upstreamOf(connection(form, activeRoute))}
+                fetching={fetching}
+                onFetch={() => void fetchModels(connection(form, activeRoute))}
+                address={connection(form, activeRoute).baseUrl}
+              />
+              <RoleMap form={form} onChange={patch} upstream={upstreamOf(connection(form, activeRoute))?.models ?? []} />
             </>,
           )}
         </>

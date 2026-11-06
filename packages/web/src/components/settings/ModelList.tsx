@@ -22,6 +22,7 @@ export function ModelList({
   upstream,
   fetching,
   onFetch,
+  address,
 }: {
   form: SettingsForm
   onChange: (next: Partial<SettingsForm>) => void
@@ -29,6 +30,8 @@ export function ModelList({
   upstream: UpstreamAnswer | null
   fetching: boolean
   onFetch: () => void
+  /** The address 获取模型列表 asks: the form's own, or a routed channel's upstream. */
+  address: string
 }): JSX.Element {
   /** A row just added, whose id field takes the focus as it mounts. */
   const [added, setAdded] = useState<number | null>(null)
@@ -86,9 +89,9 @@ export function ModelList({
         <button
           className={styles.action}
           onClick={onFetch}
-          disabled={fetching || !form.baseUrl.trim()}
+          disabled={fetching || !address.trim()}
           type="button"
-          title={form.baseUrl.trim() ? '用上面的请求地址和 Key 向上游查询它提供的模型（/v1/models）' : '先填写请求地址'}
+          title={address.trim() ? '用上面的请求地址和 Key 向上游查询它提供的模型' : '先填写请求地址'}
         >
           <ArrowDownIcon size={14} />
           {fetching ? '获取中…' : '获取模型列表'}
