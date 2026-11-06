@@ -300,3 +300,33 @@ test('a call still running keeps its own result when a page with an earlier call
     assert.deepEqual([current.status, current.output], ['done', 'new shot'])
   }
 })
+
+test("a background subagent's view opens on its prompt, though the stream never sends it", () => {
+  // CLI 2.1.318, one foreground and one background Agent launched together:
+  // the foreground run streams its prompt as a user message, the background
+  // one goes straight to its first tool call.
+  const sdk = (type, uuid, parent, content, id) => ({
+    type,
+    uuid,
+    session_id: 's',
+    parent_tool_use_id: parent,
+    message: type === 'assistant' ? { id, role: 'assistant', content } : { role: 'user', content },
+  })
+  const launch = (uuid, id, description, prompt, background) =>
+    sdk('assistant', uuid, null, [{ type: 'tool_use', id, name: 'Agent', input: { description, prompt, subagent_type: 'general-purpose', ...(background ? { run_in_background: true } : {}) } }], 'm0')
+  const bash = (uuid, parent, id) => sdk('assistant', uuid, parent, [{ type: 'tool_use', id, name: 'Bash', input: { command: 'ls /tmp' } }], `m-${uuid}`)
+  const transcript = replay([
+    launch('a0', 'toolu_fg', 'fg-probe', 'PROBE-FG: run ls', false),
+    sdk('user', 'u-fg', 'toolu_fg', [{ type: 'text', text: 'PROBE-FG: run ls' }]),
+    launch('a1', 'toolu_bg', 'bg-probe', 'PROBE-BG: run ls', true),
+    bash('b-fg', 'toolu_fg', 'toolu_fg_ls'),
+    bash('b-bg', 'toolu_bg', 'toolu_bg_ls'),
+    sdk('user', 'r-bg', 'toolu_bg', [{ type: 'tool_result', tool_use_id: 'toolu_bg_ls', content: 'ccw' }]),
+  ])
+  const [fg, bg] = listAgents(transcript)
+  for (const [agent, text] of [[fg, 'PROBE-FG: run ls'], [bg, 'PROBE-BG: run ls']]) {
+    assert.deepEqual(kinds(agent.transcript), ['user', 'tool:Bash'])
+    assert.equal(agent.transcript.nodes[0].text, text)
+  }
+  assert.equal(bg.transcript.nodes[1].status, 'done')
+})

@@ -194,6 +194,13 @@ export function applyMessage(transcript: Transcript, message: SDKMessage): void 
     const agent =
       findAgent(transcript, parent) ?? (message.type === 'tool_progress' ? null : placeholderAgent(transcript, parent))
     if (agent) {
+      // CLI 2.1.318 streams a foreground subagent's prompt as its first user
+      // message, but a background one's stream opens on its first reply. The
+      // Agent call carried the same prompt, so it stands in until the on-disk
+      // transcript, which has the real message, replaces the view.
+      if (message.type === 'assistant' && agent.transcript.nodes.length === 0 && agent.prompt) {
+        agent.transcript.nodes.push({ kind: 'user', id: `${parent}#prompt`, text: agent.prompt, attachments: 0 })
+      }
       applyLocal(agent.transcript, message, true)
       return
     }
