@@ -179,7 +179,7 @@ export class SessionRunner {
     if (config.effort) initial.effortLevel = config.effort
     if (config.ultracode !== undefined) initial.ultracode = config.ultracode
     if (Object.keys(initial).length > 0) {
-      this.#ultracode = config.ultracode ?? false
+      this.#flags = { ...this.#flags, effort: config.effort ?? null, ultracode: config.ultracode ?? false }
       this.#query
         .applyFlagSettings(initial)
         .then(() => this.#publishFlags())
@@ -187,8 +187,12 @@ export class SessionRunner {
     }
   }
 
-  /** Last ultracode state the CLI reported, so an effort change can carry it. */
-  #ultracode = false
+  /**
+   * Effort and ultracode as the CLI last reported them, or as last asked of
+   * it. An effort change carries ultracode from here, and {@link flags}
+   * answers from here when the CLI cannot be asked.
+   */
+  #flags: SessionFlags = { effort: null, ultracode: false, ultracodeAvailable: false }
 
   /** Set by {@link send} for a typed `/model`, which the CLI handles without telling {@link SessionModels}. */
   #modelCommand = false
@@ -491,31 +495,40 @@ export class SessionRunner {
    * controls in the UI.
    */
   async setEffort(effort: EffortLevel): Promise<void> {
-    await this.#query.applyFlagSettings({ effortLevel: effort, ...(this.#ultracode ? { ultracode: true } : {}) })
+    await this.#query.applyFlagSettings({ effortLevel: effort, ...(this.#flags.ultracode ? { ultracode: true } : {}) })
+    this.#flags = { ...this.#flags, effort }
     await this.#publishFlags()
   }
 
   async setUltracode(on: boolean): Promise<SessionFlags> {
     await this.#query.applyFlagSettings({ ultracode: on })
+    this.#flags = { ...this.#flags, ultracode: on }
     return this.#publishFlags()
   }
 
   /**
    * `getSettings` exists on the SDK's Query at runtime but is not in its
-   * 0.3.238 typings; `applied` is what the next request will really carry.
+   * typings (0.3.238 through 0.3.322); `applied` is what the next request
+   * will really carry. An SDK without the method, or a CLI that rejects the
+   * request, leaves the flags as last read or set: they still apply, and
+   * only cannot be read back.
    */
   async flags(): Promise<SessionFlags> {
-    const settings = (await (this.#query as unknown as { getSettings(): Promise<unknown> }).getSettings()) as {
-      applied?: { effort?: EffortLevel | null; ultracode?: boolean; ultracodeAvailable?: boolean }
+    const { getSettings } = this.#query as Query & { getSettings?: () => Promise<unknown> }
+    if (typeof getSettings !== 'function') return this.#flags
+    try {
+      const { applied = {} } = (await getSettings.call(this.#query)) as {
+        applied?: { effort?: EffortLevel | null; ultracode?: boolean; ultracodeAvailable?: boolean }
+      }
+      this.#flags = {
+        effort: applied.effort ?? null,
+        ultracode: applied.ultracode === true,
+        ultracodeAvailable: applied.ultracodeAvailable === true,
+      }
+    } catch {
+      // What is known stands.
     }
-    const applied = settings.applied ?? {}
-    const flags: SessionFlags = {
-      effort: applied.effort ?? null,
-      ultracode: applied.ultracode === true,
-      ultracodeAvailable: applied.ultracodeAvailable === true,
-    }
-    this.#ultracode = flags.ultracode
-    return flags
+    return this.#flags
   }
 
   async #publishFlags(): Promise<SessionFlags> {
