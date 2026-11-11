@@ -58,6 +58,8 @@ const SPECS: Record<string, Spec> = {
   turnDuration: moved('showTurnDuration', true),
   verbose: moved('verbose', false),
 
+  // Since CLI 2.1.321.
+  idleCompaction: user('idleCompaction', true),
   language: user('language', null),
   model: user('model', null),
   permissionMode: user('permissions.defaultMode', 'default'),

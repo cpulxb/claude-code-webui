@@ -19,7 +19,8 @@ case "$2" in
   "/config")
     printf 'Usage: /config key=value [key=value ...]\\n'
     for row in autoCompact=true\\|false editor=normal\\|vim theme=auto\\|dark\\|light outputStyle=default\\|Concise\\|Explanatory \\
-      permissionMode=default\\|plan workflows=true\\|false gitignore=true\\|false language='<value>' acme.mode=fast\\|slow; do
+      permissionMode=default\\|plan workflows=true\\|false gitignore=true\\|false idleCompaction=true\\|false \\
+      language='<value>' acme.mode=fast\\|slow; do
       printf '  %s\\n' "$row"
     done
     printf '  switchModelsOnFlag=Switch automatically|Ask each time\\n' ;;
@@ -76,6 +77,8 @@ test('values are read from the tier the CLI would take them from', async () => {
   assert.equal(rows['editor']?.value, 'normal')
   assert.equal(rows['gitignore']?.value, false)
   assert.equal(rows['gitignore']?.target, 'global')
+  // Set nowhere: the CLI's own default.
+  assert.deepEqual(rows['idleCompaction'], { kind: 'boolean', options: [], value: true, target: 'user' })
   // Nested paths, a boolean shown as the CLI's label, and the switch that turns workflows off.
   assert.equal(rows['permissionMode']?.value, 'plan')
   assert.equal(rows['switchModelsOnFlag']?.value, 'Ask each time')

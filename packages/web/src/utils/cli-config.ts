@@ -21,6 +21,7 @@ const META: Record<string, Meta> = {
   language: { label: '回复语言', group: 'session', reset: 'default' },
   outputStyle: { label: '输出风格', group: 'session' },
   autoCompact: { label: '自动压缩', group: 'session' },
+  idleCompaction: { label: '空闲时压缩', group: 'session' },
   thinking: { label: '思考模式', group: 'session', note: 'WebUI 会话启动时固定开启 adaptive 思考，这一项只影响终端' },
   checkpoints: { label: '代码回退（检查点）', group: 'session', note: 'WebUI 会话总是开启，这一项只影响终端' },
   permissionMode: { label: '默认权限模式', group: 'session', note: 'WebUI 新会话沿用输入框旁上次选的模式；这个浏览器里从没选过时，才从这一项开始' },
