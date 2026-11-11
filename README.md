@@ -94,6 +94,7 @@ server 启动时检查一次，之后每小时对 `origin` 执行 `git fetch`，
 ```bash
 pnpm test                         # 单元测试
 pnpm typecheck                    # 三个包的类型检查
+pnpm --filter @ccw/server probe   # 探针：升级 SDK 或 CLI 后，检查类型覆盖不到的内部接口和 CLI 输出格式，不发消息
 pnpm --filter @ccw/server smoke   # 冒烟测试：起一个真实会话跑一个回合，会消耗 API 额度
 ```
 

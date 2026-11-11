@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/bin.ts",
     "start": "tsx src/bin.ts",
+    "probe": "tsx scripts/probe.ts",
     "smoke": "tsx scripts/smoke.ts",
     "smoke:channels": "tsx scripts/channel-smoke.ts",
     "typecheck": "tsc --noEmit"
