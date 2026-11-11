@@ -138,7 +138,7 @@ type Calls = string[]
 /** A manager around one idle runner, recording what the route asks of each. */
 function fakeManager(
   calls: Calls,
-  options: { status?: 'idle' | 'running'; files?: RewindFilesResult } = {},
+  options: { status?: 'idle' | 'running'; files?: RewindFilesResult; carryOver?: () => Promise<RunnerConfig> } = {},
 ): { manager: SessionManager; events: ServerEvent[]; restarted: RunnerConfig[] } {
   const events: ServerEvent[] = []
   const restarted: RunnerConfig[] = []
@@ -150,7 +150,8 @@ function fakeManager(
       calls.push(`files ${id} ${dryRun}`)
       return options.files ?? { canRewind: true, filesChanged: ['a.txt'], insertions: 1, deletions: 1 }
     },
-    carryOver: async (): Promise<RunnerConfig> => ({ cwd, permissionMode: 'plan', model: 'haiku', effort: 'low' }),
+    carryOver:
+      options.carryOver ?? (async (): Promise<RunnerConfig> => ({ cwd, permissionMode: 'plan', model: 'haiku', effort: 'low' })),
   }
   const manager = {
     require: () => runner,
@@ -189,6 +190,18 @@ test('a file rewind that fails leaves the conversation as it was', async () => {
 
   await assert.rejects(rewind({ sessionId, userMessageId: 'p2', restoreFiles: true }), /代码没能回退.*No checkpoint/)
   assert.deepEqual(calls, ['files p2 false'])
+  assert.equal(await pendingRewind(sessionId), undefined)
+})
+
+test('a session that cannot say what it runs on is refused before its files are touched', async () => {
+  const sessionId = '00000000-0000-4000-8000-00000000b011'
+  await twoTurns(sessionId)
+  const calls: Calls = []
+  const { manager } = fakeManager(calls, { carryOver: async () => Promise.reject(new Error('CLI is gone')) })
+  const rewind = createRpcHandlers(manager, {} as Updater)['session.rewindConversation']
+
+  await assert.rejects(rewind({ sessionId, userMessageId: 'p2', restoreFiles: true }), /CLI is gone/)
+  assert.deepEqual(calls, [])
   assert.equal(await pendingRewind(sessionId), undefined)
 })
 

@@ -166,6 +166,9 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater, rou
         throw new Error('这一轮还在进行，停止之后再回退')
       }
       const at = await rewindPoint(sessionId, runner.config.cwd, userMessageId)
+      // Asked before the files move: a CLI that cannot answer fails here, with
+      // code and conversation both as they were. A fresh session needs none.
+      const config = at === null ? null : await runner.carryOver()
       let files
       if (restoreFiles) {
         files = await runner.rewindFiles(userMessageId, false)
@@ -173,8 +176,7 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater, rou
       }
       // Nothing came before it to resume at. The CLI keeps its id in use, so
       // the browser starts the empty conversation as a new session.
-      if (at === null) return { fresh: true, ...(files ? { files } : {}) }
-      const config = await runner.carryOver()
+      if (at === null || config === null) return { fresh: true, ...(files ? { files } : {}) }
       await setPendingRewind(sessionId, { at, drop: userMessageId })
       forgetRead(sessionId)
       await manager.restart(sessionId, { ...config, resume: sessionId, resumeSessionAt: at })
