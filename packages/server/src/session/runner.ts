@@ -11,6 +11,7 @@ import {
   type SDKUserMessage,
   type SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk'
+import { applyTurnProgress, startTurnProgress } from '@ccw/shared'
 import type {
   Attachment,
   ContextUsage,
@@ -27,6 +28,7 @@ import type {
   SessionSummary,
   SkillInfo,
   SkillState,
+  TurnProgress,
   UsageReport,
 } from '@ccw/shared'
 
@@ -83,10 +85,17 @@ export class SessionRunner {
   readonly #exited: Promise<void>
   #done = false
   #status: SessionStatus = 'idle'
+  #turnProgress: TurnProgress | null = null
   /** `running` and `waiting` as the sidebars last heard them; see {@link #announceState}. */
   #announced = { running: false, waiting: false }
   /** Set by {@link interrupt} so the aborted turn's trailing frames cannot revive `running`. */
   #interrupted = false
+  /** Surviving queued work opens at its init, never from aborted tail frames. */
+  #queuedAfterInterrupt = false
+  #interruptVersion = 0
+  #interruptedResultSeen = false
+  /** Candidate new-turn frames held until the interrupt receipt confirms queued work. */
+  #queuedTurnBeforeReceipt: { progress: TurnProgress | null } | null = null
   readonly #backlog: SDKMessage[] = []
   #summary: SessionSummary
   /** The conversation was on disk before this runner: its title, if any, is already there. */
@@ -100,7 +109,7 @@ export class SessionRunner {
   /** Set while a {@link #requestTitle} call is out, so a quick second prompt does not ask again. */
   #titling = false
 
-  constructor(config: RunnerConfig, emit: EmitEvent) {
+  constructor(config: RunnerConfig, emit: EmitEvent, queryFactory: typeof query = query) {
     this.config = config
     this.#emit = emit
     this.#permissionMode = config.permissionMode ?? 'default'
@@ -118,7 +127,7 @@ export class SessionRunner {
       live: true,
     }
 
-    this.#query = query({
+    this.#query = queryFactory({
       prompt: this.#input,
       options: {
         cwd: config.cwd,
@@ -205,8 +214,12 @@ export class SessionRunner {
         // Where to is the session id on the frames after it — CLI 2.1.316
         // fills `new_conversation_id` with the frame's own uuid, which names
         // no transcript.
-        if (message.type === 'conversation_reset') {
+        const source = message as { parent_tool_use_id?: string | null; agent_id?: string }
+        const mainThread = !source.agent_id && (message.type === 'tool_progress' || !source.parent_tool_use_id)
+        if (message.type === 'conversation_reset' && mainThread) {
           this.#resetting = true
+          this.#queuedTurnBeforeReceipt = null
+          this.#setTurnProgress(null)
           continue
         }
         const frameSession = (message as { session_id?: string }).session_id
@@ -220,18 +233,35 @@ export class SessionRunner {
         // `send` opening the turn is what actually drives this — CLI 2.1.237
         // never emits `session_state_changed`, so the branch below is only a
         // more precise signal if a later version starts sending it.
-        if (message.type === 'system' && message.subtype === 'session_state_changed') {
-          this.#status = message.state === 'running' ? 'running' : 'idle'
+        if (mainThread && this.#interrupted && this.#interruptedResultSeen && !this.#queuedAfterInterrupt) {
+          // A queued turn can stream before the control receipt returns. Keep
+          // its actual clock/retry privately; metadata/tails alone cannot revive
+          // the stopped UI until that receipt confirms surviving queued work.
+          if (message.type === 'system' && message.subtype === 'init') {
+            this.#queuedTurnBeforeReceipt = { progress: startTurnProgress(Date.now()) }
+          } else if (this.#queuedTurnBeforeReceipt?.progress) {
+            this.#queuedTurnBeforeReceipt.progress = applyTurnProgress(this.#queuedTurnBeforeReceipt.progress, message, Date.now())
+          }
+        }
+        if (mainThread && message.type === 'system' && message.subtype === 'init' && this.#queuedAfterInterrupt) {
+          this.#queuedAfterInterrupt = false
+          this.#interrupted = false
+          this.#status = 'running'
+        }
+        if (mainThread && message.type === 'system' && message.subtype === 'session_state_changed' && !this.#interrupted) {
+          // A permission/question holds the running turn; it is not completion.
+          this.#status = message.state === 'idle' ? 'idle' : 'running'
         }
         // Every turn's `init` carries the mode, and a `status` follows each switch.
         if (message.type === 'system' && (message.subtype === 'init' || message.subtype === 'status') && message.permissionMode) {
           this.#permissionMode = message.permissionMode
         }
-        if (message.type === 'result') {
-          this.#status = 'idle'
-          // The turn is over, so nothing still in flight belongs to it: a later
-          // top-level assistant frame is a new turn and may say `running` again.
-          this.#interrupted = false
+        const interruptedTail = this.#interrupted && this.#queuedAfterInterrupt
+        if (message.type === 'result' && mainThread) {
+          if (this.#interrupted) this.#interruptedResultSeen = true
+          if (!interruptedTail) this.#status = 'idle'
+          // Keep the interrupt latch through result: trailing aborted frames
+          // cannot reopen a stopped turn. A new send or queued init releases it.
           // The browser re-reads transcripts on this result, which picks up a title
           // written by now; one written later is caught by the next turn's watch.
           this.#unwatchTitle()
@@ -250,14 +280,26 @@ export class SessionRunner {
         // and can still arrive while the parent turn is being torn down. Frames
         // an interrupted turn had already emitted are skipped for the same
         // reason — Stop must not bounce back to `running`.
-        else if (message.type === 'assistant' && message.parent_tool_use_id === null && !this.#interrupted) {
+        else if (message.type === 'assistant' && mainThread && !this.#interrupted && !message.aborted && !message.error && message.message.model !== '<synthetic>') {
           this.#status = 'running'
         }
+        if (mainThread && !interruptedTail && (!this.#interrupted || message.type === 'result')) {
+          // Startup init is metadata, not a turn. No server retry timer exists:
+          // all phase/retry changes come from the CLI's structured events.
+          if (!(message.type === 'system' && message.subtype === 'init' && this.#status === 'idle')) {
+            const now = Date.now()
+            this.#setTurnProgress(applyTurnProgress(this.#turnProgress, message, now), now)
+            if (this.#turnProgress !== null) this.#status = 'running'
+          }
+        }
+        // Clock/phase authority reaches every tab before its corresponding SDK frame.
         this.#trackBacklog(message)
         this.#emit({ type: 'sdk', sessionId: this.sessionId, message })
         this.#announceState()
       }
     } catch (error) {
+      this.#status = 'idle'
+      this.#setTurnProgress(null)
       this.#emit({
         type: 'session_error',
         sessionId: this.sessionId,
@@ -266,6 +308,7 @@ export class SessionRunner {
     } finally {
       this.#done = true
       this.#status = 'idle'
+      this.#setTurnProgress(null)
       this.#unwatchTitle()
       for (const requestId of this.#permissions.drain()) {
         this.#emit({ type: 'permission_resolved', sessionId: this.sessionId, requestId })
@@ -292,6 +335,7 @@ export class SessionRunner {
     this.#unwatchTitle()
     this.#summary = { sessionId: next, cwd: this.config.cwd, summary: '', lastModified: Date.now(), live: true }
     this.#emit({ type: 'session_reset', sessionId: previous, newSessionId: next, summary: this.summary })
+    if (this.#status === 'running' && !this.#interrupted) this.#setTurnProgress(startTurnProgress(Date.now()))
   }
 
   /**
@@ -301,15 +345,19 @@ export class SessionRunner {
    * catches up, and `session.state` payloads stay small.
    */
   #trackBacklog(message: SDKMessage): void {
-    const turnEnded =
+    const source = message as { parent_tool_use_id?: string | null; agent_id?: string }
+    const mainThread = !source.agent_id && !source.parent_tool_use_id
+    const turnEnded = mainThread && (
       message.type === 'result' ||
-      (message.type === 'system' && message.subtype === 'session_state_changed' && message.state !== 'running')
+      (message.type === 'system' && message.subtype === 'session_state_changed' && message.state === 'idle')
+    )
     if (turnEnded) {
       this.#backlog.length = 0
       return
     }
     // Only what the renderer rebuilds from: stream_event (one per delta) and
     // tool_progress (one per second) would flood the ring for no benefit.
+    if (this.#status !== 'running' || this.#interrupted) return
     if (message.type !== 'assistant' && message.type !== 'user' && message.type !== 'system') return
     this.#backlog.push(message)
     if (this.#backlog.length > BACKLOG_LIMIT) this.#backlog.shift()
@@ -391,6 +439,22 @@ export class SessionRunner {
     return this.#status
   }
 
+  /** Server-owned clock/phase, never reconstructed from a reconnect backlog. */
+  get turnProgress(): TurnProgress | null {
+    return this.#turnProgress
+  }
+
+  /** Re-read after await: #pump can replace this field while a control request is pending. */
+  #queuedTurnSnapshot(): { progress: TurnProgress | null } | null {
+    return this.#queuedTurnBeforeReceipt
+  }
+
+  #setTurnProgress(progress: TurnProgress | null, serverNow = Date.now()): void {
+    if (progress === this.#turnProgress) return
+    this.#turnProgress = progress
+    this.#emit({ type: 'turn_progress', sessionId: this.sessionId, progress, serverNow })
+  }
+
   /** Permission prompts still open, for a browser that reconnected. */
   get pendingPermissions(): PermissionRequest[] {
     return this.#permissions.list()
@@ -448,8 +512,15 @@ export class SessionRunner {
         session_id: this.sessionId,
         ...(uuid ? { uuid: uuid as NonNullable<SDKUserMessage['uuid']> } : {}),
       })
+      this.#interruptVersion += 1
+      // Folded/queued prompts do not restart this turn's clock or erase retry.
+      if (this.#status !== 'running' || this.#turnProgress === null) this.#setTurnProgress(startTurnProgress(Date.now()))
       this.#status = 'running'
-      this.#interrupted = false
+      // A post-Stop send owns a new clock, but the old turn can still deliver
+      // result/data tails. Keep the latch until this prompt's CLI init; it also
+      // makes the old result unable to erase the new progress/Stop button.
+      this.#queuedAfterInterrupt = this.#interrupted
+      this.#queuedTurnBeforeReceipt = null
       if (/^\/model(?:\s|$)/.test(text.trim())) this.#modelCommand = true
       this.#summary.lastModified = Date.now()
       if (!this.#resumed && !this.#summary.firstPrompt) {
@@ -467,14 +538,37 @@ export class SessionRunner {
     // one of them opening a fresh turn.
     this.#input.drain()
     // Frames the aborted turn had already emitted are still on their way; the
-    // flag holds until its `result` arrives (or the next `send`) so they cannot
-    // undo the status set below.
+    // latch survives its result until a new send or surviving queued init, so
+    // even late tail frames cannot undo the status set below.
+    const version = ++this.#interruptVersion
     this.#interrupted = true
+    this.#queuedAfterInterrupt = false
+    this.#interruptedResultSeen = false
+    this.#queuedTurnBeforeReceipt = null
+    this.#status = 'idle'
+    this.#backlog.length = 0
+    this.#setTurnProgress(null)
+    this.#announceState()
     const receipt = await this.#query.interrupt()
+    // A newer send/stop/close owns state now; an old receipt cannot overwrite it.
+    if (this.#done || this.#input.closed || version !== this.#interruptVersion) return
     // Prompts the CLI had already queued survive the abort — `interrupt()` in
     // SDK 0.3.238 cannot cancel them — and each one opens a turn of its own,
     // so the browser must keep showing Stop.
-    this.#status = (receipt?.still_queued?.length ?? 0) > 0 ? 'running' : 'idle'
+    this.#queuedAfterInterrupt = (receipt?.still_queued?.length ?? 0) > 0
+    this.#status = this.#queuedAfterInterrupt ? 'running' : 'idle'
+    if (this.#queuedAfterInterrupt) {
+      const candidate = this.#queuedTurnSnapshot()
+      if (candidate) {
+        this.#queuedAfterInterrupt = false
+        this.#interrupted = false
+        this.#status = candidate.progress ? 'running' : 'idle'
+        this.#setTurnProgress(candidate.progress)
+      } else {
+        this.#setTurnProgress(startTurnProgress(Date.now()))
+      }
+    }
+    this.#queuedTurnBeforeReceipt = null
     this.#announceState()
   }
 
@@ -643,6 +737,13 @@ export class SessionRunner {
   }
 
   close(): void {
+    this.#interruptVersion += 1
+    this.#interrupted = true
+    this.#queuedAfterInterrupt = false
+    this.#status = 'idle'
+    this.#backlog.length = 0
+    this.#setTurnProgress(null)
+    this.#announceState()
     this.#input.close()
     this.#query.close()
   }

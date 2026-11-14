@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import type { SessionConfig } from '@ccw/shared'
+import { applyTurnProgress, startTurnProgress, type PermissionRequest, type SDKMessage, type SessionConfig, type TurnProgress } from '@ccw/shared'
 
 import { createRpcHandlers } from '../src/rpc/routes.ts'
 import type { SessionManager } from '../src/session/manager.ts'
@@ -107,4 +107,61 @@ test('resuming a session with no transcript yet still starts it in the settings 
   assert.equal(started.sessionId, id)
   assert.equal(started.permissionMode, 'acceptEdits')
   assert.equal(answer.permissionMode, 'acceptEdits')
+})
+
+// --- authoritative reconnect snapshots (no CLI is created) ------------------
+
+function stateFixture(progress: TurnProgress | null, status: 'idle' | 'running' = progress ? 'running' : 'idle') {
+  const backlog = [{ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'text', text: 'in flight' }] } }] as unknown as SDKMessage[]
+  const runner = { status, backlog, pendingPermissions: [] as PermissionRequest[], permissionMode: 'plan', turnProgress: progress }
+  const manager = { has: (id: string) => id === 'live', require: () => runner } as unknown as SessionManager
+  return { runner, state: createRpcHandlers(manager, {} as Updater)['session.state'] }
+}
+
+test('unknown sessions have an explicit null progress and a server-clock sample', async () => {
+  const { state } = stateFixture(null)
+  const before = Date.now()
+  const answer = await state({ sessionId: 'unknown' })
+  const after = Date.now()
+  assert.deepEqual({ ...answer, serverNow: 0 }, { live: false, status: 'idle', pendingPermissions: [], backlog: [], turnProgress: null, serverNow: 0 })
+  assert.ok(answer.serverNow! >= before && answer.serverNow! <= after)
+})
+
+test('reconnect keeps the original retry deadline and turn start instead of replaying backlog', async () => {
+  const retry = applyTurnProgress(startTurnProgress(1000), {
+    type: 'system', subtype: 'api_retry', uuid: 'r1', attempt: 1, max_retries: 3, retry_delay_ms: 2000, error_status: 429, error: 'rate_limit',
+  } as unknown as SDKMessage, 1500)!
+  const { state } = stateFixture(retry)
+  const first = await state({ sessionId: 'live' })
+  const second = await state({ sessionId: 'live' })
+  assert.equal(first.live, true)
+  assert.equal(first.status, 'running')
+  assert.equal(first.permissionMode, 'plan')
+  assert.equal(first.turnProgress, retry)
+  assert.equal(second.turnProgress, retry)
+  assert.equal(second.turnProgress?.startedAt, 1000)
+  assert.equal(second.turnProgress?.retry?.retryAt, 3500)
+  assert.ok(second.serverNow! >= first.serverNow!)
+  assert.equal(second.backlog.length, 1)
+  assert.equal(second.turnProgress?.phase, 'retrying')
+})
+
+test('a pending question restores as running with the existing retry and permission request', async () => {
+  const progress: TurnProgress = { startedAt: 1000, phase: 'retrying', retry: { uuid: 'r', attempt: 1, maxRetries: 2, retryAt: 0, errorStatus: null, error: 'unknown' } }
+  const { runner, state } = stateFixture(progress)
+  const request = { requestId: 'p', toolUseId: 't', toolName: 'AskUserQuestion', input: {} }
+  runner.pendingPermissions = [request]
+  const answer = await state({ sessionId: 'live' })
+  assert.equal(answer.status, 'running')
+  assert.equal(answer.turnProgress, progress)
+  assert.deepEqual(answer.pendingPermissions, [request])
+})
+
+test('an idle live runner returns null progress, not a new clock', async () => {
+  const { state } = stateFixture(null)
+  const answer = await state({ sessionId: 'live' })
+  assert.equal(answer.live, true)
+  assert.equal(answer.status, 'idle')
+  assert.equal(answer.turnProgress, null)
+  assert.equal(typeof answer.serverNow, 'number')
 })

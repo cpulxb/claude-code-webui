@@ -305,13 +305,13 @@ function applyLocal(transcript: Transcript, message: SDKMessage, inAgent: boolea
       }
       // A slash command the CLI ran itself made no model call — nothing to
       // report, and nothing a reload could rebuild the row from.
-      if (message.num_turns === 0) return
+      if (message.num_turns === 0 && !message.is_error && message.subtype === 'success') return
       // `total_cost_usd` is left out: it is the session's running total, not
       // this turn's, and the transcript keeps no cost to rebuild it from.
       transcript.nodes.push({
         kind: 'result',
         id: message.uuid,
-        isError: message.is_error,
+        isError: message.is_error || message.subtype !== 'success',
         durationMs: message.duration_ms,
         numTurns: message.num_turns,
         inputTokens: message.usage.input_tokens,

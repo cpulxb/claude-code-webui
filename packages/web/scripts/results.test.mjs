@@ -91,3 +91,19 @@ test('the prompts read for the navigator are the bubbles history draws, by id an
     ['u3', 'second question'],
   ])
 })
+
+test('failed results draw a row even when no model turn completed, without calling it success', () => {
+  const transcript = emptyTranscript()
+  applyMessage(transcript, result(0, { is_error: true, result: 'API Error: EPROTO' }))
+  assert.equal(transcript.nodes.length, 1)
+  assert.equal(transcript.nodes[0].isError, true)
+  const errors = emptyTranscript()
+  applyMessage(errors, result(0, { subtype: 'error_during_execution', is_error: false, errors: ['failed'] }))
+  assert.equal(errors.nodes[0].isError, true)
+})
+
+test('historical API errors preserve their failed outcome when turn totals are replayed', () => {
+  const transcript = emptyTranscript()
+  applyTurnTotals(transcript, { after: 'error', durationMs: 3000, numTurns: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, isError: true })
+  assert.equal(transcript.nodes[0].isError, true)
+})

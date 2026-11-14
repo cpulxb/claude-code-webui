@@ -95,8 +95,8 @@ export function applyTurnTotals(transcript: Transcript, turn: TurnTotals): void 
   transcript.nodes.push({
     kind: 'result',
     id: `${turn.after}:result`,
-    // The transcript does not say whether the turn ended on an error.
-    isError: false,
+    // The server carries explicit synthetic API errors across a reload.
+    isError: turn.isError ?? false,
     durationMs: turn.durationMs,
     numTurns: turn.numTurns,
     inputTokens: turn.inputTokens,

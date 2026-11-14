@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 
 import { useActiveSessionValue } from '../../store/session.ts'
-import { BrandMark } from '../Icons.tsx'
+import { formatElapsed, formatTokens, turnStatusText } from '../../utils/turn-status.ts'
+import { BrandMark, RefreshIcon } from '../Icons.tsx'
 import styles from './Composer.module.css'
 
 /**
@@ -13,6 +14,8 @@ import styles from './Composer.module.css'
  * the model picker and the effort slider along with it.
  */
 export function TurnStatus(): JSX.Element | null {
+  const progress = useActiveSessionValue((session) => session.turnProgress)
+  const waiting = useActiveSessionValue((session) => session.pendingPermissions.length > 0) ?? false
   const startedAt = useActiveSessionValue((session) => session.turnStats?.startedAt)
   const doneTokens = useActiveSessionValue((session) => session.turnStats?.doneTokens) ?? 0
   const currentTokens = useActiveSessionValue((session) => session.turnStats?.currentTokens) ?? 0
@@ -25,27 +28,24 @@ export function TurnStatus(): JSX.Element | null {
   }, [])
 
   if (startedAt === undefined) return null
-  const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
+  const now = Date.now()
+  const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000))
   const tokens = doneTokens + currentTokens
+  const status = turnStatusText(progress ?? null, now, waiting)
   return (
-    <div className={styles.turnStatus}>
-      <span className={styles.turnSpinner} aria-hidden>
-        <BrandMark size={12} />
+    <div className={`${styles.turnStatus} ${status.warning ? styles.turnStatusWarning : ''}`}>
+      <span className={`${styles.turnSpinner} ${status.warning ? styles.turnSpinnerWarning : ''}`} aria-hidden>
+        {progress?.retry ? <RefreshIcon size={12} /> : <BrandMark size={12} />}
       </span>
-      <span>
-        运行中… ({formatElapsed(elapsed)}
-        {tokens > 0 ? ` · ↓ ${formatTokens(tokens)} tokens` : ''})
-      </span>
+      <div className={styles.turnStatusBody}>
+        <span className={styles.turnStatusLabel} role="status" aria-live="polite">
+          {status.label}
+        </span>
+        <span className={styles.turnStatusStats}>
+          （已用时 {formatElapsed(elapsed)}{tokens > 0 ? ` · ↓ ${formatTokens(tokens)} tokens` : ''}）
+        </span>
+        {status.detail && <span className={styles.turnStatusDetail}>{status.detail}</span>}
+      </div>
     </div>
   )
-}
-
-function formatElapsed(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-}
-
-function formatTokens(count: number): string {
-  if (count < 1000) return String(count)
-  return `${(count / 1000).toFixed(1)}k`
 }

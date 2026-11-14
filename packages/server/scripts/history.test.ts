@@ -147,7 +147,7 @@ test('while the session runs its newest turn has no totals yet, and the ones bef
   assert.deepEqual(turnTotals(turns, false).map((turn) => turn.after), ['r1', 'r2'])
 })
 
-test('a message the CLI wrote itself is no model call, and a turn without one has no totals', () => {
+test('synthetic API errors are not model calls but preserve the failed outcome and final time', () => {
   const turns = [
     timed(prompt('c', '<command-name>/usage</command-name>'), 0),
     timed(prompt('p', 'go'), 1),
@@ -156,7 +156,7 @@ test('a message the CLI wrote itself is no model call, and a turn without one ha
   ]
   // The row still follows the turn's last entry.
   assert.deepEqual(turnTotals(turns, false), [
-    { after: 'e', durationMs: 1000, numTurns: 1, inputTokens: 1, outputTokens: 2, cacheReadTokens: 0 },
+    { after: 'e', durationMs: 2000, numTurns: 1, inputTokens: 1, outputTokens: 2, cacheReadTokens: 0, isError: true },
   ])
 })
 
@@ -388,4 +388,37 @@ test('the prompt list keeps only what a bubble is drawn from', () => {
     (kept[2]!.message as { content: { type: string }[] }).content.map((block) => block.type),
     ['text', 'image'],
   )
+})
+
+test('a final API failure without a model response is still a failed timed turn', () => {
+  const messages = [
+    timed(prompt('p', 'go'), 0),
+    timed(response('e', 'synthetic-error', text('API Error: Unable to connect to API (EPROTO)'), usage(0, 0), '<synthetic>'), 9),
+  ]
+  assert.deepEqual(turnTotals(messages, false), [
+    { after: 'e', durationMs: 9000, numTurns: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, isError: true },
+  ])
+  assert.deepEqual(turnTotals(messages, true), [])
+})
+
+test('normal prose about API errors and synthetic interruption notices are not failed API turns', () => {
+  const messages = [
+    timed(prompt('p', 'go'), 0),
+    timed(response('r', 'real', text('API Error: this is the phrase to investigate'), usage(1, 2)), 3),
+    timed(response('i', 'interrupt', text('[Request interrupted by user]'), usage(0, 0), '<synthetic>'), 4),
+  ]
+  assert.equal(turnTotals(messages, false)[0]?.isError, undefined)
+  assert.equal(turnTotals(messages, false)[0]?.durationMs, 3000)
+})
+
+test('only the final main-thread outcome marks a turn failed, not a recovered or child error', () => {
+  const messages = [
+    timed(prompt('p', 'go'), 0),
+    timed(response('e', 'error', text('API Error: retryable'), usage(0, 0), '<synthetic>'), 2),
+    timed(response('r', 'real', text('recovered'), usage(1, 2)), 4),
+    { ...timed(response('c', 'child-error', text('API Error: child'), usage(0, 0), '<synthetic>'), 5), parent_tool_use_id: 'agent' },
+  ]
+  assert.deepEqual(turnTotals(messages, false), [
+    { after: 'r', durationMs: 4000, numTurns: 1, inputTokens: 1, outputTokens: 2, cacheReadTokens: 0 },
+  ])
 })

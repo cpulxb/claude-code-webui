@@ -9,6 +9,7 @@ import type {
   ProjectGroup,
   RewindFilesResult,
   RpcResult,
+  SDKMessage,
   ServerEvent,
   SessionMessage,
   SessionStatus,
@@ -17,10 +18,11 @@ import type {
   SlashCommand,
   SubagentMeta,
   TurnTotals,
+  TurnProgress,
   UpdateStatus,
   UsageReport,
 } from '@ccw/shared'
-import { mergeProjectSessions, PERMISSION_MODES } from '@ccw/shared'
+import { applyTurnProgress, mergeProjectSessions, PERMISSION_MODES, startTurnProgress } from '@ccw/shared'
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 
@@ -30,6 +32,7 @@ import { appendTranscript, applyHistoryMessage, applyTurnTotals, prependTranscri
 import { applyMessage, emptyTranscript, findAgent, type AgentRun, type Transcript } from '../render/nodes.ts'
 import { applyWorkflowRecord } from '../render/workflows.ts'
 import type { Unread } from '../utils/session-activity.ts'
+import { localTurnProgress } from '../utils/turn-status.ts'
 
 /** Facts the CLI reports once per turn in its `init` message. */
 export type SessionInit = {
@@ -120,6 +123,8 @@ export type SessionState = {
   liveTokens: number | null
   /** Elapsed time + ↓ tokens of the running turn. Null while idle. */
   turnStats: TurnStats | null
+  /** Main-thread activity and retry deadline, converted to the browser clock. */
+  turnProgress: TurnProgress | null
   /**
    * Bumped when files change outside a turn — a rewind or an editor-tab save —
    * so cwd-watching panels (SCM, Explorer) know to re-read.
@@ -281,6 +286,7 @@ function newSession(sessionId: string, cwd: string, attached: boolean): SessionS
     usage: { report: null, scanQueued: false, scanning: false, error: null },
     liveTokens: null,
     turnStats: null,
+    turnProgress: null,
     fsVersion: 0,
     rewinds: 0,
     viewAgent: null,
@@ -439,14 +445,14 @@ function markRewound(set: Setter, sessionId: string): void {
 }
 
 type PermissionChanges = Map<string, PermissionRequest | null>
-type SnapshotVersions = { status: number; permissions: number; mode: number; pending: Set<PermissionChanges> }
+type SnapshotVersions = { status: number; turn: number; progress: number; progressReported: boolean; permissions: number; mode: number; pending: Set<PermissionChanges> }
 
 // Kept separate from streaming data: token deltas must not prevent a reconnect
 // from adopting a snapshot. A fresh object also identifies a reopened session.
 const snapshotVersions = new Map<string, SnapshotVersions>()
 
 function newSnapshotVersions(): SnapshotVersions {
-  return { status: 0, permissions: 0, mode: 0, pending: new Set() }
+  return { status: 0, turn: 0, progress: 0, progressReported: false, permissions: 0, mode: 0, pending: new Set() }
 }
 
 function versionsFor(sessionId: string): SnapshotVersions {
@@ -459,8 +465,32 @@ function versionsFor(sessionId: string): SnapshotVersions {
 }
 
 function setSessionStatus(session: SessionState, status: SessionStatus): void {
+  if (status === 'idle') versionsFor(session.sessionId).turn += 1
   session.status = status
   versionsFor(session.sessionId).status += 1
+  if (status === 'idle') {
+    session.turnStats = null
+    session.turnProgress = null
+    versionsFor(session.sessionId).progress += 1
+  }
+}
+
+function setTurnProgress(session: SessionState, progress: TurnProgress | null): void {
+  session.turnProgress = progress
+  versionsFor(session.sessionId).progress += 1
+  if (progress) {
+    const stats = (session.turnStats ??= { startedAt: progress.startedAt, doneTokens: 0, currentTokens: 0 })
+    stats.startedAt = progress.startedAt
+  }
+}
+
+/** Older servers still forward SDK messages; never invent a fresh delay on replay. */
+function applyLiveProgress(session: SessionState, message: SDKMessage, replay = false): void {
+  const next = applyTurnProgress(session.turnProgress, message, Date.now())
+  if (next === session.turnProgress) return
+  const progress = replay && next?.retry ? { ...next, retry: { ...next.retry, retryAt: null } } : next
+  setTurnProgress(session, progress)
+  if (!replay && progress && session.status !== 'running') setSessionStatus(session, 'running')
 }
 
 /**
@@ -1374,7 +1404,7 @@ async function openAddress(address: Address | null, cwd: string | undefined): Pr
 async function adoptRunner(set: Setter, get: () => Store, sessionId: string): Promise<void> {
   if (!get().sessions[sessionId]) return
   const versions = versionsFor(sessionId)
-  const { status: statusVersion, permissions: permissionsVersion, mode: modeVersion } = versions
+  const { status: statusVersion, turn: turnVersion, progress: progressVersion, permissions: permissionsVersion, mode: modeVersion } = versions
   const epoch = closedEpoch.get(sessionId) ?? 0
   const permissionChanges: PermissionChanges = new Map()
   versions.pending.add(permissionChanges)
@@ -1394,7 +1424,37 @@ async function adoptRunner(set: Setter, get: () => Store, sessionId: string): Pr
     const session = draft.sessions[sessionId]
     if (!session || session.closed) return
     session.attached = true
-    if (versions.status === statusVersion) setSessionStatus(session, state.status)
+    const statusCurrent = versions.status === statusVersion
+    const progressCurrent = versions.progress === progressVersion
+    if (statusCurrent) setSessionStatus(session, state.status)
+    if (statusCurrent && progressCurrent && session.status === 'running') {
+      if ('turnProgress' in state) {
+        versions.progressReported = true
+        setTurnProgress(session, localTurnProgress(state.turnProgress ?? null, state.serverNow, Date.now()))
+      } else if (!versions.progressReported) {
+        session.turnProgress ??= startTurnProgress(session.turnStats?.startedAt ?? Date.now())
+        for (const message of state.backlog) {
+          // A retry already seen live can be older than recovery that is still
+          // streaming and therefore not present in the server's backlog yet.
+          if (message.type === 'system' && message.subtype === 'api_retry' && session.transcript.seen[message.uuid] && session.turnProgress?.retry?.uuid !== message.uuid) continue
+          applyLiveProgress(session, message, true)
+        }
+        setTurnProgress(session, session.turnProgress)
+      }
+    }
+    // A first snapshot can race unchanged-phase output from a new server.
+    // Keep the newer inferred phase, but recover its authoritative clock unless
+    // a local send or terminal event started/ended a different turn meanwhile.
+    if (!versions.progressReported && versions.turn === turnVersion && state.status === 'running' && session.status === 'running' && state.turnProgress && session.turnProgress) {
+      const remote = localTurnProgress(state.turnProgress, state.serverNow, Date.now())!
+      const current = session.turnProgress
+      setTurnProgress(session, {
+        ...current,
+        startedAt: remote.startedAt,
+        ...(current.retry && remote.retry?.uuid === current.retry.uuid ? { retry: remote.retry } : {}),
+      })
+      versions.progressReported = true
+    }
     if (versions.mode === modeVersion) setReportedMode(session, state.permissionMode)
     // Merge events received during the read over its permission list. The
     // version excludes older overlapping snapshots that finish after this one.
@@ -1452,7 +1512,7 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
     event.type === 'session_error'
       ? 'error'
       : event.type === 'sdk' && event.message.type === 'result'
-        ? event.message.is_error
+        ? event.message.is_error || event.message.subtype !== 'success'
           ? 'error'
           : 'done'
         : null
@@ -1481,8 +1541,17 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
         if (JSON.stringify(session.models) !== JSON.stringify(event.models)) session.models = event.models
         session.model = event.model
         return
+      case 'turn_progress': {
+        versionsFor(session.sessionId).progressReported = true
+        const progress = localTurnProgress(event.progress, event.serverNow, Date.now())
+        setTurnProgress(session, progress)
+        setSessionStatus(session, progress ? 'running' : 'idle')
+        if (!progress) session.liveTokens = null
+        return
+      }
       case 'sdk': {
         const message = event.message
+        const reportedProgress = versionsFor(session.sessionId).progressReported
         // Held back while an older stretch is shown: there is no end to put
         // it at. The runner's backlog replays it once the end is read in.
         if (!session.newerCursor) applyMessage(session.transcript, message)
@@ -1491,7 +1560,7 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
         // usage *is* the current context size — realtime data the ring can
         // track without polling. Subagent messages are skipped: they burn
         // their own context window, not this session's.
-        if (message.type === 'assistant' && message.parent_tool_use_id === null) {
+        if (message.type === 'assistant' && message.parent_tool_use_id === null && !message.error && !message.aborted && message.message.model !== '<synthetic>' && (!reportedProgress || session.status === 'running')) {
           const usage = message.message.usage
           session.liveTokens =
             usage.input_tokens +
@@ -1503,14 +1572,14 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
           // survived an interrupt — would otherwise leave the composer idle
           // with no way to stop it. Subagent output is excluded because it
           // keeps streaming after the main thread has stopped.
-          setSessionStatus(session, 'running')
+          if (!reportedProgress) setSessionStatus(session, 'running')
         }
 
         // Turn status line: ↓ tokens ride the main thread's streaming usage
         // (subagents burn their own budget concurrently and would interleave
         // the counters). Created lazily so a reloaded page picks the turn back
         // up from the next delta.
-        if (message.type === 'stream_event' && message.parent_tool_use_id === null) {
+        if (message.type === 'stream_event' && message.parent_tool_use_id === null && (!reportedProgress || session.status === 'running')) {
           const stats = (session.turnStats ??= { startedAt: Date.now(), doneTokens: 0, currentTokens: 0 })
           if (message.event.type === 'message_delta') {
             stats.currentTokens = message.event.usage.output_tokens ?? stats.currentTokens
@@ -1518,6 +1587,10 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
             stats.doneTokens += stats.currentTokens
             stats.currentTokens = 0
           }
+        }
+
+        if (!reportedProgress && (session.status === 'running' || message.type === 'assistant' || message.type === 'stream_event' || (message.type === 'system' && message.subtype === 'api_retry'))) {
+          applyLiveProgress(session, message)
         }
 
         if (message.type === 'system' && message.subtype === 'init') {
@@ -1539,12 +1612,20 @@ function handleEvent(set: Setter, get: () => Store, event: ServerEvent): void {
         if (message.type === 'system' && message.subtype === 'commands_changed') {
           session.commands = message.commands
         }
-        if (message.type === 'system' && message.subtype === 'session_state_changed') {
-          setSessionStatus(session, message.state === 'running' ? 'running' : 'idle')
+        if (!reportedProgress && message.type === 'system' && message.subtype === 'session_state_changed') {
+          setSessionStatus(session, message.state === 'idle' ? 'idle' : 'running')
         }
         if (message.type === 'result') {
-          setSessionStatus(session, 'idle')
-          session.turnStats = null
+          // A stopped turn's result can trail the next queued turn's progress.
+          // With a reporting server its phase event, not this old result, owns
+          // the lifecycle. Legacy servers still use result as the bookend.
+          if (!reportedProgress || session.turnProgress === null) {
+            setSessionStatus(session, 'idle')
+            session.liveTokens = null
+            if (message.is_error || message.subtype !== 'success') {
+              session.error = (message.subtype === 'success' ? message.result : message.errors.join('\n')) || 'API 请求失败，这一轮已结束'
+            }
+          }
           sawResult = true
         }
         return
@@ -1609,6 +1690,8 @@ function resetSession(set: Setter, get: () => Store, event: Extract<ServerEvent,
     // One process: every setting, and the turn running the command, carry over.
     fresh.status = old.status
     fresh.turnStats = old.turnStats
+    fresh.turnProgress = old.turnProgress ? startTurnProgress(old.turnProgress.startedAt) : null
+    versionsFor(next).progressReported = versionsFor(previous).progressReported
     fresh.init = old.init
     fresh.commands = old.commands
     fresh.models = old.models
@@ -1729,22 +1812,34 @@ function echoPrompt(set: Setter, sessionId: string, text: string, attachments: A
 }
 
 async function startTurn(set: Setter, sessionId: string, uuid: string, text: string, attachments?: Attachment[]): Promise<void> {
+  let wasRunning = false
   set((state) => {
     const session = state.sessions[sessionId]
     if (!session) return
+    wasRunning = session.status === 'running'
     setSessionStatus(session, 'running')
     session.error = null
-    session.turnStats = { startedAt: Date.now(), doneTokens: 0, currentTokens: 0 }
+    if (!wasRunning) {
+      versionsFor(sessionId).turn += 1
+      session.turnStats = { startedAt: Date.now(), doneTokens: 0, currentTokens: 0 }
+      setTurnProgress(session, startTurnProgress(session.turnStats.startedAt))
+    }
   })
+  const versions = versionsFor(sessionId)
+  const progressVersion = versions.progress
+  const turnVersion = versions.turn
   try {
     await call('session.send', { sessionId, text, uuid, ...(attachments?.length ? { attachments } : {}) })
   } catch (error) {
-    // No turn was started, so no `result` will ever clear the running state.
+    // A failed queued/extra prompt does not stop the turn already running.
+    // A server progress event can also confirm acceptance even when the HTTP
+    // response was lost: only roll back this send's unchanged optimistic turn.
     set((state) => {
       const session = state.sessions[sessionId]
       if (!session) return
-      setSessionStatus(session, 'idle')
-      session.turnStats = null
+      if (!wasRunning && snapshotVersions.get(sessionId) === versions && versions.progress === progressVersion && versions.turn === turnVersion) {
+        setSessionStatus(session, 'idle')
+      }
       session.error = `发送失败：${errorMessage(error)}`
     })
   }

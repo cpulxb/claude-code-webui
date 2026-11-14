@@ -13,6 +13,8 @@ import type {
   SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk'
 
+import type { TurnProgress } from './turn-progress.ts'
+
 export type {
   AccountInfo,
   EffortLevel,
@@ -72,6 +74,7 @@ export type PluginAction = 'enable' | 'disable' | 'update' | 'uninstall'
 
 export { fuzzyFilter, fuzzyScore } from './fuzzy.ts'
 export { mergeProjectSessions, UNKNOWN_CWD } from './projects.ts'
+export { applyTurnProgress, startTurnProgress, type TurnProgress } from './turn-progress.ts'
 export { MAX_UPLOAD_BYTES, UPLOAD_DIR, UPLOAD_KINDS, uploadKind, type UploadKind } from './uploads.ts'
 
 /** Every permission mode the CLI accepts, in the order the Modes popover lists them. */
@@ -143,6 +146,8 @@ export type TurnTotals = {
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
+  /** True only when the transcript contains explicit API-error evidence. */
+  isError?: boolean
 }
 
 /** A subagent transcript found next to a session's JSONL. */
@@ -495,6 +500,9 @@ export type RpcMap = {
       pendingPermissions: PermissionRequest[]
       backlog: SDKMessage[]
       permissionMode?: PermissionMode
+      /** Server-owned turn clock and phase; absent on older servers. */
+      turnProgress?: TurnProgress | null
+      serverNow?: number
     }
   }
   'session.setPermissionMode': {
@@ -794,6 +802,7 @@ export type RpcResponse<M extends RpcMethod = RpcMethod> = RpcSuccess<M> | RpcFa
  */
 export type ServerEvent =
   | { type: 'sdk'; sessionId: string; message: SDKMessage }
+  | { type: 'turn_progress'; sessionId: string; progress: TurnProgress | null; serverNow: number }
   | { type: 'session_updated'; sessionId: string; summary: SessionSummary }
   | { type: 'session_models'; sessionId: string; models: ModelInfo[]; model: string }
   | ({ type: 'session_flags'; sessionId: string } & SessionFlags)

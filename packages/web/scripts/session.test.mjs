@@ -1157,3 +1157,273 @@ test('a rewind the server refuses changes neither the transcript nor the compose
   assert.equal(useStore.getState().composerDraft, null)
   assert.equal(f.state().rewinds, 0)
 })
+
+// Main-thread progress: real SDK retry events, server-clock snapshots and races.
+function retryFrame(sessionId, fields = {}) {
+  return { type: 'system', subtype: 'api_retry', uuid: crypto.randomUUID(), session_id: sessionId,
+    attempt: 1, max_retries: 5, retry_delay_ms: 30000, error_status: 429, error: 'rate_limit', ...fields }
+}
+
+function progressFrame(progress, serverNow = Date.now()) {
+  return { type: 'turn_progress', progress, serverNow }
+}
+
+function retryProgress(fields = {}) {
+  return { startedAt: 1000, phase: 'retrying', retry: {
+    uuid: 'retry-snapshot', attempt: 2, maxRetries: 5, retryAt: 20000, errorStatus: 500, error: 'server_error', ...fields,
+  } }
+}
+
+function textStream(sessionId, text = 'progress', parent = null) {
+  return { type: 'sdk', message: { type: 'stream_event', uuid: crypto.randomUUID(), session_id: sessionId,
+    parent_tool_use_id: parent, event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } } } }
+}
+
+test('the legacy live stream distinguishes API retry from work and resumes only on real output', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  await useStore.getState().send('work')
+  const startedAt = f.state().turnStats.startedAt
+  const retry = retryFrame(f.sessionId)
+  f.receive({ type: 'sdk', message: retry })
+  assert.equal(f.state().status, 'running')
+  assert.equal(f.state().turnProgress.phase, 'retrying')
+  assert.equal(f.state().turnProgress.retry.attempt, 1)
+  assert.equal(f.state().turnStats.startedAt, startedAt)
+  const deadline = f.state().turnProgress.retry.retryAt
+  assert.ok(deadline >= Date.now() + 29000)
+  f.receive({ type: 'sdk', message: retry })
+  assert.equal(f.state().turnProgress.retry.retryAt, deadline)
+  f.receive({ type: 'sdk', message: { type: 'system', subtype: 'status', status: 'requesting', uuid: crypto.randomUUID(), session_id: f.sessionId } })
+  assert.equal(f.state().turnProgress.phase, 'retrying')
+  f.receive(textStream(f.sessionId))
+  assert.equal(f.state().turnProgress.phase, 'responding')
+  assert.equal(f.state().turnProgress.retry, undefined)
+  assert.equal(f.state().turnStats.startedAt, startedAt)
+  f.receive(result(f.sessionId))
+  assert.equal(f.state().turnProgress, null)
+  assert.equal(f.state().turnStats, null)
+})
+
+test('subagent output and heartbeat cannot clear main-thread retry or add its tokens', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  await useStore.getState().send('work')
+  f.receive({ type: 'sdk', message: retryFrame(f.sessionId) })
+  const progress = f.state().turnProgress
+  f.receive(textStream(f.sessionId, 'child', 'agent-call'))
+  f.receive({ type: 'sdk', message: { type: 'tool_progress', uuid: crypto.randomUUID(), session_id: f.sessionId,
+    tool_use_id: 'main', parent_tool_use_id: null, tool_name: 'Agent', elapsed_time_seconds: 9, heartbeat: true,
+    subagent_retry: { agent_id: 'child', attempt: 1, max_retries: 5, retry_delay_ms: 5000, error_status: null, error_category: 'unknown' },
+  } })
+  assert.equal(f.state().turnProgress, progress)
+  assert.equal(f.state().turnStats.currentTokens, 0)
+})
+
+test('queued prompts do not restart the current turn clock or discard its retry', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  await useStore.getState().send('first')
+  f.receive({ type: 'sdk', message: retryFrame(f.sessionId) })
+  const progress = f.state().turnProgress
+  const startedAt = f.state().turnStats.startedAt
+  await useStore.getState().send('queued')
+  assert.equal(f.state().turnProgress, progress)
+  assert.equal(f.state().turnStats.startedAt, startedAt)
+})
+
+test('a server-clock retry snapshot restores total time and the remaining delay without a new SDK delta', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  const pending = await f.reconnect()
+  pending.resolve(snapshot({ serverNow: 15000, turnProgress: retryProgress() }))
+  await settle()
+  const state = f.state()
+  assert.equal(state.status, 'running')
+  assert.equal(state.turnProgress.phase, 'retrying')
+  assert.equal(state.turnStats.startedAt, state.turnProgress.startedAt)
+  assert.ok(Math.abs(Date.now() - state.turnProgress.startedAt - 14000) < 1000)
+  assert.ok(Math.abs(state.turnProgress.retry.retryAt - Date.now() - 5000) < 1000)
+})
+
+test('a retry learned from an older server backlog never restarts its unknown backoff', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  const pending = await f.reconnect()
+  pending.resolve(snapshot({ backlog: [retryFrame(f.sessionId, { uuid: 'offline-retry' })] }))
+  await settle()
+  assert.equal(f.state().turnProgress.phase, 'retrying')
+  assert.equal(f.state().turnProgress.retry.retryAt, null)
+  assert.ok(f.state().turnStats)
+})
+
+test('a newer phase event beats an older reconnect retry snapshot and SDK backlog', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  const pending = await f.reconnect()
+  f.receive(progressFrame({ startedAt: 1000, phase: 'responding' }, 15000))
+  const progress = f.state().turnProgress
+  const startedAt = f.state().turnStats.startedAt
+  pending.resolve(snapshot({ serverNow: 14000, turnProgress: retryProgress(), backlog: [retryFrame(f.sessionId)] }))
+  await settle()
+  assert.equal(f.state().turnProgress, progress)
+  assert.equal(f.state().turnStats.startedAt, startedAt)
+  assert.equal(f.state().turnProgress.retry, undefined)
+})
+
+test('the first snapshot can restore the server clock while retaining a newer inferred phase', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  const pending = await f.reconnect()
+  f.receive(textStream(f.sessionId))
+  pending.resolve(snapshot({ serverNow: 15000, turnProgress: { startedAt: 1000, phase: 'requesting' } }))
+  await settle()
+  assert.equal(f.state().status, 'running')
+  assert.equal(f.state().turnProgress.phase, 'responding')
+  assert.ok(Math.abs(Date.now() - f.state().turnStats.startedAt - 14000) < 1000)
+})
+
+test('overlapping snapshots cannot undo an already adopted phase or clock', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  const older = await f.reconnect()
+  const newer = await f.reconnect()
+  newer.resolve(snapshot({ serverNow: 15000, turnProgress: { startedAt: 2000, phase: 'tool', toolName: 'Read' } }))
+  await settle()
+  const progress = f.state().turnProgress
+  older.resolve(snapshot({ serverNow: 12000, turnProgress: retryProgress() }))
+  await settle()
+  assert.equal(f.state().turnProgress, progress)
+})
+
+test('a local next turn outranks the preceding retry snapshot, including its clock', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  const pending = await f.reconnect()
+  await useStore.getState().send('new')
+  const startedAt = f.state().turnStats.startedAt
+  pending.resolve(snapshot({ serverNow: 15000, turnProgress: retryProgress() }))
+  await settle()
+  assert.equal(f.state().turnStats.startedAt, startedAt)
+  assert.equal(f.state().turnProgress.retry, undefined)
+})
+
+test('a reporting server owns progress so stopped tail frames cannot revive its timer', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  f.receive(progressFrame(retryProgress(), 15000))
+  f.receive(progressFrame(null, 16000))
+  f.receive(textStream(f.sessionId, 'aborted tail'))
+  f.receive({ type: 'sdk', message: { type: 'assistant', uuid: crypto.randomUUID(), parent_tool_use_id: null,
+    session_id: f.sessionId, message: { id: 'tail', content: [{ type: 'text', text: 'tail' }], usage: { input_tokens: 1, output_tokens: 3 } } } })
+  f.receive({ type: 'sdk', message: { type: 'system', subtype: 'session_state_changed', state: 'running', uuid: crypto.randomUUID(), session_id: f.sessionId } })
+  assert.equal(f.state().status, 'idle')
+  assert.equal(f.state().turnProgress, null)
+  assert.equal(f.state().turnStats, null)
+})
+
+test('a trailing interrupted result cannot stop the next queued turn already announced by the server', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  f.receive(progressFrame({ startedAt: 1000, phase: 'running' }, 1000))
+  f.receive(progressFrame(null, 2000))
+  f.receive(progressFrame({ startedAt: 3000, phase: 'running' }, 3000))
+  const next = f.state().turnProgress
+  f.receive(result(f.sessionId))
+  assert.equal(f.state().status, 'running')
+  assert.equal(f.state().turnProgress, next)
+  assert.ok(f.state().turnStats)
+})
+
+test('requires_action and permission waiting preserve retry until a real end signal', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  await useStore.getState().send('work')
+  f.receive({ type: 'sdk', message: retryFrame(f.sessionId) })
+  const retry = f.state().turnProgress.retry
+  f.receive({ type: 'sdk', message: { type: 'system', subtype: 'session_state_changed', state: 'requires_action', uuid: crypto.randomUUID(), session_id: f.sessionId } })
+  f.receive({ type: 'permission_request', request: permission('confirm') })
+  assert.equal(f.state().status, 'running')
+  assert.equal(f.state().turnProgress.retry, retry)
+  assert.equal(f.state().pendingPermissions.length, 1)
+})
+
+test('final API failures are errors even with success subtype or zero model turns', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  await useStore.getState().send('work')
+  f.receive({ type: 'sdk', message: retryFrame(f.sessionId) })
+  const failed = result(f.sessionId)
+  failed.message.is_error = true
+  failed.message.num_turns = 0
+  failed.message.result = 'API Error: Connection dropped (ECONNRESET)'
+  f.receive(failed)
+  assert.equal(f.state().status, 'idle')
+  assert.equal(f.state().turnProgress, null)
+  assert.equal(f.state().turnStats, null)
+  assert.match(f.state().error, /ECONNRESET/)
+  assert.equal(f.state().transcript.nodes.at(-1).isError, true)
+})
+
+test('error subtypes, process failures and closed sessions clear old retry information', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  await useStore.getState().send('work')
+  f.receive({ type: 'sdk', message: retryFrame(f.sessionId) })
+  const failed = result(f.sessionId)
+  failed.message.subtype = 'error_during_execution'
+  failed.message.is_error = false
+  failed.message.errors = ['gateway failure']
+  f.receive(failed)
+  assert.equal(f.state().turnProgress, null)
+  assert.match(f.state().error, /gateway failure/)
+  assert.equal(f.state().transcript.nodes.at(-1).isError, true)
+  await useStore.getState().send('again')
+  f.receive({ type: 'sdk', message: retryFrame(f.sessionId) })
+  f.receive({ type: 'session_error', error: 'CLI failed' })
+  assert.equal(f.state().turnStats, null)
+  assert.equal(f.state().turnProgress, null)
+  await useStore.getState().send('again')
+  f.receive({ type: 'sdk', message: retryFrame(f.sessionId) })
+  f.receive({ type: 'session_closed' })
+  assert.equal(f.state().turnProgress, null)
+  assert.equal(f.state().turnStats, null)
+})
+
+test('legacy reconnect cannot revive an old retry after recovery that has only streamed so far', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  await useStore.getState().send('work')
+  const retry = retryFrame(f.sessionId)
+  f.receive({ type: 'sdk', message: retry })
+  f.receive(textStream(f.sessionId))
+  const current = f.state().turnProgress
+  const pending = await f.reconnect()
+  pending.resolve(snapshot({ backlog: [retry] }))
+  await settle()
+  assert.equal(f.state().turnProgress.phase, 'responding')
+  assert.equal(f.state().turnProgress.retry, undefined)
+  assert.equal(f.state().turnProgress.startedAt, current.startedAt)
+})
+
+test('a failed extra prompt leaves the existing retry clock and Stop active', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  f.receive(progressFrame(retryProgress(), 15000))
+  const current = f.state().turnProgress
+  const stats = f.state().turnStats
+  const working = rpc
+  rpc = async (method, params) => {
+    if (method === 'session.send') throw new Error('proxy error')
+    return working(method, params)
+  }
+  await useStore.getState().send('extra prompt')
+  assert.equal(f.state().status, 'running')
+  assert.equal(f.state().turnProgress, current)
+  assert.equal(f.state().turnStats, stats)
+  assert.match(f.state().error, /发送失败/)
+  f.receive({ type: 'sdk', message: retryFrame(f.sessionId, { uuid: current.retry.uuid }) })
+  assert.equal(f.state().turnProgress, current)
+  assert.equal(f.state().status, 'running')
+})
+
+test('a lost send response does not roll back newer authoritative acceptance', { timeout: 3000 }, async (t) => {
+  const f = await fixture(t)
+  const working = rpc
+  rpc = async (method, params) => {
+    if (method === 'session.send') {
+      f.receive(progressFrame({ startedAt: 1000, phase: 'requesting' }, 12000))
+      throw new Error('response lost')
+    }
+    return working(method, params)
+  }
+  await useStore.getState().send('work')
+  assert.equal(f.state().status, 'running')
+  assert.equal(f.state().turnProgress.phase, 'requesting')
+  assert.ok(f.state().turnStats)
+  assert.match(f.state().error, /发送失败/)
+})

@@ -888,17 +888,49 @@ button.tileOverlay:hover {
 .turnStatus {
   display: flex;
   gap: var(--ccw-space-2);
-  align-items: center;
+  align-items: flex-start;
   padding: 0 var(--ccw-space-4) var(--ccw-space-2);
   font-size: 12px;
   color: var(--ccw-text-muted);
   font-variant-numeric: tabular-nums;
 }
 
+.turnStatusBody {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  min-width: 0;
+}
+
+.turnStatusLabel {
+  color: var(--ccw-text-secondary);
+}
+
+.turnStatusStats {
+  color: var(--ccw-text-muted);
+}
+
+.turnStatusWarning .turnStatusLabel,
+.turnStatusWarning .turnStatusDetail {
+  color: var(--ccw-warning);
+}
+
+.turnStatusDetail {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+
+.turnSpinner.turnSpinnerWarning {
+  color: var(--ccw-warning);
+  animation: none;
+}
+
 /* The CLI's · ✢ ✳ ✶ ✻ ✽ flicker, done by shrinking and turning the drawn mark
    rather than swapping font glyphs. */
 .turnSpinner {
   display: flex;
+  flex: none;
+  margin-top: 2px;
   color: var(--ccw-accent);
   animation: turn-twinkle 1.6s ease-in-out infinite;
 }
