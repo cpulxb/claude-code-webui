@@ -700,8 +700,10 @@ export class SessionRunner {
 
   /** The terminal's `/skills` rows. `getSkillsDialog` is internal, so not in the SDK's typings. */
   async skills(): Promise<SkillInfo[]> {
-    const query = this.#query as unknown as { getSkillsDialog(): Promise<{ skills: SkillInfo[] }> }
-    return (await query.getSkillsDialog()).skills
+    const { getSkillsDialog } = this.#query as Query & { getSkillsDialog?: () => Promise<{ skills: SkillInfo[] }> }
+    // No list to fall back on, so say why instead of a bare TypeError.
+    if (typeof getSkillsDialog !== 'function') throw new Error('this Claude Agent SDK has no getSkillsDialog any more')
+    return (await getSkillsDialog.call(this.#query)).skills
   }
 
   /** The CLI watches its settings files, so this session picks the edit up by itself. */
