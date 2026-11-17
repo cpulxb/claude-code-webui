@@ -17,6 +17,7 @@ import {
 } from '../../utils/channels.ts'
 import { applyForm, formProblems, maskSecrets, SECRET_MASK, toForm, unmaskSecrets, type SettingsForm } from '../../utils/settings.ts'
 import { NARROW, useNarrow } from '../../utils/narrow.ts'
+import { ARCHIVE_AFTER_DAYS } from '../../utils/session-archive.ts'
 import { notificationsSupported } from '../Attention.tsx'
 import dialog from '../auth/Auth.module.css'
 import { ConfirmDialog } from '../ConfirmDialog.tsx'
@@ -48,7 +49,7 @@ const SOURCE_LABELS: Record<SettingsOverride['source'], string> = {
 }
 
 const SECTIONS: { id: SettingsSection; label: string; desc: string; icon: JSX.Element }[] = [
-  { id: 'general', label: '通用', desc: '对话显示和提醒，只保存在这个浏览器里', icon: <MonitorIcon /> },
+  { id: 'general', label: '通用', desc: '对话显示、提醒和侧栏，只保存在这个浏览器里', icon: <MonitorIcon /> },
   { id: 'channels', label: '渠道', desc: '连接哪个服务、用哪把密钥', icon: <PlugIcon /> },
   { id: 'models', label: '模型', desc: '当前渠道的模型列表和角色映射', icon: <BoxIcon /> },
   { id: 'json', label: 'settings.json', desc: '直接编辑配置文件', icon: <BracesIcon /> },
@@ -80,6 +81,35 @@ function LayoutPreview({ layout }: { layout: ChatLayout }): JSX.Element {
 }
 
 /** The desktop-notification switch, and what the browser says about it. */
+/** How long a session goes quiet before the sidebar folds it under 已归档. */
+function ArchiveSetting(): JSX.Element {
+  const days = useStore((state) => state.archiveAfterDays)
+  const setDays = useStore((state) => state.setArchiveAfterDays)
+  return (
+    <div className={styles.prefs}>
+      <label className={styles.pref}>
+        <span className={styles.prefText}>
+          <span className={styles.prefLabel}>自动归档不活跃的会话</span>
+          <span className={styles.prefDesc}>
+            超过这么久没有新消息的会话收进列表底部的「已归档」。打开着、运行中、等你确认或有未读结果的会话不会被自动归档。
+          </span>
+        </span>
+        <select
+          className={`${styles.input} ${styles.prefSelect}`}
+          value={days}
+          onChange={(event) => setDays(Number(event.target.value))}
+        >
+          {ARCHIVE_AFTER_DAYS.map((option) => (
+            <option key={option} value={option}>
+              {option === 0 ? '从不' : `${option} 天`}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  )
+}
+
 function NotifySetting(): JSX.Element {
   const notify = useStore((state) => state.notify)
   const setNotify = useStore((state) => state.setNotify)
@@ -446,6 +476,8 @@ export function SettingsPage({ section, onLeave }: { section: SettingsSection; o
           </div>
           <div className={`${styles.groupTitle} ${styles.subTitle}`}>提醒</div>
           <NotifySetting />
+          <div className={`${styles.groupTitle} ${styles.subTitle}`}>侧栏</div>
+          <ArchiveSetting />
           <div className={dialog.muted}>以上切换后立即生效，不用点保存。</div>
         </section>
       )

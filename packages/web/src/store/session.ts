@@ -32,6 +32,7 @@ import { appendTranscript, applyHistoryMessage, applyTurnTotals, prependTranscri
 import { applyMessage, emptyTranscript, findAgent, type AgentRun, type Transcript } from '../render/nodes.ts'
 import { applyWorkflowRecord } from '../render/workflows.ts'
 import type { Unread } from '../utils/session-activity.ts'
+import { ARCHIVE_AFTER_DAYS, DEFAULT_ARCHIVE_AFTER_DAYS } from '../utils/session-archive.ts'
 import { localTurnProgress } from '../utils/turn-status.ts'
 
 /** Facts the CLI reports once per turn in its `init` message. */
@@ -177,6 +178,8 @@ type Store = {
   unread: Record<string, Unread>
   /** Desktop notifications for news while the page is out of sight; kept per browser. */
   notify: boolean
+  /** Days without a message before the sidebar folds a session under 已归档; 0 for never. Kept per browser. */
+  archiveAfterDays: number
   /**
    * Text for the composer to take over — a rewound prompt, as the terminal
    * puts it back in its input. A fresh object per request; null until one.
@@ -200,6 +203,7 @@ type Store = {
   selectProject: (cwd: string) => void
   setChatLayout: (layout: ChatLayout) => void
   setNotify: (on: boolean) => void
+  setArchiveAfterDays: (days: number) => void
   closeSession: (sessionId: string) => Promise<void>
   refreshProjects: () => Promise<void>
 
@@ -209,6 +213,8 @@ type Store = {
   renameSession: (title: string) => Promise<void>
   /** Retitles any session on disk, open or not — the sidebar's rename. Throws on failure. */
   renameSavedSession: (sessionId: string, cwd: string, title: string) => Promise<void>
+  /** Puts a saved session under 已归档 or takes it back out, for the terminal and VS Code too. Throws on failure. */
+  archiveSavedSession: (sessionId: string, cwd: string | undefined, archived: boolean) => Promise<void>
   /** `/branch`: forks the active session and switches to the copy. */
   forkSession: (title?: string) => Promise<void>
   /** A transient line in the active transcript — feedback for commands the browser handles itself. */
@@ -316,6 +322,13 @@ export type ChatLayout = 'compact' | 'detailed'
 const CHAT_LAYOUT_KEY = 'ccw.chatLayout'
 
 const NOTIFY_KEY = 'ccw.notify'
+
+const ARCHIVE_DAYS_KEY = 'ccw.archiveAfterDays'
+
+function storedArchiveDays(): number {
+  const days = Number(localStorage.getItem(ARCHIVE_DAYS_KEY) ?? DEFAULT_ARCHIVE_AFTER_DAYS)
+  return (ARCHIVE_AFTER_DAYS as readonly number[]).includes(days) ? days : DEFAULT_ARCHIVE_AFTER_DAYS
+}
 
 /** The page is behind another tab or window, so even the open session's news goes unseen. */
 function outOfSight(): boolean {
@@ -538,6 +551,7 @@ export const useStore = create<Store>()(
     chatLayout: localStorage.getItem(CHAT_LAYOUT_KEY) === 'detailed' ? 'detailed' : 'compact',
     unread: {},
     notify: localStorage.getItem(NOTIFY_KEY) === '1',
+    archiveAfterDays: storedArchiveDays(),
     composerDraft: null,
 
     connect: () =>
@@ -795,6 +809,13 @@ export const useStore = create<Store>()(
       })
     },
 
+    setArchiveAfterDays: (days) => {
+      localStorage.setItem(ARCHIVE_DAYS_KEY, String(days))
+      set((state) => {
+        state.archiveAfterDays = days
+      })
+    },
+
     closeSession: async (sessionId) => {
       await call('session.close', { sessionId })
       set((state) => {
@@ -898,6 +919,12 @@ export const useStore = create<Store>()(
       const name = title.trim()
       const saved = get().projects.flatMap((project) => project.sessions).find((entry) => entry.sessionId === sessionId)
       if (saved) updateProjectSession(set, { ...saved, customTitle: name, summary: name })
+    },
+
+    archiveSavedSession: async (sessionId, cwd, archived) => {
+      await call('session.archive', { sessionId, archived, ...(cwd ? { cwd } : {}) })
+      const saved = get().projects.flatMap((project) => project.sessions).find((entry) => entry.sessionId === sessionId)
+      if (saved) updateProjectSession(set, { ...saved, archived })
     },
 
     forkSession: async (title) => {

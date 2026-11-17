@@ -4,12 +4,14 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  archiveSession,
   forkSession,
   getSessionInfo,
   getSessionMessages,
   renameSession,
   type SDKSessionInfo,
   type SessionStoreEntry,
+  unarchiveSession,
 } from '@anthropic-ai/claude-agent-sdk'
 import type {
   PermissionMode,
@@ -216,6 +218,14 @@ export async function renameSavedSession(sessionId: string, title: string, cwd?:
   const name = title.trim()
   if (!name) throw new Error('title must not be empty')
   await renameSession(sessionId, name, cwd ? { dir: cwd } : undefined)
+}
+
+/**
+ * The archive mark the SDK keeps in a file beside the transcript, which the
+ * terminal and VS Code read too. A prompt sent in the session later clears it.
+ */
+export async function setSessionArchived(sessionId: string, archived: boolean, cwd?: string): Promise<void> {
+  await (archived ? archiveSession : unarchiveSession)(sessionId, cwd ? { dir: cwd } : undefined)
 }
 
 /** `/branch`: a copy of the transcript as it is on disk now, under a fresh id. */
@@ -913,5 +923,6 @@ function toSummary(info: SDKSessionInfo): SessionSummary {
     ...(info.gitBranch ? { gitBranch: info.gitBranch } : {}),
     ...(info.customTitle ? { customTitle: info.customTitle } : {}),
     ...(info.firstPrompt ? { firstPrompt: info.firstPrompt } : {}),
+    ...(info.archived !== undefined ? { archived: info.archived } : {}),
   }
 }

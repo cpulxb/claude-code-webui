@@ -210,6 +210,11 @@
   font-size: 10.5px;
 }
 
+/* Every session archived: listed last, and quieter. */
+.switcherDormant {
+  opacity: 0.55;
+}
+
 .switcherCurrent {
   font-weight: 600;
   color: var(--ccw-text-primary);
@@ -330,6 +335,34 @@
   color: var(--ccw-text-muted);
   letter-spacing: 0.02em;
   background: var(--ccw-bg-sidebar);
+}
+
+/* 已归档: a heading like the ones above, that opens and shuts what it heads. */
+.archiveToggle {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.archiveToggle:hover {
+  color: var(--ccw-text-primary);
+}
+
+.archiveCaret {
+  display: flex;
+  transition: transform 0.15s ease;
+}
+
+.archiveCaretOpen {
+  transform: rotate(90deg);
+}
+
+.archiveCount {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Inset and rounded, so the selection reads as a pill rather than a band. */

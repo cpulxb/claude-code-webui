@@ -230,6 +230,12 @@ export type SessionSummary = {
   running?: boolean
   /** A live session is held on a permission prompt or a question for the user. */
   waiting?: boolean
+  /**
+   * The archive mark kept beside the transcript, shared with the terminal and
+   * VS Code: false for a session taken back out, or prompted since. Absent if
+   * it never was archived.
+   */
+  archived?: boolean
 }
 
 export type ProjectGroup = {
@@ -586,6 +592,8 @@ export type RpcMap = {
    * terminal writes. Works on saved sessions too, so no runner is needed.
    */
   'session.rename': { params: { sessionId: string; title: string; cwd?: string }; result: Record<string, never> }
+  /** Sets or clears a saved session's archive mark; the transcript and any running process are left alone. */
+  'session.archive': { params: { sessionId: string; archived: boolean; cwd?: string }; result: Record<string, never> }
   /** `/branch`: copies the transcript under a new session id. Undo history stays behind. */
   'session.fork': { params: { sessionId: string; cwd?: string; title?: string }; result: { sessionId: string } }
   'permission.respond': {

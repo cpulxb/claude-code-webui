@@ -24,6 +24,7 @@ import {
   renameSavedSession,
   rewindPoint,
   rewoundAt,
+  setSessionArchived,
 } from '../history/sessions.ts'
 import { setPendingRewind } from '../history/rewinds.ts'
 import { scmDiff, scmDiscard, scmStatus, shadowBaseline } from '../scm/git.ts'
@@ -223,6 +224,11 @@ export function createRpcHandlers(manager: SessionManager, updater: Updater, rou
 
     'session.rename': async ({ sessionId, title, cwd }) => {
       await renameSavedSession(sessionId, title, cwd)
+      return {}
+    },
+
+    'session.archive': async ({ sessionId, archived, cwd }) => {
+      await setSessionArchived(sessionId, archived, cwd)
       return {}
     },
 

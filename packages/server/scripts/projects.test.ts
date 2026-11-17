@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import { mergeProjectSessions, type SessionSummary } from '@ccw/shared'
 
 import { coalesce } from '../src/history/session-list.ts'
-import { listProjects, locateSession } from '../src/history/sessions.ts'
+import { listProjects, locateSession, setSessionArchived } from '../src/history/sessions.ts'
 
 const summary = (sessionId: string, cwd: string, lastModified: number, title = ''): SessionSummary => ({
   sessionId, cwd, lastModified, summary: title,
@@ -116,6 +116,38 @@ test('the list keeps terminal and WebUI sessions but drops claude -p and other h
       projects[0]?.sessions.map((session) => session.summary).sort(),
       ['hello from cli', 'hello from sdk-ts'],
     )
+  } finally {
+    if (previous === undefined) delete process.env['CLAUDE_CONFIG_DIR']
+    else process.env['CLAUDE_CONFIG_DIR'] = previous
+    await rm(config, { recursive: true, force: true })
+  }
+})
+
+test('an archive mark set here lists with the session, and taking it back out reads as false', async () => {
+  const config = await mkdtemp(join(tmpdir(), 'ccw-projects-'))
+  const previous = process.env['CLAUDE_CONFIG_DIR']
+  process.env['CLAUDE_CONFIG_DIR'] = config
+  try {
+    const project = join(config, 'projects', '-work-app')
+    await mkdir(project, { recursive: true })
+    const archived = '60000000-0000-4000-8000-000000000001'
+    const untouched = '60000000-0000-4000-8000-000000000002'
+    for (const sessionId of [archived, untouched]) {
+      const record = {
+        parentUuid: null, isSidechain: false, type: 'user', uuid: sessionId,
+        message: { role: 'user', content: 'hello' },
+        timestamp: '2026-10-01T00:00:00.000Z', userType: 'external', entrypoint: 'cli', cwd: '/work/app', sessionId,
+      }
+      await writeFile(join(project, `${sessionId}.jsonl`), `${JSON.stringify(record)}\n`)
+    }
+    const marks = async (): Promise<Record<string, boolean | undefined>> =>
+      Object.fromEntries((await listProjects())[0]?.sessions.map((session) => [session.sessionId, session.archived]) ?? [])
+
+    await setSessionArchived(archived, true, '/work/app')
+    assert.deepEqual(await marks(), { [archived]: true, [untouched]: undefined })
+    // Without a directory the SDK searches every project for the session.
+    await setSessionArchived(archived, false)
+    assert.deepEqual(await marks(), { [archived]: false, [untouched]: undefined })
   } finally {
     if (previous === undefined) delete process.env['CLAUDE_CONFIG_DIR']
     else process.env['CLAUDE_CONFIG_DIR'] = previous

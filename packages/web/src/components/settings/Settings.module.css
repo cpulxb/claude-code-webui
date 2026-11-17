@@ -473,6 +473,11 @@ label.pref {
   color: var(--ccw-text-muted);
 }
 
+.prefSelect {
+  flex: none;
+  width: auto;
+}
+
 .prefWarning {
   margin-top: 6px;
   font-size: var(--ccw-text-sm);

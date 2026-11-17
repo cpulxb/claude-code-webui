@@ -4,11 +4,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { call } from '../../api/client.ts'
 import { sessionHref, useProjectCwd, useStore } from '../../store/session.ts'
 import { ACTIVITY_LABEL, activityOf, mostUrgent, type Activity } from '../../utils/session-activity.ts'
+import { isArchived } from '../../utils/session-archive.ts'
 import { sessionTitle } from '../../utils/session-title.ts'
 import { DevicesDialog } from '../auth/DevicesDialog.tsx'
 import { ErrorNotice } from '../ErrorNotice.tsx'
 import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
   BrandMark,
+  ChevronRightIcon,
   ChevronsUpDownIcon,
   CircleArrowUpIcon,
   FolderIcon,
@@ -60,6 +64,9 @@ export function Sidebar(props: { onCollapse: () => void; theme: 'light' | 'dark'
   const closeSession = useStore((state) => state.closeSession)
   const setActive = useStore((state) => state.setActive)
   const renameSavedSession = useStore((state) => state.renameSavedSession)
+  const archiveSavedSession = useStore((state) => state.archiveSavedSession)
+  const archiveAfterDays = useStore((state) => state.archiveAfterDays)
+  const unread = useStore((state) => state.unread)
   const refreshProjects = useStore((state) => state.refreshProjects)
   const checkUpdate = useStore((state) => state.checkUpdate)
   const setSettingsSection = useStore((state) => state.setSettingsSection)
@@ -108,6 +115,17 @@ export function Sidebar(props: { onCollapse: () => void; theme: 'light' | 'dark'
 
   const currentSessions =
     onlyBranch && branch ? projectSessions.filter((session) => session.gitBranch === branch) : projectSessions
+
+  // Taken afresh each render: the list re-renders as sessions change, which is
+  // when a session last crossing the line gets folded.
+  const archiveContext = { days: archiveAfterDays, now: Date.now(), activeId, unread }
+  const archived = (session: SessionSummary): boolean => isArchived(session, archiveContext)
+
+  const setArchived = (session: SessionSummary, on: boolean): void => {
+    const cwd = session.cwd ?? currentCwd
+    // Without a directory the SDK looks in every project, which is all a placeholder group allows.
+    run(archiveSavedSession(session.sessionId, cwd && cwd !== UNKNOWN_CWD ? cwd : undefined, on), on ? '归档失败' : '取消归档失败')
+  }
 
   const hits: SearchHit[] = useMemo(() => {
     if (query.trim() === '') return []
@@ -202,6 +220,7 @@ export function Sidebar(props: { onCollapse: () => void; theme: 'light' | 'dark'
       <ProjectSwitcher
         projects={projects}
         cwd={currentCwd}
+        isArchived={archived}
         onSelect={(cwd) => {
           setQuery('')
           selectProject(cwd)
@@ -270,6 +289,7 @@ export function Sidebar(props: { onCollapse: () => void; theme: 'light' | 'dark'
             hits={hits}
             hitIndex={hitIndex}
             activeId={activeId}
+            isArchived={archived}
             onHover={setHitIndex}
             onOpen={openHit}
             onClose={(sessionId) => void closeSession(sessionId)}
@@ -294,6 +314,8 @@ export function Sidebar(props: { onCollapse: () => void; theme: 'light' | 'dark'
               sessions={currentSessions}
               emptyText={onlyBranch && branch ? `${branch} 分支上还没有会话` : '这个项目还没有会话'}
               activeId={activeId}
+              isArchived={archived}
+              onArchive={setArchived}
               onOpen={(sessionId) => {
                 if (currentCwd) run(openSession(sessionId, currentCwd), '打开会话失败')
               }}
@@ -401,6 +423,7 @@ function updateAction(progress: UpdateProgress | null): string {
 function ProjectSwitcher(props: {
   projects: ProjectGroup[]
   cwd: string | null
+  isArchived: (session: SessionSummary) => boolean
   onSelect: (cwd: string) => void
   onBrowse: () => void
 }): JSX.Element {
@@ -416,10 +439,18 @@ function ProjectSwitcher(props: {
     unread,
   )
 
+  // A project whose every session is archived sinks below the rest, dimmed;
+  // a filter ranks by the match instead.
+  const dormant = useMemo(
+    () => new Set(props.projects.filter((project) => project.sessions.every(props.isArchived)).map((project) => project.cwd)),
+    [props.projects, props.isArchived],
+  )
   const matches = useMemo(() => {
-    if (filter.trim() === '') return props.projects
+    if (filter.trim() === '') {
+      return [...props.projects.filter((project) => !dormant.has(project.cwd)), ...props.projects.filter((project) => dormant.has(project.cwd))]
+    }
     return fuzzyFilter(filter.trim(), props.projects, (project) => `${basename(project.cwd)} ${project.cwd}`)
-  }, [props.projects, filter])
+  }, [props.projects, filter, dormant])
 
   useEffect(() => setCursor(0), [filter, open])
 
@@ -506,7 +537,9 @@ function ProjectSwitcher(props: {
               <button
                 key={project.cwd}
                 ref={index === cursor ? cursorRef : null}
-                className={`${styles.switcherRow} ${index === cursor ? styles.itemActive : ''}`}
+                className={`${styles.switcherRow} ${index === cursor ? styles.itemActive : ''} ${
+                  dormant.has(project.cwd) ? styles.switcherDormant : ''
+                }`}
                 onClick={() => choose(project.cwd)}
                 onMouseEnter={() => setCursor(index)}
                 type="button"
@@ -542,89 +575,158 @@ function ProjectSwitcher(props: {
   )
 }
 
-/** The current project's sessions, newest first, under 今天 / 昨天 / … headings. */
+/**
+ * The current project's sessions, newest first, under 今天 / 昨天 / … headings,
+ * then the archived ones folded under 已归档 at the bottom.
+ */
 function SessionList(props: {
   sessions: SessionSummary[]
   emptyText: string
   activeId: string | null
+  isArchived: (session: SessionSummary) => boolean
   onOpen: (sessionId: string) => void
   onClose: (sessionId: string) => void
   onRename: (session: SessionSummary, title: string) => void
+  onArchive: (session: SessionSummary, archived: boolean) => void
 }): JSX.Element {
   const activeRef = useRef<HTMLDivElement>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
   const unread = useStore((state) => state.unread)
+  const shown = props.sessions.filter((session) => !props.isArchived(session))
+  const archived = props.sessions.filter(props.isArchived)
+  // Opened from search or a link, or just archived: the fold opens to show where it is.
+  const activeArchived = archived.some((session) => session.sessionId === props.activeId)
+  useEffect(() => {
+    if (activeArchived) setShowArchived(true)
+  }, [activeArchived])
   // `containsActive` re-runs this once the history arrives after the list
   // first rendered empty.
   const containsActive = props.sessions.some((session) => session.sessionId === props.activeId)
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [props.activeId, containsActive])
+  }, [props.activeId, containsActive, showArchived])
 
   if (props.sessions.length === 0) return <div className={styles.empty}>{props.emptyText}</div>
 
+  const row = (session: SessionSummary, folded: boolean): JSX.Element => (
+    <SessionRow
+      key={session.sessionId}
+      session={session}
+      activity={activityOf(session, unread[session.sessionId])}
+      active={session.sessionId === props.activeId}
+      activeRef={activeRef}
+      archived={folded}
+      renaming={renaming === session.sessionId}
+      onOpen={() => props.onOpen(session.sessionId)}
+      onClose={() => props.onClose(session.sessionId)}
+      onStartRename={() => setRenaming(session.sessionId)}
+      onRename={(title) => {
+        setRenaming(null)
+        if (title !== null) props.onRename(session, title)
+      }}
+      onArchive={() => props.onArchive(session, !folded)}
+    />
+  )
+  // A session archived by hand can still be working or waiting on the user.
+  const archivedNews = mostUrgent(archived, unread)
+
   return (
     <>
-      {bucketByAge(props.sessions).map((bucket) => (
+      {shown.length === 0 && <div className={styles.empty}>最近没有活跃的会话</div>}
+      {bucketByAge(shown).map((bucket) => (
         <div key={bucket.label}>
           <div className={styles.bucket}>{bucket.label}</div>
-          {bucket.sessions.map((session) => (
-            <div
-              key={session.sessionId}
-              ref={session.sessionId === props.activeId ? activeRef : null}
-              className={`${styles.item} ${session.sessionId === props.activeId ? styles.itemActive : ''}`}
-            >
-              {renaming === session.sessionId ? (
-                <RenameInput
-                  title={session.summary}
-                  onDone={(title) => {
-                    setRenaming(null)
-                    if (title !== null) props.onRename(session, title)
-                  }}
-                />
-              ) : (
-                <a
-                  className={styles.itemOpen}
-                  href={sessionHref(session.sessionId)}
-                  onClick={(event) => openInPlace(event, () => props.onOpen(session.sessionId))}
-                  title={session.summary || '新会话'}
-                  aria-current={session.sessionId === props.activeId ? 'page' : undefined}
-                >
-                  <SessionRowBody session={session} activity={activityOf(session, unread[session.sessionId])} />
-                </a>
-              )}
-              {((renaming !== session.sessionId && session.summary) || session.live) && (
-                <span className={styles.itemActions}>
-                  {/* A session nobody has written to yet has no transcript to retitle. */}
-                  {renaming !== session.sessionId && session.summary && (
-                    <button
-                      className={styles.itemAction}
-                      onClick={() => setRenaming(session.sessionId)}
-                      type="button"
-                      title="重命名"
-                      aria-label="重命名会话"
-                    >
-                      <PencilIcon size={12} />
-                    </button>
-                  )}
-                  {session.live && (
-                    <button
-                      className={styles.itemAction}
-                      onClick={() => props.onClose(session.sessionId)}
-                      type="button"
-                      title="关闭会话（结束它的 CLI 进程）"
-                      aria-label="关闭会话"
-                    >
-                      <XIcon size={12} />
-                    </button>
-                  )}
-                </span>
-              )}
-            </div>
-          ))}
+          {bucket.sessions.map((session) => row(session, false))}
         </div>
       ))}
+      {archived.length > 0 && (
+        <div>
+          <button
+            className={`${styles.bucket} ${styles.archiveToggle}`}
+            onClick={() => setShowArchived(!showArchived)}
+            type="button"
+            aria-expanded={showArchived}
+            title={showArchived ? '收起已归档的会话' : '展开已归档的会话'}
+          >
+            <span className={`${styles.archiveCaret} ${showArchived ? styles.archiveCaretOpen : ''}`}>
+              <ChevronRightIcon size={12} />
+            </span>
+            已归档
+            <span className={styles.archiveCount}>{archived.length}</span>
+            {archivedNews && archivedNews !== 'idle' && <ActivityDot activity={archivedNews} />}
+          </button>
+          {showArchived && archived.map((session) => row(session, true))}
+        </div>
+      )}
     </>
+  )
+}
+
+/** One session in the project list, with rename, archive and close on hover. */
+function SessionRow(props: {
+  session: SessionSummary
+  activity: Activity | null
+  active: boolean
+  activeRef: React.RefObject<HTMLDivElement>
+  archived: boolean
+  renaming: boolean
+  onOpen: () => void
+  onClose: () => void
+  onStartRename: () => void
+  onRename: (title: string | null) => void
+  onArchive: () => void
+}): JSX.Element {
+  const { session } = props
+  // A session nobody has written to yet has no transcript to retitle or archive.
+  const editable = !props.renaming && Boolean(session.summary)
+  return (
+    <div ref={props.active ? props.activeRef : null} className={`${styles.item} ${props.active ? styles.itemActive : ''}`}>
+      {props.renaming ? (
+        <RenameInput title={session.summary} onDone={props.onRename} />
+      ) : (
+        <a
+          className={styles.itemOpen}
+          href={sessionHref(session.sessionId)}
+          onClick={(event) => openInPlace(event, props.onOpen)}
+          title={session.summary || '新会话'}
+          aria-current={props.active ? 'page' : undefined}
+        >
+          <SessionRowBody session={session} activity={props.activity} />
+        </a>
+      )}
+      {(editable || session.live) && (
+        <span className={styles.itemActions}>
+          {editable && (
+            <button className={styles.itemAction} onClick={props.onStartRename} type="button" title="重命名" aria-label="重命名会话">
+              <PencilIcon size={12} />
+            </button>
+          )}
+          {editable && (
+            <button
+              className={styles.itemAction}
+              onClick={props.onArchive}
+              type="button"
+              title={props.archived ? '取消归档' : '归档（终端和 VS Code 里也会归档）'}
+              aria-label={props.archived ? '取消归档会话' : '归档会话'}
+            >
+              {props.archived ? <ArchiveRestoreIcon size={12} /> : <ArchiveIcon size={12} />}
+            </button>
+          )}
+          {session.live && (
+            <button
+              className={styles.itemAction}
+              onClick={props.onClose}
+              type="button"
+              title="关闭会话（结束它的 CLI 进程）"
+              aria-label="关闭会话"
+            >
+              <XIcon size={12} />
+            </button>
+          )}
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -636,6 +738,7 @@ function SearchResults(props: {
   hits: SearchHit[]
   hitIndex: number
   activeId: string | null
+  isArchived: (session: SessionSummary) => boolean
   onHover: (index: number) => void
   onOpen: (hit: SearchHit) => void
   onClose: (sessionId: string) => void
@@ -672,6 +775,7 @@ function SearchResults(props: {
             <span className={styles.hitMeta}>
               {basename(hit.cwd)}
               {hit.gitBranch ? ` · ${hit.gitBranch}` : ''}
+              {props.isArchived(hit) ? ' · 已归档' : ''}
             </span>
           </a>
           {hit.live && (

@@ -3,6 +3,7 @@ import { useState } from 'react'
 
 import { sessionHref, useProjectCwd, useStore } from '../store/session.ts'
 import { activityOf } from '../utils/session-activity.ts'
+import { isArchived } from '../utils/session-archive.ts'
 import { sessionTitle } from '../utils/session-title.ts'
 import styles from './EmptyState.module.css'
 import { BrandMark, SquarePenIcon } from './Icons.tsx'
@@ -22,10 +23,14 @@ export function EmptyState({ narrow, onShowSessions }: { narrow: boolean; onShow
   const createSession = useStore((state) => state.createSession)
   const openSession = useStore((state) => state.openSession)
   const refreshProjects = useStore((state) => state.refreshProjects)
+  const archiveAfterDays = useStore((state) => state.archiveAfterDays)
   const cwd = useProjectCwd()
   const [error, setError] = useState<string | null>(null)
 
-  const recent = (projects.find((project) => project.cwd === cwd)?.sessions ?? []).slice(0, RECENT)
+  const archive = { days: archiveAfterDays, now: Date.now(), activeId: null, unread }
+  const recent = (projects.find((project) => project.cwd === cwd)?.sessions ?? [])
+    .filter((session) => !isArchived(session, archive))
+    .slice(0, RECENT)
   // The placeholder group is not a directory, so no session can start in it.
   const canStart = cwd !== null && cwd !== UNKNOWN_CWD
 
